@@ -1,0 +1,97 @@
+[project]
+name = "advtext"
+version = "0.1.0"
+description = "TeX-model text layout and rendering for Dear ImGui"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Walter Reel" }]
+dependencies = [
+    # The ImDrawList backend and the demo app. The floor is 1.92 because the
+    # backend targets Dear ImGui 1.92's font/glyph API; a lower floor would turn
+    # an install-time failure into an AttributeError on the first frame drawn.
+    "imgui-bundle>=1.92",
+    # Block and inline parsing for the markdown litmus test. Only the parser is
+    # used -- token stream in, our own box tree out. Nothing here renders HTML.
+    "markdown-it-py>=3.0",
+    # Every glyph advance, kern and OpenType MATH constant comes from here
+    # rather than from ImGui: see docs/decisions.md, "Metrics come from
+    # fontTools". This is a runtime dependency, not a dev tool.
+    "fonttools>=4.50",
+]
+
+[project.optional-dependencies]
+# The ruff floor is deliberately recent: the lint rule set shifts between minor
+# versions, and an older ruff passes code that a newer one rejects. A gate whose
+# strictness depends on what happens to be installed is a latent failure.
+dev = [
+    "pytest>=8.0",
+    "black>=24.1",
+    "mypy>=1.11",
+    "ruff>=0.16",
+    # `make shot`. hello_imgui hands the framebuffer back as a nanobind
+    # ndarray, so `final_app_window_screenshot()` cannot return at all without
+    # numpy -- and it does not fail as an ImportError. It raises
+    # `TypeError: could not export nanobind::ndarray: No module named 'numpy'`,
+    # which reads like a binding bug rather than a missing package. That is the
+    # same failure mode already written up at
+    # advtext/ui/document_view.py:306-312 for a different call, and it cost
+    # time once here already. Dev-only: nothing advtext imports uses numpy, and
+    # a layout engine that made every installer take it would be paying for a
+    # screenshot script.
+    "numpy>=1.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["advtext"]
+
+# Listed explicitly rather than inferred: hatchling falls back to parsing
+# .gitignore when not told otherwise, which silently couples what ships to what
+# is ignored.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/advtext", "/scripts", "/tests", "/docs", "/README.md", "/Makefile",
+    "/pyproject.toml",
+]
+exclude = ["**/__pycache__", "**/*.pyc"]
+
+# black owns formatting (docs/decisions.md, "Shape of the code"); ruff is
+# lint-only here, so its formatter is never invoked and the two cannot disagree
+# about the same file.
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+# The floor from `requires-python`, not whatever the borrowed interpreter
+# happens to be. Typechecking against the oldest supported version is what
+# catches a 3.12-only idiom before it reaches a Debian 12 box, whose system
+# Python is 3.11.
+python_version = "3.11"
+strict = true
+# Neither imgui-bundle nor fontTools ships stubs this checker will accept as
+# complete, and vendoring stubs for either is a project of its own.
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# imgui_bundle's stubs type draw-list point arguments as invariant containers,
+# so a correct list[ImVec2] is rejected and the call needs `# type: ignore`.
+# Whether any given one of those ignores is redundant depends on the stub
+# version installed, so the redundancy warning fires on correct code here.
+# Confined to the two modules that touch ImGui rather than relaxed globally.
+module = ["advtext.backends.imgui_draw", "advtext.ui.*"]
+warn_unused_ignores = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error"]

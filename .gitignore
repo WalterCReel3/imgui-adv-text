@@ -1,0 +1,57 @@
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+
+# `make bootstrap` builds this, and the Makefile prefers it over the borrowed
+# interpreter the moment it exists. Thousands of files, none of them ours.
+# `.venv.partial` is not created by anything today; it is here so that a future
+# staged build cannot be committed by an `add -A` between its two steps.
+/.venv/
+/.venv.partial/
+
+# hello_imgui slugifies a window title into an ini filename and writes it to the
+# working directory unless ini_folder_type says otherwise. Ignored as a backstop;
+# the fix is to set ini_folder_type at every runner construction site.
+*.ini
+
+# `make svg` writes rendered litmus artifacts here. Generated output, never a
+# checked-in reference: the verify scripts assert on geometry, not on bytes.
+artifacts/
+
+# Knuth's `tex.web`, the source every algorithm in this project cites. Kept in
+# the tree so it is discoverable -- `docs/tex-notes.md` is a secondary source and
+# warns that its own section *numbers* were only spot-checked, so a load-bearing
+# citation has to be verified against this file by content. Ignored rather than
+# committed because it is a 1 MB verbatim copy of someone else's work under its
+# own licence, and vendoring it would make this repository a redistributor.
+# Fetch: https://ctan.org/pkg/tex  (or `tex.web` from any TeX Live source tree)
+docs/tex.web
+
+# The agent sandbox bind-mounts the user's shell, editor and harness config into
+# the working directory as character devices. They are not project files and git
+# cannot store them at all -- `git add` refuses a device node -- so ignoring them
+# is what keeps `git status` readable and `git add -A` usable.
+/.claude/
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.gitmodules
+/.idea
+/.mcp.json
+/.profile
+/.ripgreprc
+/.vscode
+/.zprofile
+/.zshrc
+
+# Agent-to-agent concerns, written as files because `post_concern` truncated at
+# ~671 characters and `read_inbox` returned empty for at least two builders --
+# corrections arrived as stubs or not at all. Coordination transport, not
+# project content: conclusions belong in docs/, so this is scratch and is not
+# committed. `.concerns/README.md` is the protocol.
+/.concerns/

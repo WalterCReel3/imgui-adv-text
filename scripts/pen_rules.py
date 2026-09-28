@@ -97,10 +97,20 @@ def place_whole(left: float, offsets: list[float]) -> list[float]:
     return [left + math.floor(o + 0.5) for o in offsets]
 
 
-def place_half(left: float, offsets: list[float]) -> list[float]:
-    from advtext.backends.imgui_draw import snap_offset_px
+HALF_QUANTUM_PX = 0.5
+"""
+The quantum the superseded half-pixel rule used, kept here and nowhere else.
 
-    return [left + snap_offset_px(o) for o in offsets]
+`advtext.backends.imgui_draw` no longer defines it: `advance` won and the loser
+left with its constant. This script still measures `half`, because a comparison
+that can only see the rule that won cannot show why it won, and
+`docs/subpixel.md` §6.3 quotes numbers a reader must be able to re-derive.
+"""
+
+
+def place_half(left: float, offsets: list[float]) -> list[float]:
+    """The superseded rule: each offset rounded to `HALF_QUANTUM_PX`."""
+    return [left + math.floor(o / HALF_QUANTUM_PX + 0.5) * HALF_QUANTUM_PX for o in offsets]
 
 
 def place_advance(left: float, offsets: list[float]) -> list[float]:

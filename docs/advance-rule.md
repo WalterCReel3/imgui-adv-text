@@ -1,8 +1,8 @@
 # Rounding the gaps instead of the positions
 
-**Status: a proposal under evaluation on the `advance-rule` branch. Nothing here
-has shipped.** `docs/subpixel.md` §6.3 describes what the tree actually draws
-today, which is half-pixel quantisation of a glyph's offset within its span.
+**Status: this is what the tree draws.** The half-pixel rule it replaced is
+`docs/subpixel.md` §6.3, which remains the record of why that rule was taken and
+is superseded rather than deleted.
 
 Every number below comes from `scripts/pen_rules.py` against the working tree.
 Re-run it rather than trusting this file — `docs/status.md` Provenance is the
@@ -67,9 +67,13 @@ Defined in `scripts/pen_rules.py`. All four place glyphs relative to a span anch
 that `snap_px` has already put on a whole pixel.
 
     whole     each glyph's offset from the anchor, rounded to 1 px
-    half      each offset rounded to 0.5 px  (PEN_QUANTUM_PX; what ships)
-    advance   each gap rounded to 1 px, accumulated from the anchor
+    half      each offset rounded to 0.5 px          (superseded; §6.3)
+    advance   each gap rounded to 1 px, accumulated from the anchor  (ships)
     exact     no rounding of the offset at all
+
+Only `advance` exists in `advtext.backends.imgui_draw`. The other three live in
+`scripts/pen_rules.py` alone, because a comparison that can only see the rule
+that won cannot show why it won.
 
 **Snapping the anchor first is load-bearing and is not a detail.** It is what
 prevents a word landing on two sub-pixel phases in two places. A harness that
@@ -143,16 +147,21 @@ quality.
 
 ## 7. What is not established
 
-- **Ragged right is unmeasured, and the argument made for it was wrong.** The
-  claim was that a word's width error lands in the glue, "which is elastic". That
-  is justified-text reasoning. Under ragged right the glue sits at its natural
-  width and is not stretching, so the error surfaces as uneven **word spaces** —
-  and more conspicuously there, because ragged right otherwise has a uniform
-  space rhythm for the variation to disturb. Liberation Serif at 18 px ragged
-  already renders word spaces as `[5,4,5,4,5,4,…]` from anchor rounding of a
-  constant ~4.5 px space; `advance` would add to that. **The user has said ragged
-  right is the common case for this widget. This is the next measurement and it
-  can still reject the rule.**
+- **Ragged right: measured, and milder than feared. The premise of the fear was
+  wrong.** The worry was that a word's width error, which justification hides in
+  stretching glue, would stand out against ragged right's uniform space rhythm.
+  Ragged right has no such rhythm to disturb: word spaces measured within a
+  single render already vary with **sd 1.51 px** over 283 spaces before this rule
+  touches them, from anchor rounding of a nominally constant ~4.5 px space.
+  `advance` takes that to **sd 1.59** over 284, with a heavier tail at 7 px (6
+  occurrences to 18). Justified moves 2.00 to 2.07 over the same document.
+
+  **A caveat this method cannot measure away.** `advance` is sharper, so its ink
+  is narrower, so every gap reads slightly wider at an ink threshold. Some of the
+  mean shift (4.97 to 5.11 px) and some of the sd change is antialiasing rather
+  than geometry, and a threshold-based measurement cannot separate the two. A
+  geometric measurement taken from the layout rather than from pixels would, and
+  has not been done.
 - **An unexplained anomaly: ImGui's own text measures softer than `whole` or
   `advance`.** On the same face, atlas and frame, "people" reads solid 8.1% /
   midtone 84.9% under ImGui's path against 18.4% / 72.3% under both `whole` and
@@ -161,9 +170,15 @@ quality.
   `add_font_from_file_ttf` and `add_text`, or differing atlas UVs between the two
   paths. **Until this is explained, ImGui's rendering must not be used as the
   reference point for sharpness.**
-- **`advance` may fuse adjacent letters.** On "difference" it yields 6
-  inter-cluster gaps where `whole` yields 7 — one more pair merged at the ink
-  threshold. Threshold artifacts are a known trap here and this was not chased.
+- **Letter fusion: checked, and it goes the other way.** An earlier count in a
+  synthetic harness suggested `advance` merged one more adjacent pair than
+  `whole` on "difference". That harness was the one with the unsnapped-anchor bug
+  in §3. Re-measured on the real render of the heading "What the difference looks
+  like", `advance` yields **15** ink clusters against `half`'s 14 — letters come
+  apart rather than together, in the word whose `iffe` originally fused into a
+  single 31 px run. The cross-render cluster count is still an ink-threshold
+  statistic taken across an antialiasing change, so it establishes direction and
+  not magnitude.
 - **Error diffusion is unmeasured.** Carrying the residual and flipping a rounding
   when the accumulated position strays past half a pixel should cut the 2.09 px
   worst case while keeping every gap an integer. Nobody has tried it.

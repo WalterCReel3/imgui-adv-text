@@ -152,7 +152,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, TypeAlias, assert_never
 
 from advtext.fontmetrics import Face
@@ -200,6 +200,35 @@ rounding either doubles or shuts entirely.
 
 Only the offset is quantised here, and only horizontally; see `_RigidSpan.pen`
 for both restrictions and `_snap_span` for why an *area* is a different problem.
+"""
+
+
+PEN_RULE = "half"
+"""
+Which rule places a glyph inside its span. **Temporary, and must not merge.**
+
+`"half"` is what ships and what `docs/subpixel.md` §6.3 describes: each glyph's
+offset from the span anchor, rounded to `PEN_QUANTUM_PX`.
+
+`"advance"` is the proposal under evaluation on this branch, `docs/advance-rule.md`:
+each *gap* rounded to a whole pixel and accumulated from the anchor, which is what
+ImGui's own `ImFont::RenderText` does. Measured on `demo/sample.md`, it matches
+`"half"` on gap evenness -- 0 of 3453 adjacent pairs more than half a pixel from
+the designed gap, against 478 under whole-pixel -- while keeping every glyph on the
+pixel grid, which `"half"` does not: `"half"` leaves 1444 of 4329 glyphs at a
+fractional pen and therefore exposed to the renderer's bilinear filter.
+
+**This is a switch so that two rules can be rendered from one build and compared,
+not a configuration knob.** This project does not offer placement options: two
+rules mean two behaviours to test, two to document, and a reader who cannot tell
+what the widget does by reading it. Before this branch merges one of these wins,
+the constant goes, and the loser leaves with it. `scripts/pen_rules.py` measures
+both without needing it.
+
+The open question that decides it is in `docs/advance-rule.md` §7: `"advance"` moves
+a word's total width by up to 2.09 px, and the claim that inter-word glue absorbs
+that was justified-text reasoning. Ragged right has no stretching glue, and ragged
+right is the common case for this widget.
 """
 
 
@@ -575,6 +604,13 @@ class _RigidSpan:
     are the one snapped screen position in the span, from which every other
     glyph in it is placed by an integer offset -- so the whole span moves as a
     unit and nothing inside it can shift by a pixel relative to the rest.
+
+    `prev_x` and `prev_pen` carry the running state `PEN_RULE == "advance"` needs:
+    the exact x of the glyph placed most recently in this span, and the screen x it
+    was placed at. They are the anchor's own values until the second glyph arrives,
+    so a one-glyph span never consults them. Under the other rules they are carried
+    and ignored, because a span that sometimes has state and sometimes does not is
+    worse than one field that is sometimes unread.
     """
 
     x: Scaled
@@ -582,8 +618,10 @@ class _RigidSpan:
     ascent: float
     left: float
     top: float
+    prev_x: Scaled
+    prev_pen: float
 
-    def pen(self, cmd: Glyph, ascent: float, px_per_inch: float) -> tuple[float, float]:
+    def pen(self, cmd: Glyph, ascent: float, px_per_inch: float) -> tuple[float, float, _RigidSpan]:
         """
         Where one glyph of this span goes: the anchor plus a snapped offset.
 
@@ -628,10 +666,34 @@ class _RigidSpan:
         `test_a_vertical_offset_inside_a_span_stays_on_a_whole_row` -- and not
         the document. If a vertical case ever turns up, this is the one line to
         change and that test is what will go red.
+
+        **The returned span is the one the caller must carry forward.** Under
+        `"half"` it is this span unchanged; under `"advance"` it carries the
+        running state on. Returning it rather than mutating keeps the class frozen,
+        which matters because the span is the thing whose identity guarantees a
+        word is drawn the same way twice.
         """
-        dx = px_from_sp(cmd.x - self.x, px_per_inch)
         dy = px_from_sp(cmd.y - self.y, px_per_inch) - (ascent - self.ascent)
-        return self.left + snap_offset_px(dx), self.top + snap_px(dy)
+        top = self.top + snap_px(dy)
+
+        if PEN_RULE == "advance":
+            # The gap from the previously placed glyph, rounded once, added to
+            # where that glyph actually went. Every gap is therefore a whole
+            # number of pixels and every pen lands on the grid -- the two
+            # properties `"half"` cannot hold at the same time.
+            #
+            # Taken in scaled points and converted once, for the reason the
+            # paragraph above gives about `cmd.x - self.x`: the difference is
+            # exact and a float subtraction of two conversions is not.
+            #
+            # The anchor itself takes this path with `cmd.x == self.prev_x`, so
+            # the step is zero and it lands on `left`. No special case.
+            step = px_from_sp(cmd.x - self.prev_x, px_per_inch)
+            pen_x = self.prev_pen + snap_px(step)
+            return pen_x, top, replace(self, prev_x=cmd.x, prev_pen=pen_x)
+
+        dx = px_from_sp(cmd.x - self.x, px_per_inch)
+        return self.left + snap_offset_px(dx), top, self
 
 
 def _glyph(
@@ -678,8 +740,11 @@ def _glyph(
             ascent=baked.ascent,
             left=snap_px(baseline.x),
             top=snap_px(baseline.y - baked.ascent),
+            prev_x=cmd.x,
+            prev_pen=snap_px(baseline.x),
         )
-    position = imgui.ImVec2(*span.pen(cmd, baked.ascent, px_per_inch))
+    pen_x, pen_y, span = span.pen(cmd, baked.ascent, px_per_inch)
+    position = imgui.ImVec2(pen_x, pen_y)
     character = chr(cmd.codepoint)
     if font is None:
         draw_list.add_text(position, palette.ink, character)

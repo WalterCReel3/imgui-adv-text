@@ -572,6 +572,15 @@ them.
 
 ### 6.3 Taken again — the offset inside a span is quantised to half a pixel
 
+> **Superseded by `docs/advance-rule.md`. This section is history, not behaviour.**
+> `PEN_QUANTUM_PX` and `snap_offset_px` no longer exist; `_RigidSpan.pen` now rounds
+> each *gap* to a whole pixel and accumulates from the anchor. That reaches the same
+> gap evenness this section bought — 0 of 3453 adjacent pairs more than half a pixel
+> from the design — without leaving 1444 of 4329 glyphs at a fractional pen, which is
+> the cost recorded below. Everything here is kept because it is the record of why the
+> half-pixel rule was taken and what it measured; `scripts/pen_rules.py` still computes
+> the `half` column so these numbers stay re-derivable.
+
 6.2 made every instance of a word identical. It did not make any *gap* finer: the offsets
 inside a span were still whole pixels, so a designed gap of 5.30 px was still drawn at
 5 or 6 and the first paragraph of section 6 still stood. This is the change that halves

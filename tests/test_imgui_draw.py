@@ -43,11 +43,9 @@ import pytest
 from advtext import fontlib
 from advtext.backends.imgui_draw import (
     DEFAULT_PALETTE,
-    PEN_QUANTUM_PX,
     Palette,
     baked_size_px,
     draw,
-    snap_offset_px,
     snap_px,
 )
 from advtext.fontmetrics import Face
@@ -410,25 +408,24 @@ def _glyph_quads(draw_list: Any, first: int) -> Iterator[tuple[Any, Any]]:
             yield near, far
 
 
-def test_every_glyph_of_the_demo_document_lands_on_the_half_pixel_grid(
+def test_every_glyph_of_the_demo_document_lands_on_a_whole_pixel(
     frame: Any, every_face: Any, demo_commands: tuple[Any, ...]
 ) -> None:
     """
-    Every glyph quad's horizontal corners are exact multiples of `PEN_QUANTUM_PX`.
+    Every glyph quad's horizontal corners are integers. Nothing is resampled.
 
-    **This test used to assert integers, and the control below is the reason it
-    is not simply a loosened version of that.** "A multiple of 0.5" is satisfied
-    by every integer, so on its own this assertion passes unchanged for the
-    whole-pixel implementation it replaces -- it would go green on a revert and
-    say nothing. The second half asserts that a real share of the document is at
-    the *half* phase, which only the shipped rule can produce, and which also
-    fails if `ImDrawListFlags_TextNoPixelSnap` is ever dropped: ImGui's
-    `IM_TRUNC` would round every half back to a whole underneath us and leave
-    the first assertion green.
+    This is half of what pins the advance rule and **it is deliberately not the
+    whole of it**, because it does not distinguish that rule from the whole-pixel
+    one it replaced: both put every pen on an integer, and a revert to
+    `anchor + round(offset)` leaves this green.
+    `test_the_gap_between_two_glyphs_is_within_half_a_pixel_of_the_design` is the
+    other half, and it is the one a revert fails. Neither is worth much alone.
 
-    The exactness matters as much as the quantum. `snap_offset_px` multiplies by
-    a power of two, so its output is exactly representable and `x * 2 ==
-    int(x * 2)` is not a tolerance dressed up as an equality.
+    What this one does catch, and catches alone: the half-pixel rule this
+    replaced (it left 1444 of 4329 pens at a fractional phase), and any future
+    change that reintroduces a fractional pen for any reason. A fractional pen is
+    resolved by the renderer's bilinear filter, which is the fuzz the user ruled
+    out on sight.
     """
     from imgui_bundle import imgui
 
@@ -439,15 +436,56 @@ def test_every_glyph_of_the_demo_document_lands_on_the_half_pixel_grid(
     edges = [value for near, far in _glyph_quads(frame, first) for value in (near.pos.x, far.pos.x)]
     assert len(edges) > 2000, f"only {len(edges)} quad edges, so this fixture proves nothing"
 
-    off_grid = [value for value in edges if value * 2.0 != int(value * 2.0)]
-    assert not off_grid, (
-        f"{len(off_grid)} glyph quad edges are off the {PEN_QUANTUM_PX} px grid: " f"{off_grid[:4]}"
+    fractional = [value for value in edges if value != int(value)]
+    assert not fractional, (
+        f"{len(fractional)} of {len(edges)} glyph quad edges are off the pixel grid and will "
+        f"be resampled: {fractional[:4]}"
     )
 
-    on_a_half = [value for value in edges if value != int(value)]
-    assert len(on_a_half) > 200, (
-        f"only {len(on_a_half)} of {len(edges)} quad edges are at the half phase, so this "
-        "document is being drawn at whole pixels and the assertion above is free"
+
+def test_the_gap_between_two_glyphs_is_within_half_a_pixel_of_the_design(
+    frame: Any, every_face: Any, demo_commands: tuple[Any, ...]
+) -> None:
+    """
+    The half a revert fails, and the reason the advance rule exists.
+
+    Rounding each glyph's *position* independently makes a gap the difference of
+    two roundings, so it can be a full pixel from the gap the designer drew --
+    measured on this document, 478 of 3453 adjacent pairs were more than half a
+    pixel out under that rule. Rounding each *gap* instead bounds every one of
+    them at half a pixel by construction.
+
+    The bound is `<= 0.5` and not `< 0.5`: `snap_px` is half-up, so a designed
+    gap of exactly n + 0.5 px rounds to n + 1 and is exactly half a pixel out.
+    That is the equality case and it is legitimate; anything past it is not.
+
+    Asserted against `advtext.shipout`'s own scaled-point coordinates rather than
+    against a second implementation of the rule, so this cannot pass by agreeing
+    with a bug it shares.
+    """
+    drawn = _drawn(frame, every_face, demo_commands)
+    assert len(drawn) > 1000, f"only {len(drawn)} glyphs drawn, so this proves nothing"
+
+    # The quad's left edge is the pen plus that glyph's own ink offset, and the
+    # two glyphs of a pair have different offsets -- so differencing quad edges
+    # measures the ink between them, not the gap the pen rule produced. `x0` has
+    # to come back off before anything here is about placement.
+    pens = {id(cmd): qx - _visible(every_face, cmd)[1].x0 for cmd, _oy, qx, _qy in drawn}
+    worst = 0.0
+    pairs = 0
+    for span in _spans(demo_commands):
+        visible = [cmd for cmd in span if id(cmd) in pens]
+        for before, after in zip(visible, visible[1:], strict=False):
+            designed = px_from_sp(after.x - before.x)
+            rendered = pens[id(after)] - pens[id(before)]
+            worst = max(worst, abs(rendered - designed))
+            pairs += 1
+
+    assert pairs > 1000, f"only {pairs} adjacent pairs inside spans, so this proves nothing"
+    assert worst <= 0.5 + 1e-9, (
+        f"the worst inter-glyph gap is {worst:.4f} px from the designed gap, over {pairs} "
+        "pairs. Rounding positions rather than gaps is what produces this; see "
+        "docs/advance-rule.md"
     )
 
 
@@ -455,20 +493,26 @@ def test_a_glyph_sits_on_a_whole_pixel_row(
     frame: Any, every_face: Any, demo_commands: tuple[Any, ...]
 ) -> None:
     """
-    Half a pixel got into the document horizontally and nowhere else.
+    No glyph sits between two pixel rows, from an origin that is not on one.
 
-    The horizontal control in the same buffer is what makes this worth
-    asserting: the fixture demonstrably *can* produce a fractional coordinate
-    here, and every vertical one is still whole.
+    **The control is the origin, and it used to be the horizontal axis.** While
+    the pen was quantised to half a pixel, this test proved the vertical was
+    whole by pointing at fractional x values in the same buffer: the fixture
+    demonstrably *could* emit a fraction, and no y was one. Under the advance
+    rule no coordinate on either axis is fractional, so that control is gone and
+    would now fail rather than mislead.
 
-    **What this test does not establish, stated because it was written believing
-    it did.** It does not pin the axis asymmetry in `_RigidSpan.pen`. Swapping
-    `snap_px` for `snap_offset_px` on the vertical leaves it green, because
-    every within-span vertical offset in this document is already a whole number
+    What replaces it is `30.25`. The document is drawn from an origin a quarter
+    of a pixel down, so every baseline arrives here fractional and something has
+    to have rounded it. Remove `snap_px` from the vertical in `_RigidSpan.pen`
+    and every value below lands on `.25`.
+
+    **What this still does not establish.** It does not pin the axis asymmetry.
+    Every within-span vertical offset in this document is already a whole number
     of pixels -- measured, 3486 of 3486, and 2 of 2 in the litmus formula -- so
-    the two rules cannot disagree on any content the demo contains.
+    a rule change on the vertical cannot disagree with this content.
     `test_a_vertical_offset_inside_a_span_stays_on_a_whole_row` builds content
-    where they do disagree; that is the test that pins the choice.
+    where it can; that is the test that pins the choice.
     """
     from imgui_bundle import imgui
 
@@ -482,30 +526,33 @@ def test_a_glyph_sits_on_a_whole_pixel_row(
         value for near, far in quads for value in (near.pos.y, far.pos.y) if value != int(value)
     ]
     assert not rows, f"{len(rows)} glyph quad edges sit between two pixel rows: {rows[:4]}"
-    assert any(
-        near.pos.x != int(near.pos.x) for near, _far in quads
-    ), "not one glyph is at a fractional x here, so the vertical assertion above is free"
+    assert 30.25 != int(30.25), (
+        "the origin this test draws from is a whole number, so nothing had to round the "
+        "vertical and the assertion above is free"
+    )
 
 
 def test_a_vertical_offset_inside_a_span_stays_on_a_whole_row(frame: Any, every_face: Any) -> None:
     """
-    The quantum is horizontal only, on content that can tell the two apart.
+    The two axes are treated differently, on content that can tell them apart.
 
-    `_RigidSpan.pen` halves the horizontal offset and leaves the vertical whole.
-    The reason is that the defect the user reported and judged is horizontal --
-    inter-letter gaps of 1, 2, 2 px in "people", `iffe` fused in a heading -- and
-    a half-pixel baseline would put a stem's horizontal edges between two rows
-    for no gap it closes. Nobody has looked at that trade, so it is not taken.
+    `_RigidSpan.pen` accumulates rounded *gaps* horizontally and snaps the
+    vertical absolutely against the span anchor. The reason is that the defect
+    the user reported and judged is horizontal -- inter-letter gaps of 1, 2, 2 px
+    in "people", `iffe` fused in a heading -- while an accumulating baseline
+    would let a superscript drift away from the run it belongs to for no gap it
+    closes.
 
     A raised glyph inside a rigid span is a math script, and `ship` really does
     emit one with no glue before it. The fixture is that arrangement with the
-    offset chosen to land between two rows: 5.4 px goes to 5.0 under whole-pixel
-    snapping and to 5.5 under the half-pixel rule, so this is one assertion and
-    not two.
+    vertical offset chosen so the two rules would disagree: -5.4 px snaps to
+    -5.0, and any rule that quantised it more finely would not.
 
     The horizontal is asserted beside it from the same pair, because a test that
-    only said "y is whole" would also pass if the quantum had been dropped
-    altogether.
+    only said "y is whole" would pass just as well on a fixture where nothing
+    moved horizontally at all. `GAP_PX` is 9.4, so the rendered gap is
+    `snap_px(9.4) == 9.0` -- a designed gap that is not already an integer, which
+    is what makes the assertion mean something.
     """
     from imgui_bundle import imgui
 
@@ -514,7 +561,7 @@ def test_a_vertical_offset_inside_a_span_stays_on_a_whole_row(frame: Any, every_
         Glyph(font=key, codepoint=ord("n"), x=0, y=0, index=0),
         Glyph(font=key, codepoint=ord("n"), x=sp_from_px(GAP_PX), y=sp_from_px(-5.4), index=1),
     ]
-    assert snap_px(-5.4) == -5.0 and snap_offset_px(-5.4) == -5.5, "the fixture lost its point"
+    assert snap_px(-5.4) == -5.0 and -5.4 != int(-5.4), "the fixture lost its point"
 
     first = frame.vtx_buffer.size()
     draw(frame, raised, imgui.ImVec2(100.0, 200.0), fonts=every_face)
@@ -525,9 +572,9 @@ def test_a_vertical_offset_inside_a_span_stays_on_a_whole_row(frame: Any, every_
         f"the raised glyph came out {quads[1][1] - quads[0][1]} px above its span anchor "
         "rather than 5, so a vertical offset is being quantised to halves"
     )
-    assert quads[1][0] - quads[0][0] == 9.5, (
+    assert quads[1][0] - quads[0][0] == 9.0, (
         f"the same pair is {quads[1][0] - quads[0][0]} px apart horizontally rather than "
-        "9.5, so the half-pixel quantum is not reaching this fixture at all"
+        f"9.0, so snap_px is not reaching this fixture's {GAP_PX} px gap at all"
     )
 
 
@@ -702,71 +749,47 @@ def test_snap_px_rounds_halves_up_the_way_imgui_does() -> None:
     assert round(2.5) == 2 and snap_px(2.5) == 3.0, "Python's round is still banker's rounding"
 
 
-def test_snap_offset_px_is_snap_px_on_a_finer_grid() -> None:
+def test_draw_restores_the_no_pixel_snap_flag_it_borrowed(frame: Any, every_face: Any) -> None:
     """
-    The same half-up rule, so the two agree about which side of a boundary a value is on.
+    `draw` sets `ImDrawListFlags_TextNoPixelSnap` and must put it back.
 
-    The last line is the one that would catch a re-implementation as
-    `round(v * 2) / 2`: Python's `round` is banker's and sends 0.25 to 0.0 where
-    half-up sends it to 0.5.
-    """
-    assert PEN_QUANTUM_PX == 0.5, "the quantum changed; every number below is about 0.5"
-    assert [snap_offset_px(v) for v in (0.0, 0.2, 0.25, 0.3, 0.74, 0.75, 9.4)] == [
-        0.0,
-        0.0,
-        0.5,
-        0.5,
-        0.5,
-        1.0,
-        9.5,
-    ]
-    assert snap_offset_px(-0.25) == 0.0 and snap_offset_px(-0.26) == -0.5
-    # Exactly representable, so the grid assertions elsewhere are equalities and
-    # not tolerances: a multiple of a power of two survives a float multiply.
-    assert all(
-        snap_offset_px(v / 64.0) * 2.0 == int(snap_offset_px(v / 64.0) * 2.0) for v in range(400)
-    )
-    assert round(0.25 * 2) / 2 == 0.0 and snap_offset_px(0.25) == 0.5
+    **This test used to assert the flag was load-bearing, and it is not any
+    more.** While the pen was quantised to half a pixel, clearing the flag let
+    `IM_TRUNC` round every half back to a whole underneath us with no symptom of
+    its own. Under the advance rule every pen is already an integer, so ImGui
+    would find nothing to truncate and the flag changes no output this module
+    produces today. Asserting that it does would be a test that cannot fail.
 
+    What is still worth pinning is the borrowing. ImGui reuses one draw list for
+    a whole window, so a flag left on leaks into every widget drawn after this
+    one -- a defect that shows up somewhere else entirely and looks like nothing
+    to do with text.
 
-def test_a_half_pixel_pen_survives_into_the_vertex_buffer(frame: Any, every_face: Any) -> None:
-    """
-    `draw` sets `ImDrawListFlags_TextNoPixelSnap`, and without it the change is a no-op.
-
-    `ImFont::RenderText` opens with `IM_TRUNC(pos.x)`, so a pen at x + 0.5 emits
-    its quad at x unless the flag is set. That failure has no symptom of its own
-    -- every position is still an integer, still one texel to one pixel, still
-    the same shape wherever the word falls -- so it would look exactly like a
-    revert to whole-pixel snapping with all the code still in place.
-
-    The control is the same draw list with the flag cleared, driven through
-    `add_text` directly: it shows this build really does truncate, so the
-    assertion above is about the flag and not about a coincidence.
+    The second assertion keeps the *reason* the flag is set from quietly
+    expiring: it drives `add_text` directly with a fractional pen and checks this
+    build still truncates. If that ever stops being true, the flag is dead code
+    and this docstring is wrong; if a future rule emits a fractional pen again,
+    the flag is load-bearing once more and the test above it should be restored.
     """
     from imgui_bundle import imgui
 
     left, right = _pair(sp_from_px(GAP_PX))
-    assert snap_offset_px(GAP_PX) == 9.5, "the fixture no longer lands on a half"
-
     first = frame.vtx_buffer.size()
     draw(frame, [left, right], imgui.ImVec2(100.0, 200.0), fonts=every_face)
     quads = [near.pos.x for near, _far in _glyph_quads(frame, first)]
     assert len(quads) == 2, f"{len(quads)} quads for a two-glyph fixture"
-    assert quads[1] - quads[0] == 9.5, (
-        f"the two glyphs came out {quads[1] - quads[0]} px apart rather than 9.5, so the "
-        "half-pixel offset was re-rounded before it reached the buffer"
-    )
 
     assert (
         frame.flags & int(imgui.ImDrawListFlags_.text_no_pixel_snap) == 0
     ), "`draw` left the no-snap flag on a draw list it borrowed"
+
     font = every_face(parse_font_key(left.font).face)
     before = frame.vtx_buffer.size()
     frame.add_text(font, 16.0, imgui.ImVec2(quads[0] + 9.5, 200.0), 0xFF111111, "n")
     truncated = frame.vtx_buffer[before].pos.x
     assert truncated == int(truncated), (
         "this ImGui build no longer truncates a fractional pen, so the flag `draw` sets "
-        "is no longer load-bearing and the assertion above proves nothing"
+        "is defending against nothing and its docstring should be corrected"
     )
 
 
@@ -980,30 +1003,46 @@ def test_no_glyph_of_the_demo_document_is_drawn_more_than_a_pixel_from_its_posit
     frame: Any, every_face: Any, demo_commands: tuple[Any, ...]
 ) -> None:
     """
-    Span-relative snapping costs two roundings, and two roundings is the whole cost.
+    A glyph's departure is bounded by its **span**, and the anchor resets it.
 
-    A glyph's quad is its pen plus a left bearing of a whole number of texels,
-    so `quad_left - x0` recovers the pen exactly and the distance from the
-    position ship-out computed is how far the glyph moved. Anchoring a span and
-    snapping an offset from it rounds twice, so the bound is 1 px rather than the
-    0.5 px absolute snapping gives. Measured: **0.9862 px** worst over 4329
-    glyphs, which is T11's predicted 0.986 and not a pixel more. It does not grow
-    with the length of the span or the line, which is what separates this from
-    rounding advances and summing them.
+    A glyph's quad is its pen plus a left bearing of a whole number of texels, so
+    `quad_left - x0` recovers the pen exactly and the distance from the position
+    ship-out computed is how far the glyph moved.
+
+    **This bound is no longer a constant and that is the cost of the advance
+    rule.** While offsets were rounded against the anchor the answer was two
+    roundings, 0.9862 px worst, however long the word. Accumulating rounded gaps
+    instead means the residue of a span adds up along it, so the bound is a
+    function of the longest word in the document rather than a property of the
+    rule: measured here, **2.7359 px** worst over 4329 glyphs.
+
+    That is a real regression on this axis and it was accepted for what it buys
+    -- every gap within half a pixel of the design, every glyph on the pixel grid
+    -- after the user compared the two rendered. `docs/advance-rule.md` has both
+    sides.
+
+    **The safety property is the second assertion, not the first.** A number
+    measured off one document is a regression alarm, not a proof; what makes the
+    rule safe is that the error cannot cross a glue node, because every span
+    starts again from an anchor snapped straight from ship-out's own coordinate.
+    So anchors are asserted against the tight half-pixel bound separately below,
+    and that is the assertion that would catch the rule being widened from a span
+    to a line.
 
     **This test used to assert 0.5 px and it kept passing when the bound became
     1 px.** It took the nearest of 4362 candidate pens and then subtracted
     `round(quad - pen)`, which folds any residue over a half into the other side
     of the pixel: a true departure of 0.9 was reported as 0.1. It was measuring
     "is the quad an integer distance from *some* pen", which every integral
-    position satisfies. The pairing in `_drawn` is exact instead, and the
-    assertion below is one-sided against the real bound.
+    position satisfies. The pairing in `_drawn` is exact instead.
     """
     departures = []
     vertical = []
+    by_cmd: dict[int, float] = {}
     for cmd, origin_y, quad_x, quad_y in _drawn(frame, every_face, demo_commands):
         baked, glyph = _visible(every_face, cmd)
         departures.append(abs((quad_x - glyph.x0) - (ORIGIN_X + px_from_sp(cmd.x))))
+        by_cmd[id(cmd)] = departures[-1]
         # `add_text` measures its top-left down from ImGui's own ascent, so the
         # baseline a command asked for is the quad top, less the glyph's top
         # bearing, plus that ascent. Included because the horizontal assertion
@@ -1014,21 +1053,28 @@ def test_no_glyph_of_the_demo_document_is_drawn_more_than_a_pixel_from_its_posit
     assert len(departures) > 4000, "the demo document drew almost nothing, so this proves nothing"
 
     worst = max(departures)
-    assert worst <= 1.0, (
-        f"a glyph is drawn {worst:.4f} px from the position ship-out computed, which is "
-        "more than the two roundings span-relative snapping is allowed"
+    assert worst <= 3.0, (
+        f"a glyph is drawn {worst:.4f} px from the position ship-out computed. The advance "
+        "rule's accumulated residue is bounded by the longest span, and 3 px is well past "
+        "what this document's longest word can produce -- so this is the error escaping a "
+        "span, not a longer word"
     )
     worst_down = max(vertical)
     assert (
         worst_down <= 1.0
     ), f"a glyph's baseline is {worst_down:.4f} px below the one ship-out computed"
-    # The other side of it, and the reason the assertion above is not the old one
-    # with a looser number: the cost the user accepted is really being paid here,
+
+    # The safety property -- that the residue resets at every anchor -- is
+    # `test_the_first_glyph_of_every_span_is_drawn_on_a_whole_pixel`, not here.
+    # This test measures the magnitude; that one measures the independence, and
+    # that one is what fails if the rule is ever widened from a span to a line.
+
+    # The other side of it: the cost the user accepted is really being paid here,
     # so a silent revert to absolute snapping does not leave this test green.
     past_half = sum(1 for value in departures if value > 0.5 + 1e-9)
     assert past_half > 100, (
         f"only {past_half} glyphs are past half a pixel, so this document is no longer "
-        "exercising span-relative snapping and the bound above is not being tested"
+        "exercising span-relative placement and the bound above is not being tested"
     )
 
 
@@ -1062,11 +1108,18 @@ def test_the_first_glyph_of_every_span_is_drawn_on_a_whole_pixel(
     So the leading glyph of every word must be drawn where whole-pixel snapping
     drew it, at one phase, and only the letters behind it may move by a half.
 
-    `ORIGIN_X` is deliberately 40.25, off the grid, because at an integral
-    origin every anchor is integral for a reason that has nothing to do with the
-    code. The control is the other list: the glyphs *inside* the spans, in the
-    same buffer at the same origin, really are at the half phase -- so "no
-    anchor is fractional" is a property of `_RigidSpan` and not of this fixture.
+    `ORIGIN_X` is deliberately 40.25, off the grid, because at an integral origin
+    every anchor is integral for a reason that has nothing to do with the code.
+    That is asserted at the end rather than assumed.
+
+    **The control used to be the glyphs inside the spans**, which sat at the half
+    phase while the offset was quantised to halves. Under the advance rule
+    nothing is fractional anywhere, so that control is gone and the test would be
+    subsumed by `test_every_glyph_of_the_demo_document_lands_on_a_whole_pixel` if
+    it stopped here. What keeps it distinct is the second assertion: an anchor is
+    within half a pixel of the coordinate ship-out computed for it, which is a
+    statement about *independence* from the preceding word rather than about the
+    grid.
 
     A quad's left edge is the pen plus a left bearing of a whole number of
     texels, so subtracting `glyph.x0` recovers the pen exactly.
@@ -1076,14 +1129,13 @@ def test_the_first_glyph_of_every_span_is_drawn_on_a_whole_pixel(
     assert len(drawn) == len(paired), "the command-to-quad mapping lost entries"
 
     anchors: list[float] = []
-    inside: list[float] = []
+    anchor_exact: list[float] = []
     for span in _spans(demo_commands):
         anchor = _anchor_of(every_face, span)
-        for cmd in span:
-            if cmd not in drawn:
-                continue
-            pen = drawn[cmd] - _visible(every_face, cmd)[1].x0
-            (anchors if cmd is anchor else inside).append(pen)
+        if anchor is None or anchor not in drawn:
+            continue
+        anchors.append(drawn[anchor] - _visible(every_face, anchor)[1].x0)
+        anchor_exact.append(ORIGIN_X + px_from_sp(anchor.x))
 
     assert (
         len(anchors) > 300
@@ -1094,10 +1146,21 @@ def test_the_first_glyph_of_every_span_is_drawn_on_a_whole_pixel(
         f"{fuzzed[:4]} -- this is the variant the user rejected on sight"
     )
 
-    halved = [pen for pen in inside if pen != int(pen)]
-    assert len(halved) > 100, (
-        f"only {len(halved)} of {len(inside)} non-anchor glyphs are at the half phase, so "
-        "nothing here distinguishes a whole anchor from a whole everything"
+    # The reset, which is the property this test now exists for. Each anchor is
+    # snapped straight from ship-out's own coordinate, so it is within half a
+    # pixel of it no matter how much residue the previous word accumulated.
+    # Widen the advance rule from a span to a line and the residue carries across
+    # glue nodes, anchors drift past half a pixel, and this is what says so --
+    # the departure bound elsewhere would simply grow and keep passing.
+    worst = max(abs(pen - exact) for pen, exact in zip(anchors, anchor_exact, strict=True))
+    assert worst <= 0.5 + 1e-9, (
+        f"a span anchor is {worst:.4f} px from the coordinate ship-out computed, so the "
+        "accumulated residue of one word is reaching the next and the rule has escaped "
+        "its span"
+    )
+    assert ORIGIN_X != int(ORIGIN_X), (
+        f"ORIGIN_X is {ORIGIN_X}, a whole pixel, so every anchor would be integral for a "
+        "reason that has nothing to do with _RigidSpan and the assertions above are free"
     )
 
 

@@ -42,6 +42,7 @@ DOCS: tuple[Path, ...] = (
     _ROOT / "docs" / "imgui-risks.md",
     _ROOT / "docs" / "litmus.md",
     _ROOT / "docs" / "subpixel.md",
+    _ROOT / "docs" / "advance-rule.md",
     _ROOT / "docs" / "visual-review.md",
     _ROOT / "docs" / "tex-notes.md",
 )

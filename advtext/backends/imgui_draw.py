@@ -62,20 +62,33 @@ from 0.50 px to 1.00 px, and the last glyph of a justified line lands up to
 text looks better." Layout space is untouched -- `tests/test_litmus.py` still
 asserts zero residue in scaled points and still passes. `docs/subpixel.md` §6.1.
 
-## The offset inside that span is quantised to half a pixel, not a whole one
+## Inside that span the *gaps* are rounded, not the positions
 
-The fourth change and the second taste trade, also the user's. Whole-pixel
-offsets round an inter-letter gap the design asks for in fractions either up or
-down, so "people" set at gaps of 1, 2, 2 px and the heading "What the difference
-looks like" closed the gap in `iffe` entirely -- one 31 px ink run where a
-letter is 9-11 px. `PEN_QUANTUM_PX` halves that error and `snap_offset_px`
-applies it, horizontally only, to the offset only: the span anchor stays on a
-whole pixel because the user rejected a trial that moved it. ImGui would undo
-all of it, so `draw` sets `ImDrawListFlags_TextNoPixelSnap`.
+The fourth change, and the one that made the third's trade unnecessary.
+`docs/advance-rule.md` is the write-up.
 
-The cost is stated where the constant is defined and it is real: at a whole
-pixel a letter has one rasterisation, at a half it can have two.
-`docs/subpixel.md` §6.3.
+Rounding each glyph's offset from the anchor independently -- which is what this
+module did, first to a whole pixel and then to a half -- means an inter-letter
+gap is `round(next) - round(this)` and can be a **whole pixel** away from the gap
+the designer drew. Measured on `demo/sample.md`: 478 of 3453 adjacent pairs.
+That is the defect behind "people" at gaps of 1, 2, 2 px and behind the heading
+"What the difference looks like" closing the gap in `iffe` entirely.
+
+`_RigidSpan.pen` instead rounds each *gap* to a whole pixel and accumulates from
+the anchor, which is what ImGui's own `ImFont::RenderText` does -- verified by
+reading the vertex buffer, `scripts/pen_rules.py --native`. Every gap is then
+within half a pixel of the design, **and** every glyph lands on the pixel grid,
+so nothing is resampled. The half-pixel rule could not hold both: it bought the
+gaps by putting 1444 of 4329 glyphs at a fractional pen.
+
+The cost is that a word's total width drifts -- mean 0.40 px, worst 2.09 px --
+and the next span starts from its own snapped anchor, so the error lands in the
+word space and cannot accumulate toward the margin. `scripts/verify_advances.py`
+measured 42 px of drift over a *line*, which is why accumulated advances were
+refused before; confined to a span it is a different quantity.
+
+`draw` still sets `ImDrawListFlags_TextNoPixelSnap`, now only so that ImGui does
+not re-round pens this module has already placed exactly.
 
 Two things had to be true for a frame to run with no backend attached, and both
 are easy to hit and unobvious:
@@ -152,7 +165,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, TypeAlias, assert_never
 
 from advtext.fontmetrics import Face
@@ -168,39 +181,12 @@ __all__ = [
     "DrawStats",
     "FaceFont",
     "DEFAULT_PALETTE",
-    "PEN_QUANTUM_PX",
     "Palette",
     "baked_size_px",
     "draw",
     "rgba",
-    "snap_offset_px",
     "snap_px",
 ]
-
-PEN_QUANTUM_PX = 0.5
-"""
-The grid a glyph's offset *inside* its rigid span is quantised to.
-
-**This number is the user's, taken with output in front of them, and it is not a
-free parameter.** A ladder of quanta was rendered on the Columns tab and
-measured -- 1/1 solid ink 47.3% / midtones 41.3%, 1/2 20.8% / 50.7%, 1/3 26.6% /
-46.8%, 1/4 19.9% / 51.7% -- and 1/2 and 1/4 were indistinguishable to the eye.
-1/2 was chosen at equal appearance because it is the coarser of the two and so
-admits the fewest distinct rasterisations of a letter.
-`.concerns/T20-letterfit--lead--half-pixel-decided.md` has the ladder; the
-sample set the user judged is `artifacts/letterfit/INDEX.md`.
-
-**What it costs, measured, because it is not free.** Whole-pixel snapping made
-every instance of a letter byte-identical -- rendered and counted in
-`artifacts/gridfont/INDEX.md`, zero letters with more than one rasterisation in
-any whole-pixel case. At 1/2 a letter has **two** rasterisations, phase 0 and
-phase 1/2, so on an off-grid face seven letters of three short samples gained a
-second shape. That is the price of closing an inter-letter gap that whole-pixel
-rounding either doubles or shuts entirely.
-
-Only the offset is quantised here, and only horizontally; see `_RigidSpan.pen`
-for both restrictions and `_snap_span` for why an *area* is a different problem.
-"""
 
 
 def snap_px(value: float) -> float:
@@ -215,17 +201,19 @@ def snap_px(value: float) -> float:
     in nine steps emits byte-identical vertices every time.
 
     It can be turned off -- `ImDrawListFlags_TextNoPixelSnap`, new in 1.92.9 --
-    and `draw` now turns it off, which reverses what this paragraph used to say.
-    The old argument was that fractional placement is resolved by the renderer's
-    bilinear filter, which is blur, and the user has ruled blur out. That
-    argument was made **at whole-pixel granularity**, where the alternative to a
-    snapped pen is an unbounded fractional one; the user has since looked at a
-    rendered ladder of quanta and chosen a bounded middle, half a pixel. So the
-    flag is set, and `snap_offset_px` -- not ImGui's `IM_TRUNC` -- decides which
-    half-pixel a glyph lands on. `docs/subpixel.md` §4.2 and §6.3.
+    and `draw` turns it off. That is now a belt-and-braces measure rather than a
+    trade: under `_RigidSpan.pen` every pen this module emits is already a whole
+    number of pixels, so `IM_TRUNC` would find nothing to truncate. The flag
+    stays because the invariant is worth asserting at the boundary rather than
+    trusting, and because a future rule that did place a fractional pen would
+    otherwise be silently rounded away with no symptom.
 
-    This function is still whole-pixel and is still what places a span's anchor
-    and both edges of an area. Nothing about a rule changed.
+    **The flag has no effect on ImGui's own text path**, which never generates a
+    fractional inner position: `scripts/pen_rules.py --native` reads the vertex
+    buffer and finds every quad edge on a whole pixel with the flag set or clear.
+    `docs/subpixel.md` §4.2 and `docs/advance-rule.md` §2.
+
+    This function places a span's anchor and both edges of an area.
 
     What this changes is *which* pixel. Truncation is biased half a pixel left
     and up -- every glyph in the document lands on `floor`, never on `ceil` --
@@ -236,55 +224,32 @@ def snap_px(value: float) -> float:
     `IM_ROUND` is `floor(x + 0.5)`, and agreeing with ImGui about which pixel a
     coordinate is on matters more here than agreeing with Python.
 
-    **Nothing snapped here is ever accumulated.** That is the correctness
-    argument and it is narrower than "absolute positions only", which is what
-    this docstring used to say. `_RigidSpan.pen` snaps a glyph's *offset from
-    its span's anchor* -- with `snap_offset_px`, on the half-pixel grid -- which
-    is not an absolute position, but is also not an advance, because the anchor
-    is fixed for the whole span and the offset is taken against that one point
-    rather than against the previous glyph. A span's worst departure is
-    therefore one whole-pixel rounding of the anchor plus one half-pixel
-    rounding of the offset, 0.75 px, and it does not grow with the length of the
-    span or of the line.
+    **What is snapped here is accumulated, and the bound on it is a span.** This
+    docstring used to say "nothing snapped here is ever accumulated", and that
+    stopped being true when `_RigidSpan.pen` began rounding gaps rather than
+    offsets. The correctness argument is now about *where* accumulation stops,
+    not about whether it happens.
 
-    Round each *advance* and sum instead and the error has no bound: measured on
-    `demo/sample.md`, 9.9 px worst and 2.7 px median over 70 lines, which walks
-    the end of a justified line nearly two characters past the margin that
-    `tests/test_litmus.py` asserts is exact.
+    `pen` adds one rounded gap to the pen the previous glyph actually got, so
+    error does accumulate -- but only along a rigid span, and the next span
+    starts from its own anchor, snapped from the position `advtext.shipout`
+    computed. A span's departure is therefore one whole-pixel rounding of the
+    anchor plus the accumulated gap residue of that span alone: measured over
+    `demo/sample.md`, a word's width moves by 0.40 px mean and 2.09 px worst, and
+    it does not grow with the length of the *line*.
+
+    That distinction is the whole reason this is safe, and the measurement that
+    refused accumulation before is still valid on its own terms: rounding each
+    advance and summing **across a line** has no bound -- 9.9 px worst and 2.7 px
+    median over 70 lines on `demo/sample.md`, which walks the end of a justified
+    line nearly two characters past the margin that `tests/test_litmus.py`
+    asserts is exact.
     `test_rounding_advances_instead_of_positions_walks_a_line_off_its_margin`
-    builds that implementation and asserts it fails, because every position it
-    produces is an integer and it would otherwise pass every test beside it.
+    builds that line-wide implementation and asserts it fails. It must keep
+    failing: it is what stops the span-local rule below from being widened to a
+    line by someone who reads the two as the same idea.
     """
     return math.floor(value + 0.5)
-
-
-def snap_offset_px(value: float) -> float:
-    """
-    A glyph's offset from its span anchor, on the `PEN_QUANTUM_PX` grid.
-
-    `snap_px` generalised to a quantum, with the same half-up rule, so the two
-    agree about which side of a boundary a coordinate falls on: at a quantum of
-    1.0 this function *is* `snap_px`, and the only thing that changes when the
-    quantum changes is how many phases a glyph can be drawn at.
-
-    **Why an offset and not a position.** The anchor of a span stays on a whole
-    pixel. An earlier trial quantised the anchor to halves as well and the user
-    rejected it on sight -- their words, "it really breaks with the 'W' being
-    completely fuzzed while the 'h' looks pixel perfect", because the leading
-    glyph of every word then landed on a coin-flip between two phases where the
-    eye is most able to see it. Keeping the anchor whole means the first glyph
-    of every word is drawn exactly where it was before this change and at
-    exactly one phase; only the letters behind it can move by a half.
-
-    The arithmetic that makes this safe is `_RigidSpan`'s, not this function's:
-    the offset is a difference of scaled points within a rigid run, so it is a
-    function of the characters and their kerns and of nothing about where the
-    line broke. Halving the grid therefore halves the placement error without
-    making the same word set at two shapes in two places -- which is what
-    `test_every_instance_of_a_rigid_span_is_drawn_at_the_same_shape` asserts,
-    and what would break if this were ever applied to an absolute position.
-    """
-    return math.floor(value / PEN_QUANTUM_PX + 0.5) * PEN_QUANTUM_PX
 
 
 def baked_size_px(size_px: float, ascent: float, descent: float, em: float) -> float:
@@ -430,8 +395,9 @@ def draw(
         rounding at all -- it works in scaled points and returns exact
         coordinates -- and ImGui would not do sub-pixel placement unasked:
         `ImFont::RenderText` truncates the pen position to a whole pixel unless
-        `ImDrawListFlags_TextNoPixelSnap` is set, which `draw` now sets so that
-        `snap_offset_px` rather than `IM_TRUNC` decides. See `docs/subpixel.md`.
+        `ImDrawListFlags_TextNoPixelSnap` is set, which `draw` sets so that
+        `_RigidSpan.pen` rather than `IM_TRUNC` decides. See `docs/subpixel.md`
+        and `docs/advance-rule.md`.
 
         Rounding still does not belong *here*, for a different reason. This
         converts corners of areas as well as pen positions, and snapping the two
@@ -567,14 +533,41 @@ class _RigidSpan:
     that difference therefore yields the same pixel offsets every time the same
     span is set, which is the entire claim.
 
-    `docs/tex-notes.md` C3 is about the rounding inside that same §625, and it
-    is the same principle one layer down: TeX rounds at glue nodes. Per-glyph
-    rounding rounds at nodes TeX treats as rigid; this does not.
+    **How `pen` relates to TeX's own rounding, which is not "the same principle
+    one layer down".** This docstring used to claim that, and it is worth being
+    exact instead, because the rule below is a deliberate departure.
+
+    TeX does not round a character advance at all: `hlist_out` does
+    `cur_h:=cur_h+char_width(f)(char_info(f)(c))` in scaled points -- `tex.web`
+    line 12375 -- and leaves every pixel decision to the DVI driver, which at
+    1200 dpi and up is a rounding nobody sees. At 96 dpi somebody has to, and
+    that is this module.
+
+    Where TeX *does* quantise a sequence -- set glue, `tex.web` lines 12437-12455
+    -- it uses **error diffusion, not summed increments**. It keeps `cur_glue` as
+    the exact running total, sets `cur_g:=round(glue_temp)` from that total, and
+    spends `width(g) - cur_g_old + cur_g_new`. Each increment is therefore the
+    difference of two *rounded running totals*, so increments are whole units and
+    the cumulative position never drifts.
+
+    Applied to a span, that technique is exactly `anchor + round(offset)` -- the
+    whole-pixel rule this class used to implement. `pen` does the other thing:
+    it sums rounded increments, which is what TeX's structure specifically
+    avoids. The trade is deliberate and the objectives differ. TeX is protecting
+    a *total*, because a line must end on the margin. Inside a rigid span the
+    total is absorbed by the following glue, and what the eye reads is the
+    *rhythm*, so the gap is the quantity worth keeping honest.
+    `docs/advance-rule.md` has the measurements on both sides.
 
     `x`, `y` and `ascent` are the anchor glyph's exact inputs. `left` and `top`
-    are the one snapped screen position in the span, from which every other
-    glyph in it is placed by an integer offset -- so the whole span moves as a
-    unit and nothing inside it can shift by a pixel relative to the rest.
+    are the one snapped screen position in the span, and every other glyph is
+    placed by whole-pixel steps from it -- so the whole span moves as a unit and
+    nothing inside it can shift by a fraction relative to the rest.
+
+    `prev_x` and `prev_pen` carry the running state: the exact x of the glyph
+    placed most recently in this span, and the screen x it was placed at. They
+    are the anchor's own values until the second glyph arrives, so a one-glyph
+    span never consults them.
     """
 
     x: Scaled
@@ -582,8 +575,10 @@ class _RigidSpan:
     ascent: float
     left: float
     top: float
+    prev_x: Scaled
+    prev_pen: float
 
-    def pen(self, cmd: Glyph, ascent: float, px_per_inch: float) -> tuple[float, float]:
+    def pen(self, cmd: Glyph, ascent: float, px_per_inch: float) -> tuple[float, float, _RigidSpan]:
         """
         Where one glyph of this span goes: the anchor plus a snapped offset.
 
@@ -604,21 +599,21 @@ class _RigidSpan:
         difference of the two baked ascents. Taking that difference here keeps
         the two halves of `**bold**text` locked together.
 
-        **The two axes are quantised differently and that is deliberate.** The
-        horizontal takes `PEN_QUANTUM_PX`, because the defect the user reported
+        **The two axes are treated differently and that is deliberate.** The
+        horizontal accumulates rounded gaps, because the defect the user reported
         is horizontal: inter-letter gaps measured 1, 2, 2 px inside "people" and
         1-4 px inside the heading "What the difference looks like", where `iffe`
-        fused into a single 31 px ink run. The vertical keeps whole pixels.
+        fused into a single 31 px ink run. The vertical is snapped absolutely,
+        against the span's own anchor, and never accumulates.
 
-        Nothing was measured that asks for a half-pixel baseline, and something
-        argues against it: `dy` is exactly zero for every glyph of a
-        single-face span, so halving it would change nothing at all in body
-        text and would only ever fire where a span crosses a face -- 20 of
-        `demo/sample.md`'s 876 spans -- or at a math script. There it would put
-        a stem's horizontal edges between two rows of pixels for no gap it
-        closes. Half-pixel horizontally is a trade the user made with output in
-        front of them; half-pixel vertically would be one nobody has seen, so it
-        is not taken.
+        Nothing asks for the horizontal treatment vertically, and something
+        argues against it: `dy` is exactly zero for every glyph of a single-face
+        span, so accumulating it would change nothing at all in body text and
+        would only ever fire where a span crosses a face -- 20 of
+        `demo/sample.md`'s 876 spans -- or at a math script. There it would let a
+        superscript's row drift away from the run it belongs to for no gap it
+        closes, and a vertical gap between letters is not a thing the eye reads
+        as rhythm in the first place.
 
         It is also, today, a choice with no observable consequence: measured
         over `demo/sample.md`, **3486 of 3486** within-span vertical offsets are
@@ -628,10 +623,30 @@ class _RigidSpan:
         `test_a_vertical_offset_inside_a_span_stays_on_a_whole_row` -- and not
         the document. If a vertical case ever turns up, this is the one line to
         change and that test is what will go red.
+
+        **The returned span is the one the caller must carry forward.** Under
+        `"half"` it is this span unchanged; under `"advance"` it carries the
+        running state on. Returning it rather than mutating keeps the class frozen,
+        which matters because the span is the thing whose identity guarantees a
+        word is drawn the same way twice.
         """
-        dx = px_from_sp(cmd.x - self.x, px_per_inch)
         dy = px_from_sp(cmd.y - self.y, px_per_inch) - (ascent - self.ascent)
-        return self.left + snap_offset_px(dx), self.top + snap_px(dy)
+        top = self.top + snap_px(dy)
+
+        # The gap from the previously placed glyph, rounded once, added to where
+        # that glyph actually went. Every gap is therefore a whole number of
+        # pixels and every pen lands on the grid -- the two properties the
+        # superseded half-pixel rule could not hold at the same time.
+        #
+        # Taken in scaled points and converted once, for the reason the paragraph
+        # above gives about `cmd.x - self.x`: the difference is exact and a float
+        # subtraction of two conversions is not.
+        #
+        # The anchor itself takes this path with `cmd.x == self.prev_x`, so the
+        # step is zero and it lands on `left`. No special case.
+        step = px_from_sp(cmd.x - self.prev_x, px_per_inch)
+        pen_x = self.prev_pen + snap_px(step)
+        return pen_x, top, replace(self, prev_x=cmd.x, prev_pen=pen_x)
 
 
 def _glyph(
@@ -678,8 +693,11 @@ def _glyph(
             ascent=baked.ascent,
             left=snap_px(baseline.x),
             top=snap_px(baseline.y - baked.ascent),
+            prev_x=cmd.x,
+            prev_pen=snap_px(baseline.x),
         )
-    position = imgui.ImVec2(*span.pen(cmd, baked.ascent, px_per_inch))
+    pen_x, pen_y, span = span.pen(cmd, baked.ascent, px_per_inch)
+    position = imgui.ImVec2(pen_x, pen_y)
     character = chr(cmd.codepoint)
     if font is None:
         draw_list.add_text(position, palette.ink, character)

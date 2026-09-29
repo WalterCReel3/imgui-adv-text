@@ -45,6 +45,12 @@ DOCS: tuple[Path, ...] = (
     _ROOT / "docs" / "advance-rule.md",
     _ROOT / "docs" / "visual-review.md",
     _ROOT / "docs" / "tex-notes.md",
+    _ROOT / "docs" / "guide" / "README.md",
+    _ROOT / "docs" / "guide" / "idea.md",
+    _ROOT / "docs" / "guide" / "tex.md",
+    _ROOT / "docs" / "guide" / "rendering.md",
+    _ROOT / "docs" / "guide" / "pitfalls.md",
+    _ROOT / "docs" / "guide" / "future.md",
 )
 """
 Every markdown file under version control that gives instructions.
@@ -212,7 +218,11 @@ def test_docs_names_every_markdown_document_in_the_tree_and_no_absent_one() -> N
     absent = [path.name for path in DOCS if not path.is_file()]
     assert not absent, f"documents named in DOCS do not exist: {absent}"
 
-    on_disk = {_ROOT / "README.md", *(_ROOT / "docs").glob("*.md")}
+    # `rglob`, not `glob`. A non-recursive pattern let a document in a
+    # subdirectory escape this check entirely -- it was neither in `DOCS` nor in
+    # `on_disk`, so neither direction of the assertion could see it, and
+    # `docs/guide/` would have been six unchecked files.
+    on_disk = {_ROOT / "README.md", *(_ROOT / "docs").rglob("*.md")}
     unchecked = sorted(path.name for path in on_disk - set(DOCS))
     assert not unchecked, (
         f"markdown in the tree that no test reads: {unchecked}. "

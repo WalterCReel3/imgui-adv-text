@@ -111,6 +111,12 @@ you read in a docstring can be re-derived rather than trusted.
 
 ## Where the reasoning lives
 
+**New here? [`docs/guide/`](docs/guide/README.md)** — five short documents
+covering the idea, which parts of TeX are implemented, the rendering decisions
+and where they depart from TeX and from ImGui, the pitfalls, and the future work.
+They are orientation and route into the documents below, which carry the
+measurements.
+
 - [`docs/status.md`](docs/status.md) — what is true today. Start here.
 - [`docs/decisions.md`](docs/decisions.md) — the interpreter, the fonts, the
   two-backend split, the style rules and the scope boundaries, each with the

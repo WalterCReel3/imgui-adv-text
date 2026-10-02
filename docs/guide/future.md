@@ -103,6 +103,15 @@ it. Only worth doing if performance still matters after item 2.
 
 ---
 
+## A direction rather than a work item
+
+**Porting to a C++ ImGui extension.** `docs/cpp-extension.md` is the design note.
+The short version: the argument that survives scrutiny is not performance but a
+capability — ImGui 1.92's pluggable font loader is reachable from C++ and not from
+the Python binding, and implementing one would delete the synthetic-codepoint
+machinery in `fontlib.py` entirely and open the seam where FreeType hinting
+attaches. Nothing is decided and nothing is implemented.
+
 ## Open questions, not work items
 
 - **The softness anomaly.** ImGui's own text measures solid 8.1% where our

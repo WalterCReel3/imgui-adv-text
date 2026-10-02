@@ -45,6 +45,7 @@ DOCS: tuple[Path, ...] = (
     _ROOT / "docs" / "advance-rule.md",
     _ROOT / "docs" / "visual-review.md",
     _ROOT / "docs" / "tex-notes.md",
+    _ROOT / "docs" / "cpp-extension.md",
     _ROOT / "docs" / "guide" / "README.md",
     _ROOT / "docs" / "guide" / "idea.md",
     _ROOT / "docs" / "guide" / "tex.md",

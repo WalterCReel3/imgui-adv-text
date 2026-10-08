@@ -350,14 +350,25 @@ def test_invalidating_a_view_keeps_the_block_cache_it_can_still_use(bundled_font
     )
     first = view.layout_for(MEASURE)
     filled = view._blocks.stats()
+    shipped = view._units.stats()
     view.invalidate()
     second = view.layout_for(MEASURE)
     assert second is not first
     assert second.cmds == first.cmds
-    # Nothing was re-broken: one hit per block looked up, and not one new miss.
+    # Nothing was re-broken, and not one new miss.
+    #
+    # This used to read "one *hit* per block looked up" on `_blocks`. Since
+    # `advtext.ui.units` the shipped unit is found first and the block cache
+    # underneath is not consulted for it at all, so the block cache records
+    # neither a hit nor a miss and the hits are the unit cache's -- one per
+    # unit, which is one per run of blocks rather than one per block. What the
+    # test defends is unchanged: recovering from `invalidate` re-breaks nothing.
     after = view._blocks.stats()
     assert after.misses == filled.misses
-    assert after.hits == filled.hits + len(view.document.blocks)
+    assert after.hits == filled.hits
+    units = view._units.stats()
+    assert units.misses == shipped.misses
+    assert units.hits == shipped.hits + len(second.placed)
 
 
 # -- through a real ImGui frame ------------------------------------------
@@ -809,9 +820,15 @@ def _page_frame(
     *,
     mouse: tuple[float, float] | None = None,
     button: bool | None = None,
+    nudge: tuple[float, float] | None = None,
+    skip_draw: bool = False,
 ) -> Any:
     """
     One frame of `DocumentView.draw` inside a child window, with no display.
+
+    `nudge` moves the cursor by that many pixels before the view is drawn, as
+    a host laying out by hand might; `skip_draw` is a frame on which the
+    view's tab is elsewhere.
 
     The same idiom as `test_a_culled_command_list_draws_every_glyph_it_still_contains`
     and for the same reason: a window needs a display and a frame does not. What
@@ -847,7 +864,13 @@ def _page_frame(
         imgui.begin("##advtext-page-test")
         imgui.begin_child("##advtext-page-child")
         cursor = imgui.get_cursor_screen_pos()
-        view.draw(fonts=lambda face: None)
+        # Read before the nudge and passed on, so that a nudge moves the
+        # cursor and does not also change the width the page is worked out in.
+        available = imgui.get_content_region_avail().x
+        if nudge is not None:
+            imgui.set_cursor_screen_pos(imgui.ImVec2(cursor.x + nudge[0], cursor.y + nudge[1]))
+        if not skip_draw:
+            view.draw(fonts=lambda face: None, width_px=available)
         imgui.end_child()
         imgui.end()
     finally:
@@ -938,3 +961,180 @@ def test_a_click_at_the_text_blocks_corner_selects_the_first_word_not_a_later_on
     assert selected.startswith("Alpha bravo"), selected
     # Released, so no later test inherits a held button.
     assert not view._dragging
+
+
+# -- two page views, and what a copy holds (2026-10-07) -----------------------
+
+
+def _pages_frame(
+    *views: DocumentView,
+    mouse: tuple[float, float] | None = None,
+    button: bool | None = None,
+    ctrl_c: bool | None = None,
+) -> None:
+    """
+    `_page_frame` for several views in one window, with Ctrl+C.
+
+    Each view gets a child of its own height so that both are on screen; they
+    are still items of one window's ID stack, which is the case under test.
+    """
+    imgui = pytest.importorskip("imgui_bundle").imgui
+
+    if imgui.get_current_context() is None:
+        imgui.create_context()
+    io = imgui.get_io()
+    io.display_size = imgui.ImVec2(1200.0, 800.0)
+    io.delta_time = 1.0 / 60.0
+    io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+    if mouse is not None:
+        io.add_mouse_pos_event(*mouse)
+    if button is not None:
+        io.add_mouse_button_event(0, button)
+    if ctrl_c is not None:
+        io.add_key_event(imgui.Key.mod_ctrl, ctrl_c)
+        io.add_key_event(imgui.Key.c, ctrl_c)
+
+    imgui.new_frame()
+    try:
+        imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
+        imgui.set_next_window_size(imgui.ImVec2(1200.0, 800.0))
+        imgui.begin("##advtext-pages-test", None, imgui.WindowFlags_.no_move.value)
+        imgui.begin_child("##advtext-pages-child")
+        for view in views:
+            view.draw(fonts=lambda face: None)
+        imgui.end_child()
+        imgui.end()
+    finally:
+        imgui.render()
+
+
+def _page_of(source: str) -> DocumentView:
+    theme = Theme.build()
+    return DocumentView(
+        document=build_document(source, theme, fontlib_metrics),
+        theme=theme,
+        measure=char_measure(fontlib_metrics),
+    )
+
+
+def test_two_page_views_in_one_window_are_two_items(bundled_fonts: Any) -> None:
+    """
+    A press on the second page selects in the second page.
+
+    Both used the fixed label `##advtext-document`, so in one window they were
+    one ImGui ID twice, and the plan's reviewer predicted the press would go to
+    whichever was submitted first. **That did not reproduce**: this test passes
+    against the fixed label too (run on 2026-10-07), because the view asks
+    `is_item_hovered`, which ImGui answers from each item's own rectangle. So
+    this pins the behaviour and is not evidence of a defect that was fixed.
+    Each view labels its button with itself now all the same -- two visible
+    items under one ID is something ImGui itself reports as a programmer error
+    -- and `tests/test_bare_view.py` has the equivalent for the bare view.
+    """
+    first = _page_of("First page words here.\n")
+    second = _page_of("Second page other text.\n")
+    _pages_frame(first, second, mouse=(1190.0, 790.0), button=False)
+    _pages_frame(first, second, mouse=(1190.0, 790.0))
+    assert first.origin is not None and second.origin is not None
+    assert second.origin[1] > first.origin[1]
+
+    start = (second.origin[0] + 2.0, second.origin[1] + 6.0)
+    _pages_frame(first, second, mouse=start)
+    _pages_frame(first, second, mouse=start, button=True)
+    assert second._dragging and not first._dragging
+    _pages_frame(first, second, mouse=(start[0] + 90.0, start[1]))
+    _pages_frame(first, second, mouse=(start[0] + 90.0, start[1]), button=False)
+    assert second.selected_text().startswith("Second")
+    assert first.selection.is_empty
+
+
+def test_the_page_view_copies_a_code_block_with_its_lines_and_only_from_the_owner(
+    bundled_fonts: Any,
+) -> None:
+    """
+    The two copy defects of `docs/adoption-plan.md` phase 6, through the page view.
+
+    `DocumentView` runs `BareView`'s `_handle_copy`, so the fixes are one fix;
+    this is the check that the page view really is on the shared code.
+    """
+    imgui = pytest.importorskip("imgui_bundle").imgui
+    code = _page_of("```\nline one\nline two\n\nline four\n```\n")
+    prose = _page_of("Some prose in the other view.\n")
+    _pages_frame(code, prose, mouse=(1190.0, 790.0), button=False)
+    _pages_frame(code, prose)
+    prose.select_all()
+    code.select_all()
+
+    imgui.set_clipboard_text("SENTINEL")
+    _pages_frame(code, prose, ctrl_c=True)
+    _pages_frame(code, prose, ctrl_c=False)
+    assert imgui.get_clipboard_text() == "line one\nline two\n\nline four"
+    # The other view gave up its selection when this one took its turn.
+    assert prose.selection.is_empty and code.owns_selection
+
+
+# -- review 4: what the page view shares with the bare one (2026-10-07) --------
+
+
+def test_a_fractional_cursor_gives_the_page_the_origin_a_whole_one_does(
+    bundled_fonts: Any,
+) -> None:
+    """
+    The page view snaps the cursor it is handed, and nothing else about its origin.
+
+    `BareView._cursor_origin` has why a fractional origin matters. For the
+    page the snap is of **the cursor**: the text block's corner is the cursor
+    plus the page's offset, margin and head, which are not whole pixels and
+    are left as they are, so that the demo's glyphs are where they were. So
+    a cursor nudged by a fraction gives exactly the origin of the whole
+    cursor it rounds to, and an un-nudged frame gives the origin it gave
+    before any of this existed: the cursor plus the page geometry.
+    """
+    view = _page_of(HIT_SOURCE)
+    cursor = _page_frame(view)
+    cursor = _page_frame(view)
+    page = view.page(sp_from_px(1184.0))
+    plain = view.origin
+    assert plain is not None
+    assert plain == pytest.approx(
+        (cursor.x + px_from_sp(page.text_offset), cursor.y + px_from_sp(page.head)), abs=1e-3
+    )
+    assert plain[1] != float(int(plain[1])), "fixture: the head is not a whole number of pixels"
+
+    for nudge, whole in (
+        ((0.25, 0.25), (0.0, 0.0)),
+        ((0.3, -0.4), (0.0, 0.0)),
+        ((0.5, 0.75), (1.0, 1.0)),
+        ((-0.6, 1.2), (-1.0, 1.0)),
+    ):
+        _page_frame(view, nudge=nudge)
+        assert view.origin == pytest.approx((plain[0] + whole[0], plain[1] + whole[1]), abs=1e-3)
+    _page_frame(view)
+    assert view.origin == pytest.approx(plain, abs=1e-3)
+
+
+def test_the_page_view_does_not_resume_a_drag_across_a_frame_it_was_not_drawn(
+    bundled_fonts: Any,
+) -> None:
+    # Review 4, item 3, for the view the demo uses: the same `_begin_frame`.
+    # Release and a new press elsewhere, both while the page is not drawn; it
+    # comes back with the button down and must not take that for its drag.
+    view = _page_of(HIT_SOURCE)
+    cursor = _page_frame(view)
+    page = view.page(sp_from_px(1184.0))
+    left = cursor.x + px_from_sp(page.text_offset)
+    top = cursor.y + px_from_sp(page.head)
+    _page_frame(view, mouse=(left + 2.0, top + 6.0))
+    _page_frame(view, mouse=(left + 2.0, top + 6.0), button=True)
+    _page_frame(view, mouse=(left + 60.0, top + 6.0))
+    _page_frame(view, mouse=(left + 60.0, top + 6.0))
+    held = view.selection
+    assert view._dragging and view.selected_text().startswith("Alpha")
+
+    _page_frame(view, button=False, skip_draw=True)
+    _page_frame(view, mouse=(5.0, 5.0), button=True, skip_draw=True)
+    _page_frame(view, mouse=(left + 300.0, top + 50.0))
+    assert not view._dragging
+    _page_frame(view, mouse=(left + 300.0, top + 50.0))
+    assert view.selection == held
+    _page_frame(view, button=False)

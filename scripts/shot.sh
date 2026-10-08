@@ -53,7 +53,13 @@ set -eu
 OUT="${1:-artifacts}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="${PY:-$ROOT/.venv/bin/python}"
-[ -x "$PY" ] || PY=/home/wreel/Source/pptmstr/.venv/bin/python
+# No fallback to another project's interpreter: this used to borrow pptmstr's
+# venv, and the Makefile header says why that is gone. A relative path (the
+# Makefile passes `.venv/bin/python`) is anchored at the repository because the
+# namespace below does not run from the caller's directory.
+case "$PY" in /*) ;; */*) PY="$ROOT/$PY" ;; esac
+command -v "$PY" >/dev/null || {
+  echo "No interpreter at $PY. Run 'make bootstrap' to build ./.venv."; exit 2; }
 
 command -v Xvfb >/dev/null || { echo "Xvfb is not installed (apt install xvfb)"; exit 2; }
 command -v xwd  >/dev/null || { echo "xwd is not installed (apt install x11-apps)"; exit 2; }
@@ -81,8 +87,18 @@ export XDG_CACHE_HOME=/tmp/cache
 
 cd "$ROOT"
 STATUS=0
-for TAB in document formula blocks; do
-    "$PY" scripts/run_demo.py --tab "$TAB" >"/tmp/demo-$TAB.log" 2>&1 &
+# The list comes from the app, as `make shot-all` gets it: this loop used to name
+# three tabs (document formula blocks) and stayed at three while the app grew
+# to five tabs and then to a sidebar of discovered pages. `--list` prints one
+# request per line (columns:3, document:debug) and exits non-zero, printing
+# nothing, if a page module cannot be loaded -- in which case nothing is shot.
+TABS=$("$PY" scripts/shot.py --list) || {
+    echo "scripts/shot.py --list failed; nothing was photographed"; exit 1; }
+[ -n "$TABS" ] || { echo "scripts/shot.py --list named no page"; exit 1; }
+for SPEC in $TABS; do
+    # `:` and `,` flattened to `-` for the filename, as the Makefile does.
+    TAB=$(printf "%s" "$SPEC" | tr ":," "--")
+    "$PY" scripts/run_demo.py --tab "$SPEC" >"/tmp/demo-$TAB.log" 2>&1 &
     DEMO=$!
     # Long enough for the atlas to bake and the document to compose. Composition
     # is tens of milliseconds; baking Latin Modern Math is the slow part.

@@ -19,20 +19,46 @@ produces unpacked material and the tests assert its shape, never its geometry.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import pytest
 
 from advtext.fontmetrics import Face, FontMetrics, GlyphBBox
+from advtext.linebreak import LineBreakParams, ParShape, break_paragraph
 from advtext.markdown import (
+    PARFILLSKIP,
+    REPLACEMENT_CHARACTER,
+    BlockSource,
     CodeBlock,
     ColumnAlign,
     Document,
     RuleBlock,
+    SourceSpan,
     TableBlock,
     TextBlock,
+    _convert,
+    _leading_fence,
+    _line_starts,
+    _opens,
+    _resume_point,
+    _tokens,
     build_document,
+    code_block,
+    replaced_characters,
+    text_block,
 )
-from advtext.nodes import CharNode, FontKey, Glue, Kern, KernKind, Node, Penalty
+from advtext.nodes import (
+    EJECT_PENALTY,
+    INF_PENALTY,
+    CharNode,
+    FontKey,
+    Glue,
+    Kern,
+    KernKind,
+    Node,
+    Penalty,
+)
 from advtext.style import (
     Align,
     BlockKind,
@@ -45,6 +71,7 @@ from advtext.style import (
     parse_font_key,
     space_factor_after,
 )
+from tests.conftest import Window
 
 # Chosen so every expected number below can be done in the head: a glyph is 10
 # wide, a space is 8, and the only kerned pair is "To".
@@ -162,12 +189,31 @@ def test_the_litmus_documents_block_kinds_each_produce_their_own_block(theme: Th
     assert any(isinstance(b, TableBlock) for b in blocks)
 
 
-def test_a_heading_deeper_than_level_three_is_set_as_level_three(theme: Theme) -> None:
-    # Dropping it would make a level-five heading render as body text, which
-    # reads as a parser failure rather than as a decision.
-    block = convert("##### Deep\n", theme).blocks[0]
-    assert isinstance(block, TextBlock)
-    assert block.kind is BlockKind.HEADING_3
+def test_every_heading_level_is_its_own_kind(theme: Theme) -> None:
+    """
+    Six levels in, six kinds out, each set in its own style.
+
+    This test used to be `test_a_heading_deeper_than_level_three_is_set_as_level_
+    three` and asserted that `#####` came out as `HEADING_3`. That was the
+    behaviour and it is the behaviour that was asked to change: levels four to
+    six collapsed into one, so a section and its sub-sub-section were set alike.
+    What the old test was guarding against still holds and is the last line --
+    no level falls through to body text.
+    """
+    source = "".join(f"{'#' * level} Level {level}\n\n" for level in range(1, 7))
+    blocks = convert(source, theme).blocks
+    assert [block.kind for block in blocks if isinstance(block, TextBlock)] == [
+        BlockKind.HEADING_1,
+        BlockKind.HEADING_2,
+        BlockKind.HEADING_3,
+        BlockKind.HEADING_4,
+        BlockKind.HEADING_5,
+        BlockKind.HEADING_6,
+    ]
+    styles = [block.style for block in blocks]
+    assert all(one != other for index, one in enumerate(styles) for other in styles[index + 1 :])
+    assert all(block.style == theme.style(block.kind) for block in blocks)  # type: ignore[union-attr]
+    assert BlockKind.PARAGRAPH not in {block.kind for block in blocks}  # type: ignore[union-attr]
 
 
 def test_a_text_block_leaves_section_816s_terminator_to_the_line_breaker(
@@ -393,6 +439,41 @@ def test_an_ordered_list_numbers_its_items_in_order(theme: Theme) -> None:
     assert markers == ["1.", "2.", "3."]
 
 
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # The last item is empty: it emits no block to take its bullet.
+        ("- a\n-\n\npara\n\nend\n", ["•", "", ""]),
+        # The only item starts with a fence, and a code block has no marker.
+        ("1. ```\n   code\n   ```\n\npara\n\nend\n", ["", ""]),
+        # The same, with the item not the last of its list.
+        ("-\n- b\n\npara\n", ["•", ""]),
+        # The control: an item whose paragraph does take the marker.
+        ("- a\n- b\n\npara\n", ["•", "•", ""]),
+    ],
+)
+def test_a_marker_no_block_took_does_not_land_on_the_paragraph_after_the_list(
+    source: str, expected: list[str], theme: Theme
+) -> None:
+    """
+    Review 3, item 1, measured before the fix: the paragraph after the list was a bullet.
+
+    A list item's marker waits for the item's first text block. An item with no
+    text block -- empty, or holding only a fence -- left it waiting, and the
+    next paragraph in the document took it, however far outside the list. The
+    first two sources gave markers of `["•", "•", ""]` and `["2.", ""]`
+    (`.concerns/review3-snippets/s1.py.txt`); a stream, which parses that
+    paragraph from its own first line, never did, so the two disagreed and it
+    was the whole parse that was wrong.
+
+    The third source is the case the fix must not overdo: an empty item's
+    marker is dropped at the item's end, not handed to the next item, which has
+    its own.
+    """
+    blocks = convert(source, theme).blocks
+    assert [text_of(b.marker) for b in blocks if isinstance(b, TextBlock)] == expected
+
+
 def test_a_nested_list_indents_one_step_further_than_its_parent(theme: Theme) -> None:
     blocks = convert("- outer\n  - inner\n", theme).blocks
     outer, inner = blocks[0], blocks[1]
@@ -559,3 +640,1504 @@ def test_char_measure_memoises_because_every_pass_measures_every_glyph() -> None
     measure = char_measure(fake_resolve)
     node = CharNode(font_key(Face.PROSE, 100), ord("x"))
     assert measure(node) is measure(node)
+
+
+# ----------------------------------------------------------------------
+# A space before a hard break
+#
+# `.concerns/A1-blocks--lead--unskip-before-hardbreak.md`. The reviewer predicted
+# it by reading, the lead measured it on boxes, and `_unskip` is the fix. The
+# tests below are on the material first and then through the real breaker, and
+# the second one rebuilds the old material so it can show the defect it guards
+# against rather than only its absence.
+
+
+BACKSLASH_BREAK = "aaa bbb \\\nccc\n"
+"""
+Two words, a space, a backslash, a newline, a word: the source that leaves a space.
+"""
+
+
+def test_a_space_before_a_backslash_break_leaves_no_glue_in_front_of_it(theme: Theme) -> None:
+    """
+    The three spellings of "break here" build the same material.
+
+    With the space, without it, and as two trailing spaces. Only the first ever
+    differed: markdown-it keeps the space before a backslash break in the text
+    token and strips the two-space form's.
+    """
+    spaced = convert(BACKSLASH_BREAK, theme).blocks[0]
+    assert isinstance(spaced, TextBlock)
+    assert spaced == convert("aaa bbb\\\nccc\n", theme).blocks[0]
+    assert spaced == convert("aaa bbb  \nccc\n", theme).blocks[0]
+
+    forced = next(i for i, node in enumerate(spaced.material) if isinstance(node, Penalty))
+    assert isinstance(spaced.material[forced - 1], CharNode)
+    assert sum(isinstance(node, Glue) for node in spaced.material) == 2, "one interword, one fil"
+
+
+def test_a_code_span_ending_in_a_space_before_a_break_loses_the_space_and_its_guard(
+    theme: Theme,
+) -> None:
+    """
+    Inside a code span the space is `INF_PENALTY, Glue`, and both go.
+
+    The penalty guarded a space that is no longer there; leaving it would be
+    harmless and would also be a node that means nothing.
+    """
+    block = convert("aaa `bbb `\\\nccc\n", theme).blocks[0]
+    assert isinstance(block, TextBlock)
+    penalties = [node.value for node in block.material if isinstance(node, Penalty)]
+    assert penalties == [INF_PENALTY, EJECT_PENALTY]
+    assert text_of(block.material) == "aaabbbccc"
+
+
+def test_a_link_that_ended_on_the_dropped_space_ends_on_its_last_character(theme: Theme) -> None:
+    """
+    Link spans index the material, so removing a node has to move them.
+
+    `[bbb ](x)` closes its link *after* the trailing space, so the span's end was
+    one past the glue. Left alone it would point at the first of the three break
+    nodes appended next, and a backend underlining the link would underline the
+    line's fill.
+    """
+    block = convert("aaa [bbb ](x)\\\nccc\n", theme).blocks[0]
+    assert isinstance(block, TextBlock)
+    (link,) = block.links
+    assert link.target == "x"
+    assert text_of(block.material[link.start : link.end]) == "bbb"
+    assert isinstance(block.material[link.end - 1], CharNode)
+    assert isinstance(block.material[link.end], Penalty)
+
+    spanning = convert("aaa [bbb \\\nccc](x)\n", theme).blocks[0]
+    assert isinstance(spanning, TextBlock)
+    (across,) = spanning.links
+    assert text_of(spanning.material[across.start : across.end]) == "bbbccc"
+
+
+def _line_texts(material: tuple[Node, ...], width: int, params: Any) -> list[str]:
+    """
+    The text on each line `break_paragraph` makes of some material at a width.
+    """
+    paragraph = break_paragraph(
+        material, ParShape.uniform(width), params, measure=char_measure(fake_resolve)
+    )
+    return [text_of(box.contents) for box in paragraph.boxes]
+
+
+def test_a_space_before_a_hard_break_no_longer_sets_an_empty_line(theme: Theme) -> None:
+    """
+    End to end through the real breaker, with the old material as the control.
+
+    The material as it used to be is rebuilt by putting the interword glue back
+    in front of the forced break. Under each of four parameter sets -- the
+    project's prose breaking, plain TeX's, ragged right, and ragged first-fit --
+    that material sets an empty middle line at some measure between 40 and 120,
+    which is the defect; the windows are printed in the assertion so a reader
+    can see how wide each was. The material as it is now sets no empty line at
+    any of those measures under any of them.
+
+    Units are the fake metrics' own: a glyph is 10 and a space is 8, so
+    `aaa bbb` is 68 wide and the space after it is the 8 that did not fit.
+    """
+    from dataclasses import replace
+
+    from advtext.ui import PROSE_BREAKING, RAGGED_RIGHT
+
+    now = convert(BACKSLASH_BREAK, theme).blocks[0]
+    assert isinstance(now, TextBlock)
+    forced = next(i for i, node in enumerate(now.material) if isinstance(node, Penalty))
+    space = next(node for node in now.material if isinstance(node, Glue))
+    before = (*now.material[:forced], space, *now.material[forced:])
+
+    widths = range(40, 121)
+    for name, params in {
+        "prose": PROSE_BREAKING,
+        "plain": LineBreakParams(),
+        "ragged": replace(PROSE_BREAKING, right_skip=RAGGED_RIGHT),
+        "first-fit": replace(PROSE_BREAKING, right_skip=RAGGED_RIGHT, first_fit=True),
+    }.items():
+        was_blank = [w for w in widths if "" in _line_texts(before, w, params)]
+        assert 68 in was_blank, f"{name}: the old material no longer shows the defect"
+        assert all(_line_texts(before, w, params) == ["aaabbb", "", "ccc"] for w in was_blank)
+
+        is_blank = [w for w in widths if "" in _line_texts(now.material, w, params)]
+        assert not is_blank, f"{name}: empty line at measures {is_blank} (was {was_blank})"
+        assert _line_texts(now.material, 68, params) == ["aaabbb", "ccc"], name
+
+
+# ----------------------------------------------------------------------
+# Blocks without markdown: `text_block` and `code_block`
+#
+# The claim under test is "the same block the converter would have made", so
+# almost every assertion here is an equality with `build_document` on a source
+# where the two should agree. Blocks are frozen dataclasses of frozen nodes, so
+# `==` compares every node, every kern, every glue and every style field; a
+# constructor that had grown its own copy of `_append_text` would have to
+# reproduce all of it to pass.
+
+
+PLAIN = "To the end. Next sentence, with a To in it."
+"""
+Chosen to cross the three things `_append_text` does beyond emitting characters:
+the kerned pair, a sentence end (the space factor), and ordinary interword glue.
+"""
+
+
+def test_plain_text_becomes_the_block_the_converter_makes_for_the_same_paragraph(
+    theme: Theme,
+) -> None:
+    built = convert(PLAIN + "\n", theme).blocks[0]
+    assert text_block(PLAIN, theme, fake_resolve) == built
+    assert any(isinstance(node, Kern) for node in built.material)  # type: ignore[union-attr]
+    assert len({node.spec for node in built.material if isinstance(node, Glue)}) > 1  # type: ignore[union-attr]
+
+
+def test_markdown_syntax_in_plain_text_is_set_and_not_read(theme: Theme) -> None:
+    """
+    The reason the constructor exists: an asterisk is an asterisk.
+
+    The same string through `build_document` is the control. It comes out with
+    three faces and without its punctuation; through `text_block` every
+    character survives and all of it is in the one face.
+    """
+    hostile = "**not bold**, `not code`, [not a link](x) and __init__"
+
+    parsed = convert(hostile + "\n", theme).blocks[0]
+    assert isinstance(parsed, TextBlock)
+    assert len(set(faces(parsed.material))) == 3 and parsed.links
+
+    block = text_block(hostile, theme, fake_resolve)
+    assert text_of(block.material) == hostile.replace(" ", "")
+    assert set(faces(block.material)) == {Face.PROSE}
+    assert block.links == ()
+
+
+def test_surrounding_whitespace_is_not_material(theme: Theme) -> None:
+    assert text_block(f"  \n{PLAIN}\n\n ", theme, fake_resolve) == text_block(
+        PLAIN, theme, fake_resolve
+    )
+
+
+def test_a_kind_and_an_emphasis_choose_the_style_and_the_face(theme: Theme) -> None:
+    """
+    A heading is a `kind`, and bold is an `emphasis`, exactly as in the converter.
+    """
+    assert (
+        text_block("A Title", theme, fake_resolve, kind=BlockKind.HEADING_2)
+        == convert("## A Title\n", theme).blocks[0]
+    )
+    assert (
+        text_block("all of it", theme, fake_resolve, emphasis=Emphasis(bold=True))
+        == convert("**all of it**\n", theme).blocks[0]
+    )
+    assert (
+        text_block(
+            "both",
+            theme,
+            fake_resolve,
+            kind=BlockKind.HEADING_3,
+            emphasis=Emphasis(italic=True),
+        )
+        == convert("### *both*\n", theme).blocks[0]
+    )
+
+
+def test_a_marker_and_an_indent_make_the_block_a_list_item(theme: Theme) -> None:
+    """
+    Both list kinds, and a nested one, equal to the converter's.
+
+    Nothing is inferred from `kind`, so the marker text and the indent are the
+    caller's to give; the control at the end is the same kind with neither.
+    """
+    bullet = convert("- an item\n", theme).blocks[0]
+    assert (
+        text_block(
+            "an item",
+            theme,
+            fake_resolve,
+            kind=BlockKind.BULLET_ITEM,
+            marker="•",
+            indent=theme.list_indent,
+        )
+        == bullet
+    )
+
+    third = convert("3. an item\n", theme).blocks[0]
+    assert (
+        text_block(
+            "an item",
+            theme,
+            fake_resolve,
+            kind=BlockKind.ORDERED_ITEM,
+            marker="3.",
+            indent=theme.list_indent,
+        )
+        == third
+    )
+
+    nested = convert("- outer\n  - inner\n", theme).blocks[1]
+    assert (
+        text_block(
+            "inner",
+            theme,
+            fake_resolve,
+            kind=BlockKind.BULLET_ITEM,
+            marker="•",
+            indent=2 * theme.list_indent,
+        )
+        == nested
+    )
+
+    bare = text_block("an item", theme, fake_resolve, kind=BlockKind.BULLET_ITEM)
+    assert bare.marker == () and bare.left_indent == 0
+    assert bare != bullet
+
+
+def test_a_quote_is_a_kind_an_indent_and_a_depth(theme: Theme) -> None:
+    assert (
+        text_block(
+            "quoted words",
+            theme,
+            fake_resolve,
+            kind=BlockKind.QUOTE,
+            indent=theme.quote_indent,
+            quote_depth=1,
+        )
+        == convert("> quoted words\n", theme).blocks[0]
+    )
+
+
+def test_newlines_are_spaces_unless_hard_breaks_are_asked_for(theme: Theme) -> None:
+    """
+    Both newline rules, each equal to the markdown that means the same thing.
+
+    Default: a newline is a space, which is CommonMark's soft break. With
+    `hard_breaks`: a newline is the three nodes of a markdown hard break -- two
+    trailing spaces before the newline, in the source on the right.
+    """
+    two_lines = "first line\nsecond line"
+
+    soft = text_block(two_lines, theme, fake_resolve)
+    assert soft == convert(two_lines + "\n", theme).blocks[0]
+    assert not any(isinstance(node, Penalty) for node in soft.material)
+
+    hard = text_block(two_lines, theme, fake_resolve, hard_breaks=True)
+    assert hard == convert("first line  \nsecond line\n", theme).blocks[0]
+    assert [node.value for node in hard.material if isinstance(node, Penalty)] == [
+        INF_PENALTY,
+        EJECT_PENALTY,
+    ]
+    assert hard == text_block("\n" + two_lines + "\n\n", theme, fake_resolve, hard_breaks=True)
+
+
+def test_a_blank_line_under_hard_breaks_is_two_breaks_and_still_one_block(theme: Theme) -> None:
+    """
+    `text_block` returns one block whatever the text holds.
+
+    A blank line is not a paragraph boundary here -- the function cannot return
+    two blocks -- so it is two forced breaks in a row, which sets an empty line.
+    """
+    block = text_block("above\n\nbelow", theme, fake_resolve, hard_breaks=True)
+    assert isinstance(block, TextBlock)
+    ejects = [
+        node for node in block.material if isinstance(node, Penalty) and node.value == EJECT_PENALTY
+    ]
+    assert len(ejects) == 2
+    assert text_of(block.material) == "abovebelow"
+
+
+@pytest.mark.parametrize("kind", [BlockKind.CODE, BlockKind.RULE, BlockKind.TABLE])
+def test_a_kind_that_is_not_text_is_refused_by_name(kind: BlockKind) -> None:
+    """
+    `text_block(kind=CODE)` would return prose in the code style, silently.
+    """
+    with pytest.raises(ValueError, match=kind.name):
+        text_block("anything", Theme.build(), fake_resolve, kind=kind)
+
+
+def test_source_text_becomes_the_block_a_fence_makes(theme: Theme) -> None:
+    """
+    `code_block` against a fenced block: tabs, blank lines, trailing newlines, language.
+    """
+    source = "def f():\n\treturn  1\n\n# after a blank\n\n\n"
+    fenced = convert(f"```python\n{source}```\n", theme).blocks[0]
+    assert isinstance(fenced, CodeBlock)
+
+    block = code_block(source, theme, fake_resolve, language="python")
+    assert block == fenced
+    assert len(block.lines) == 4 and block.lines[2] == ()
+    assert text_of(block.lines[1]) == "    return  1", "a tab is four columns and spaces are kept"
+    assert block.language == "python"
+
+
+def test_a_code_block_s_indent_is_added_to_the_style_s_own(theme: Theme) -> None:
+    """
+    Equal to a fence inside a list item, whose indent the converter adds the same way.
+    """
+    inside = convert("- item\n\n  ```\n  x = 1\n  ```\n", theme).blocks[1]
+    assert isinstance(inside, CodeBlock)
+    block = code_block("x = 1\n", theme, fake_resolve, indent=theme.list_indent)
+    assert block == inside
+    assert block.left_indent == theme.list_indent + theme.style(BlockKind.CODE).left_indent
+
+
+def test_constructed_blocks_and_all_six_headings_compose_and_ship(theme: Theme) -> None:
+    """
+    The new kinds and the new constructors reach the far end of the pipeline.
+
+    `advtext.ui.compose` does not branch on `BlockKind` -- checked by reading it
+    -- so three new kinds should need nothing from it, and this is the run that
+    says so: a document of all six headings from markdown, followed by blocks
+    that never were markdown, composed and shipped. Every character comes out
+    as a glyph -- the code block's spaces among them, which are characters and
+    not glue -- and the hard-broken text with a blank line in it sets three
+    lines, the middle one empty.
+    """
+    from advtext.shipout import Glyph, Line, Point, ship
+    from advtext.ui import compose
+
+    measure = char_measure(fake_resolve)
+    headings = convert("".join(f"{'#' * n} H{n}\n\n" for n in range(1, 7)), theme).blocks
+    broken = text_block("above\n\nbelow", theme, fake_resolve, hard_breaks=True)
+    blocks = (
+        *headings,
+        text_block("**plain** words", theme, fake_resolve),
+        broken,
+        code_block("a = 1\nb = 2\n", theme, fake_resolve),
+    )
+
+    box = compose(Document(blocks=blocks), theme, 400 * 65536, measure)
+    commands = tuple(ship(box, Point(0, box.height), measure=measure))
+
+    drawn = "".join(chr(cmd.codepoint) for cmd in commands if isinstance(cmd, Glyph))
+    assert drawn == "H1H2H3H4H5H6**plain**wordsabovebelowa = 1b = 2"
+
+    alone = compose(Document(blocks=(broken,)), theme, 400 * 65536, measure)
+    lines = [
+        cmd for cmd in ship(alone, Point(0, alone.height), measure=measure) if isinstance(cmd, Line)
+    ]
+    assert len(lines) == 3
+
+
+# -- the block-to-source map ----------------------------------------------
+#
+# `Document.sources` says where each block came from, so that a host can hand
+# back the markdown of whatever the user is pointing at. Every expectation here
+# is the literal text a person would expect to get, cut from the source by the
+# span, rather than a pair of line numbers: a span that is off by a line still
+# has plausible numbers and never has the right text.
+
+MAPPED = (
+    "# Title\n"
+    "\n"
+    "para one\n"
+    "line two\n"
+    "\n"
+    "- a\n"
+    "- b\n"
+    "  more\n"
+    "\n"
+    "  second para in b\n"
+    "\n"
+    "> q1\n"
+    ">\n"
+    "> q2\n"
+    "\n"
+    "```py\n"
+    "code\n"
+    "```\n"
+    "\n"
+    "---\n"
+    "\n"
+    "| a | b |\n"
+    "|---|---|\n"
+    "| 1 | 2 |\n"
+    "\n"
+    "1. x\n"
+    "\n"
+    "   ```\n"
+    "   f\n"
+    "   ```\n"
+)
+
+
+def test_every_block_records_the_source_lines_it_came_from(theme: Theme) -> None:
+    document = build_document(MAPPED, theme, fake_resolve)
+    assert len(document.sources) == len(document.blocks)
+    own = [source.span.of(MAPPED) for source in document.sources]
+    assert own == [
+        "# Title\n",
+        "para one\nline two\n",
+        "- a\n",
+        "- b\n  more\n",
+        "  second para in b\n",
+        "> q1\n",
+        "> q2\n",
+        "```py\ncode\n```\n",
+        "---\n",
+        "| a | b |\n|---|---|\n| 1 | 2 |\n",
+        "1. x\n",
+        "   ```\n   f\n   ```\n",
+    ]
+    # The kinds line up with the text, so a span is not merely *a* block's.
+    kinds = [type(block).__name__ for block in document.blocks]
+    assert kinds[7:10] == ["CodeBlock", "RuleBlock", "TableBlock"]
+    assert kinds[-1] == "CodeBlock"
+
+
+def test_a_setext_headings_own_span_includes_its_underline(theme: Theme) -> None:
+    """
+    Review 3, item 6, measured before the fix: the span was `'Title\\n'`.
+
+    The text of a heading is an `inline` token whose line range is the text's
+    lines; for a setext heading the underline is a line more, and only the
+    `heading_open` token's range has it. A host copying the block as markdown
+    from the short span got a paragraph. `top` was right all along, which is
+    the control here and why no streaming commit was ever wrong because of it.
+
+    The other cases pin what must not change: an ATX heading is its one line, a
+    two-line setext heading keeps both text lines, and inside a list item the
+    span is still the heading's own lines and not the list's.
+    """
+    source = "Title\n=====\n\npara\n\nTwo\nlines\n---\n\n# atx\n\n- In an item\n  ---\n- next\n"
+    document = build_document(source, theme, fake_resolve)
+    kinds = [block.kind for block in document.blocks if isinstance(block, TextBlock)]
+    assert kinds[:5] == [
+        BlockKind.HEADING_1,
+        BlockKind.PARAGRAPH,
+        BlockKind.HEADING_2,
+        BlockKind.HEADING_1,
+        BlockKind.HEADING_2,
+    ]
+    assert [item.span.of(source) for item in document.sources] == [
+        "Title\n=====\n",
+        "para\n",
+        "Two\nlines\n---\n",
+        "# atx\n",
+        "- In an item\n  ---\n",
+        "- next\n",
+    ]
+    assert document.sources[0].top == document.sources[0].span
+    assert document.sources[4].top.of(source) == "- In an item\n  ---\n- next\n"
+
+
+@pytest.mark.parametrize(
+    ("source", "lines", "closed"),
+    [
+        ("```py\na\nb\n", ["a", "b"], False),
+        ("```py\na\nb\n```\n", ["a", "b"], True),
+        ("```py\na\nb\n```\nafter\n", ["a", "b"], True),
+        # Blank lines at the end are lines: the fence may not be finished.
+        ("```\na\n\n\n", ["a", "", ""], False),
+        ("```\na\n\n```\n", ["a", ""], True),
+        # Not closing lines: too short, indented four, wrong character, text after.
+        ("```\n``\n    ```\n~~~\n``` x\n", ["``", "    ```", "~~~", "``` x"], False),
+        ("~~~\n```\n~~~~  \n", ["```"], True),
+        # An unfinished last line: content if it has anything on it, a closing
+        # line if it is one, and no line at all if it is only whitespace.
+        ("```\na\nb", ["a", "b"], False),
+        ("```\na\n```", ["a"], True),
+        ("```\na\n  \t", ["a"], False),
+        ("```\na\n  \n", ["a", "  "], False),
+        # The fence's indent comes off each line, a tab counted as columns.
+        ("  ```\n  a\n b\n\tc\n", ["a", "b", "  c"], False),
+        ("```\n", [], False),
+        ("```\n```\n", [], True),
+    ],
+)
+def test_the_leading_fence_is_read_with_its_blank_lines_and_whether_it_closed(
+    source: str, lines: list[str], closed: bool, theme: Theme
+) -> None:
+    """
+    `_leading_fence`, which `advtext.stream` trusts for the two facts a block does not keep.
+
+    "Closed" is inferred from a line count markdown-it does not document
+    (the function's docstring has the reading), so every row here is a case
+    where that inference could be off by one: blank lines at the end, an
+    unfinished last line of each kind, an empty fence. The control against the
+    converter is that the lines, trailing blank ones dropped, are the lines of
+    the `CodeBlock` the same source gives.
+    """
+    found = _leading_fence(source, theme)
+    assert found is not None
+    assert [text_of(line) for line in found.lines] == lines
+    assert found.closed is closed
+    block = build_document(source, theme, fake_resolve).blocks[0]
+    assert isinstance(block, CodeBlock)
+    kept = list(found.lines)
+    while kept and not kept[-1]:
+        kept.pop()
+    assert tuple(kept) == block.lines and found.language == block.language
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "",
+        "para\n```\ncode\n",
+        "    ```\nindented code, not a fence\n",
+        "- ```\n  in an item\n",
+        "```a`b\na backtick in the info string\n",
+        # The table rule runs before the fence rule.
+        "~~~a|b\n-|-\n",
+    ],
+)
+def test_a_source_that_does_not_begin_with_a_top_level_fence_has_no_leading_fence(
+    source: str, theme: Theme
+) -> None:
+    assert _leading_fence(source, theme) is None
+    # And the last one is a fence as soon as its second line is not a delimiter row.
+    assert _leading_fence("~~~a|b\nx\n-|-\n", theme) is not None
+
+
+def test_blocks_from_one_list_or_quote_share_the_top_level_block_they_are_part_of(
+    theme: Theme,
+) -> None:
+    document = build_document(MAPPED, theme, fake_resolve)
+    tops = [source.top.of(MAPPED) for source in document.sources]
+    whole_list = "- a\n- b\n  more\n\n  second para in b\n"
+    whole_quote = "> q1\n>\n> q2\n"
+    numbered = "1. x\n\n   ```\n   f\n   ```\n"
+    assert tops[2:5] == [whole_list] * 3
+    assert tops[5:7] == [whole_quote] * 2
+    assert tops[10:12] == [numbered] * 2
+    # A block that is top-level itself is its own top.
+    for index in (0, 1, 7, 8, 9):
+        assert document.sources[index].top == document.sources[index].span
+    # And grouping by `top` recovers the top-level blocks, in order.
+    distinct = list(dict.fromkeys(source.top for source in document.sources))
+    assert len(distinct) == 8
+    assert [span.line_start for span in distinct] == sorted(span.line_start for span in distinct)
+
+
+def test_a_span_is_whole_lines_and_never_ends_in_a_blank_one(theme: Theme) -> None:
+    # markdown-it's own range for a list runs over the blank line after it.
+    # That line belongs to no block, and a span that kept it would overlap
+    # nothing but would hand a host a trailing blank line to paste.
+    document = build_document(MAPPED, theme, fake_resolve)
+    lines = MAPPED.splitlines(keepends=True)
+    for source in document.sources:
+        for span in (source.span, source.top):
+            assert span.of(MAPPED) == "".join(lines[span.line_start : span.line_end])
+            assert span.of(MAPPED).splitlines()[-1].strip()
+            assert span.line_end > span.line_start
+    # Top-level spans do not overlap, and everything between them is blank.
+    distinct = list(dict.fromkeys(source.top for source in document.sources))
+    position = 0
+    for span in distinct:
+        assert span.start >= position
+        assert not MAPPED[position : span.start].strip()
+        position = span.end
+    assert not MAPPED[position:].strip()
+
+
+def test_the_source_map_is_beside_the_blocks_so_moving_text_rebreaks_nothing(
+    theme: Theme,
+) -> None:
+    # The reason it is not a field of the block: caches key blocks by value.
+    # Two blank lines inserted above the document move every span and leave
+    # every block equal, so every cached layout is still found.
+    original = build_document(MAPPED, theme, fake_resolve)
+    moved = build_document("\n\n" + MAPPED, theme, fake_resolve)
+    assert moved.blocks == original.blocks
+    assert moved.sources != original.sources
+    assert moved.sources == tuple(
+        BlockSource(span=source.span.shifted(2, 2), top=source.top.shifted(2, 2))
+        for source in original.sources
+    )
+    assert moved != original
+
+
+def test_a_source_without_a_final_newline_and_one_with_crlf_still_slice_verbatim(
+    theme: Theme,
+) -> None:
+    bare = "first\n\nlast line"
+    document = build_document(bare, theme, fake_resolve)
+    assert [source.span.of(bare) for source in document.sources] == ["first\n", "last line"]
+    assert document.sources[-1].span.end == len(bare)
+
+    crlf = "first\r\n\r\n- item\r\n- other\r\n"
+    document = build_document(crlf, theme, fake_resolve)
+    assert [source.span.of(crlf) for source in document.sources] == [
+        "first\r\n",
+        "- item\r\n",
+        "- other\r\n",
+    ]
+    assert document.sources[1].top.of(crlf) == "- item\r\n- other\r\n"
+
+
+def test_a_document_built_by_hand_records_no_sources(theme: Theme) -> None:
+    by_hand = Document(blocks=(text_block("no markdown here", theme, fake_resolve),))
+    assert by_hand.sources == ()
+    assert by_hand.source_of(0) is None
+    built = build_document("one\n\ntwo\n", theme, fake_resolve)
+    first = built.source_of(0)
+    assert first is not None and first.span == SourceSpan(0, 1, 0, 4)
+    assert built.source_of(2) is None and built.source_of(-1) is None
+    assert build_document("", theme, fake_resolve).sources == ()
+
+
+def test_the_demo_document_maps_every_block_and_leaves_only_blank_lines_unclaimed(
+    theme: Theme,
+) -> None:
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parent.parent / "demo" / "sample.md").read_text(
+        encoding="utf-8"
+    )
+    document = build_document(source, theme, fake_resolve)
+    assert len(document.sources) == len(document.blocks) > 30
+    position = 0
+    for span in dict.fromkeys(item.top for item in document.sources):
+        assert not source[position : span.start].strip()
+        assert span.of(source).strip()
+        position = span.end
+    assert not source[position:].strip()
+
+
+# ----------------------------------------------------------------------
+# Review 2, items 3 and 5; and the parser `advtext.stream` reads with.
+#
+# Item 3 is about geometry, which this file otherwise leaves alone. It is here
+# because the defect was in the *material* this module emits and the only way
+# to show that material wrong is to set it.
+
+
+def _line_starts_and_ends(block: TextBlock, theme: Theme, width: int) -> list[tuple[int, int]]:
+    """
+    Left edge of the first glyph and right edge of the last, per line, composed and shipped.
+
+    Through `compose_blocks`, because the alignment is carried out there
+    (`advtext.ui._skips`). Fake metrics: every glyph is 10 wide.
+    """
+    from advtext.shipout import Glyph, Point, ship
+    from advtext.ui import compose_blocks
+
+    measure = char_measure(fake_resolve)
+    box = compose_blocks((block,), theme, width, measure)
+    lines: dict[int, list[int]] = {}
+    for command in ship(box, Point(0, box.height), measure=measure):
+        if isinstance(command, Glyph):
+            lines.setdefault(command.y, []).append(command.x)
+    return [(min(xs), max(xs) + int(GLYPH_ADVANCE)) for _, xs in sorted(lines.items())]
+
+
+@pytest.mark.parametrize("markdown", [False, True], ids=["text_block", "markdown"])
+def test_a_line_before_a_hard_break_is_placed_as_every_other_line_of_its_block_is(
+    markdown: bool,
+) -> None:
+    r"""
+    Ragged left, the line before a hard break ends at the right margin; centred, it is centred.
+
+    Three lines of 30, 50 and 20 at a measure of 100000. **Before the fix the
+    first two were not where the third was**: ragged left they ended at about
+    50015 and 50025 instead of 100000, centred they sat a quarter of the way
+    along instead of half, because the hard break's own `1fil` fill took half
+    of the slack that the `\leftskip` should have had all of. Measured with the
+    real fonts by the lead (review 2, item 3) and re-measured here before
+    changing anything; the fake numbers are the same defect in round figures.
+
+    Only the first two lines are asserted exactly. The third is the paragraph's
+    last and is `advtext.linebreak`'s and `advtext.ui`'s to place; it is a unit
+    or two short, and the strict `xfail` below says why and whose that is.
+
+    The lead's snippet compared the first glyph's x of `aaa` and `bbb`. Those
+    two words are not the same width in Roboto, so that comparison is unequal
+    after the fix too; what a ragged-left block shares is its *right* edge,
+    which is what is asserted.
+
+    `LEFT` and `JUSTIFY` are the controls that nothing moved where it was right.
+    """
+
+    def block_in(align: Align) -> tuple[TextBlock, Theme]:
+        theme = Theme.build(align=align)
+        if markdown:
+            (block,) = build_document("aaa\\\nbbbbb  \ncc\n", theme, fake_resolve).blocks
+        else:
+            block = text_block("aaa\nbbbbb\ncc", theme, fake_resolve, hard_breaks=True)
+        assert isinstance(block, TextBlock)
+        return block, theme
+
+    width = 100_000
+    ragged_left = _line_starts_and_ends(*block_in(Align.RIGHT), width)
+    assert ragged_left[:2] == [(99_970, 100_000), (99_950, 100_000)]
+    assert ragged_left[2][1] == pytest.approx(width, abs=2)
+    centred = _line_starts_and_ends(*block_in(Align.CENTER), width)
+    assert centred[:2] == [(49_985, 50_015), (49_975, 50_025)]
+    assert centred[2][0] == pytest.approx(49_990, abs=2)
+    for align in (Align.LEFT, Align.JUSTIFY):
+        assert _line_starts_and_ends(*block_in(align), width) == [(0, 30), (0, 50), (0, 20)]
+
+
+def test_the_fill_before_a_forced_break_is_left_out_only_where_a_left_skip_would_fight_it() -> None:
+    """
+    The material itself: three nodes justified and ragged right, one otherwise.
+
+    Justified and ragged-right material are *equal*, node for node. That is
+    relied on by `advtext.stream`, which sets a block ragged while it is being
+    written and may re-set it justified when it is finished: the two blocks
+    then differ in their style and in nothing else.
+    """
+    fill_and_break = (Penalty(INF_PENALTY), Glue(PARFILLSKIP), Penalty(EJECT_PENALTY))
+
+    def material(align: Align) -> tuple[Node, ...]:
+        theme = Theme.build(align=align)
+        return text_block("ab\ncd", theme, fake_resolve, hard_breaks=True).material
+
+    justified = material(Align.JUSTIFY)
+    assert justified[2:5] == fill_and_break and len(justified) == 7
+    assert material(Align.LEFT) == justified
+    for align in (Align.RIGHT, Align.CENTER):
+        ragged_left = material(align)
+        assert ragged_left[2:3] == (Penalty(EJECT_PENALTY),) and len(ragged_left) == 5
+        assert not any(isinstance(node, Glue) for node in ragged_left)
+
+
+def test_a_blank_line_between_hard_breaks_is_still_a_blank_line_in_every_alignment() -> None:
+    """
+    Two forced breaks with nothing between them set an empty line, fill or no fill.
+
+    `text_block`'s docstring promises it, and taking the fill away for two
+    alignments is exactly the kind of change that could have cost it: the
+    middle line is then two penalties and nothing else.
+    """
+    from advtext.ui import PROSE_BREAKING, _skips
+
+    for align in Align:
+        theme = Theme.build(align=align)
+        block = text_block("above\n\nbelow", theme, fake_resolve, hard_breaks=True)
+        params = _skips(align, PROSE_BREAKING)
+        if align is not Align.JUSTIFY:
+            from dataclasses import replace
+
+            params = replace(params, first_fit=True)
+        assert _line_texts(block.material, 400, params) == ["above", "", "below"], align
+
+
+def test_the_last_line_of_a_ragged_left_block_ends_exactly_at_the_margin() -> None:
+    r"""
+    What was left of review 2's item 3 after this module's half was fixed.
+
+    At a measure of twenty million units -- about 305 pt, a real one -- the
+    last line of a ragged-left block ended 305 units (thousandths of a point)
+    short of the margin, where the lines before the hard breaks ended on it
+    exactly: `advtext.ui._skips` left the `\parfillskip` at `1sp plus 1fil`
+    beside a left skip of 65536 times that, and the two shared the slack. Far
+    below a pixel, and so a statement about exactness and not about anything a
+    reader could see.
+
+    This was a strict `xfail` until `_skips` dropped the `\parfillskip` for
+    ragged-left and centred blocks (AF-tables); it failed as "unexpectedly
+    passing" the moment that landed, which is what the marker was for. The
+    centred half is asserted too: before, its last line sat 76 units left of
+    centre.
+    """
+    width = 20_000_000
+    theme = Theme.build(align=Align.RIGHT)
+    block = text_block("aaa\nbbbbb\ncc", theme, fake_resolve, hard_breaks=True)
+    ends = [end for _, end in _line_starts_and_ends(block, theme, width)]
+    assert ends[:2] == [width, width], "the hard-break lines are this module's and are exact"
+    assert ends[2] == width
+
+    theme = Theme.build(align=Align.CENTER)
+    block = text_block("aaa\nbbbbb\ncc", theme, fake_resolve, hard_breaks=True)
+    for start, end in _line_starts_and_ends(block, theme, width):
+        assert start + end == width
+
+
+@pytest.mark.parametrize("ending", ["\r\n", "\r"])
+def test_carriage_returns_are_line_ends_to_the_two_constructors(theme: Theme, ending: str) -> None:
+    r"""
+    `\r\n` and a lone `\r` mean what `\n` means, in `code_block` and in `text_block`.
+
+    The defect, measured (review 2, item 5): `code_block("a\r\nb\r\n", ...)`
+    set a carriage return as a character at the end of each line -- code points
+    `[97, 13]` -- because the lines were split on `\n` alone. With a lone `\r`
+    the whole source was one line. `text_block` did not show it without
+    `hard_breaks`, where any whitespace is a space; with them, `\r\n` happened
+    to work (the `\r` was stripped as whitespace) and a lone `\r` did not break
+    the line at all.
+    """
+    plain = "first\n  second\n\nthird\n"
+    source = plain.replace("\n", ending)
+    assert "\n" not in source or ending == "\r\n"
+
+    expected = code_block(plain, theme, fake_resolve)
+    assert [text_of(line) for line in expected.lines] == ["first", "  second", "", "third"]
+    assert code_block(source, theme, fake_resolve) == expected
+
+    for hard_breaks in (False, True):
+        assert text_block(source, theme, fake_resolve, hard_breaks=hard_breaks) == text_block(
+            plain, theme, fake_resolve, hard_breaks=hard_breaks
+        )
+    broken = text_block(source, theme, fake_resolve, hard_breaks=True)
+    assert sum(node == Penalty(EJECT_PENALTY) for node in broken.material) == 3
+
+
+def test_references_off_reads_a_definition_as_text_and_leaves_the_default_alone(
+    theme: Theme,
+) -> None:
+    """
+    `build_document(..., references=False)`: a definition is a paragraph, a use is not a link.
+
+    And the default is what it was -- the definition consumed, the use a link
+    -- before and after the other parser has been used, since the two must not
+    share state. `tests/test_stream.py` has why a streaming caller needs this.
+    """
+    source = "[name]\n\n[name]: https://example.org\n"
+    default = convert(source, theme)
+    (only,) = default.blocks
+    assert isinstance(only, TextBlock) and [link.target for link in only.links] == [
+        "https://example.org"
+    ]
+
+    off = build_document(source, theme, fake_resolve, references=False)
+    assert len(off.blocks) == 2
+    assert all(isinstance(block, TextBlock) and not block.links for block in off.blocks)
+    assert [text_of(block.material) for block in off.blocks if isinstance(block, TextBlock)] == [
+        "[name]",
+        "[name]:https://example.org",
+    ]
+    assert convert(source, theme) == default
+
+    no_definitions = "A [link](https://example.org) and *text*.\n\n- item\n"
+    assert build_document(no_definitions, theme, fake_resolve, references=False) == convert(
+        no_definitions, theme
+    )
+
+
+# ----------------------------------------------------------------------
+# Resuming inside an unfinished list or quote (`_resume_point`, for `advtext.stream`)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # Nothing to resume inside: no container, or still on its first child.
+        ("para\n\nmore\n", None),
+        ("- a\n", None),
+        ("```\ncode\n", None),
+        # The container is over: the last block is a raw HTML block after it.
+        ("- a\n\n<div>\nx\n", None),
+        # A tab in an opening line is not reasoned about.
+        ("-\ta\n\n\tb\n", None),
+        # A new item: the list is re-opened padded by four, so that an item
+        # indented up to three columns is still a sibling of the opener's.
+        ("- a\n- b\n", (1, "-    ***\n")),
+        ("1. a\n2. b\n3. c\n", (2, "1.    ***\n")),
+        ("-    wide\n  - sibling\n", (1, "-    ***\n")),
+        # The break is dashes under an asterisk marker: `* ***` is itself a break.
+        ("* a\n* b\n", (1, "*    ---\n")),
+        # Inside an item: its own marker and padding, so the columns are its own.
+        ("- a\n\n  second\n", (2, "- ***\n")),
+        ("10. a\n\n    b\n\n    c\n", (4, "10. ***\n")),
+        ("7) a\n\n   ```\n   x\n", (2, "7) ***\n")),
+        # A closed fence: resume on the line after its closing line.
+        ("7) a\n\n   ```\n   x\n   ```\n", (5, "7) ***\n")),
+        ("- ```\n  x\n  ```\n", (3, "- ***\n")),
+        # Quotes, and containers inside containers.
+        ("> a\n>\n> b\n", (2, "> ***\n")),
+        ("> - a\n> - b\n>   c\n>\n>   d\n", (4, "> - ***\n")),
+        ("- > q\n  >\n  > r\n", (2, "- > ***\n")),
+        ("- a\n  1. b\n  2. c\n\n     d\n", (4, "- 2. ***\n")),
+        # An inner item indented by one, under an outer item whose marker is
+        # followed by more than four spaces (so its content starts after one):
+        # the inner indent is written after the inner marker, not before it.
+        (" -      1.     x\n    2.     y\n       z\n\n       w\n", (4, " - 2.  ***\n")),
+    ],
+)
+def test_where_an_unfinished_container_can_be_resumed_and_with_what_opener(
+    source: str, expected: tuple[int, str] | None
+) -> None:
+    """
+    `_resume_point` on sources small enough to check by eye.
+
+    The opener is the claim: one line that leaves a parser where the real
+    source left it at the start of the line named. The next test is what holds
+    that claim to the whole parse; this one pins what the line *is*, so that a
+    change to how it is written is seen as one.
+    """
+    point = _resume_point(_tokens(source), source, _line_starts(source))
+    assert (None if point is None else (point.line, point.opener)) == expected
+
+
+NESTED_SOURCES = [
+    "- a\n- b\n\n  in b\n\n      code in b\n- c\n\nafter\n",
+    "1. step\n\n   ```sh\n   make\n\n   check\n   ```\n\n   and text\n\n2. two\n3. three\n\nend\n",
+    "7. a\n1. b\n1. c\n   lazy\nlazier\n1. d\n",
+    "> a\n>\n> b\nlazy\n>\n> - c\n> - d\n>\n> > e\n> > f\n\nout\n",
+    "-    wide\n  - sibling\n   - third\n     in third\n  in none\n",
+    " -      1.     x\n    2.     y\n       ````\n       z\n       ````\n   =\n",
+    "100. 1.   ~~~\n        5.     t\n           u\n\n     v\n",
+    "- - a\n  - b\n    1. c\n    2. d\n\n       e\n  - f\n- g\n",
+    "- > q\n  >\n  > r\n  > - s\n  >   t\n\n  u\n- v\n",
+    "- a|b\n- -|-\n- c\n  -|-\n  1|2\n-|-\n",
+    "* a\n* b\n* * *\n* c\n",
+    "- # h\n  text\n  ===\n  more\n  ---\n- | a | b |\n  |---|---|\n  | 1 | 2 |\n",
+    "1. ```\n   x\n   ```\n   after the fence\n2. ```\n   y\n\n3. z\n",
+    "> intro\n> ```\n> x\n>\ny\n> text\n> ```\n> z\n> ```\n> w\n",
+    "- a\n\n  <div>\n  raw\n\n  b\n- c\n<!--\n- d\n",
+    "- a\n-\n- b\n\n\n- c\n",
+]
+
+
+@pytest.mark.parametrize("source", NESTED_SOURCES)
+def test_resuming_from_any_finished_line_gives_the_blocks_of_the_whole_source(
+    source: str, theme: Theme
+) -> None:
+    """
+    Kept blocks plus the resumed parse equal one parse, from every line, for every later text.
+
+    For each prefix of whole lines that has a resume point, the blocks emitted
+    before it are kept and the rest of the source is read as opener plus
+    suffix, with the converter put back in the state it was in -- for every
+    longer prefix, each also with the first half of its next line unfinished.
+    That is the stream's use of it, without the stream. Where the opener is not
+    read as the containers it names (`_opens`), the caller is told so and
+    parses the whole source; that is counted, not excused, and must not be the
+    only thing that ever happens.
+
+    Blocks only. Spans are moved by the caller and are compared where the
+    caller is tested, in `tests/test_stream.py`.
+    """
+    lines = source.splitlines(keepends=True)
+    resumed = refused = 0
+    for count in range(1, len(lines) + 1):
+        prefix = "".join(lines[:count])
+        tokens = _tokens(prefix)
+        starts = _line_starts(prefix)
+        point = _resume_point(tokens, prefix, starts)
+        if point is None:
+            continue
+        document, kept, state = _convert(
+            tokens, prefix, starts, theme, fake_resolve, mark=point.mark
+        )
+        assert state is not None
+        assert document == build_document(prefix, theme, fake_resolve, references=False)
+        offset = starts[point.line]
+        for longer in range(count, len(lines) + 1):
+            whole = "".join(lines[:longer])
+            half = lines[longer][: len(lines[longer]) // 2] if longer < len(lines) else ""
+            for text in {whole, whole + half}:
+                joined = point.opener + text[offset:]
+                again = _tokens(joined)
+                if not _opens(again, point.shape):
+                    refused += 1
+                    continue
+                rest, _, _ = _convert(
+                    again,
+                    joined,
+                    _line_starts(joined),
+                    theme,
+                    fake_resolve,
+                    first=len(point.shape),
+                    state=state,
+                )
+                expected = build_document(text, theme, fake_resolve, references=False)
+                assert document.blocks[:kept] + rest.blocks == expected.blocks, (prefix, text)
+                resumed += 1
+    assert resumed > refused, "the opener was hardly ever read as written"
+
+
+def test_an_opener_is_believed_only_when_it_was_read_as_its_containers() -> None:
+    """
+    `_opens`, with controls: the same shape against tokens that are and are not it.
+
+    No source is known that makes a well-formed opener read as anything else
+    -- the table rule, which would, needs a pipe in the line -- so the refusals
+    here are made by hand: the opener indented into a code block, a different
+    marker, and the right containers with something other than the break in
+    them. After a closed fence the next line may be anything, and a delimiter
+    row is the one a table would need; it is not one, and is believed.
+    """
+    source = "> ```\n> x\n> ```\n"
+    point = _resume_point(_tokens(source), source, _line_starts(source))
+    assert point is not None and point.line == 3 and point.opener == "> ***\n"
+    assert _opens(_tokens(point.opener + "text\n"), point.shape)
+    assert _opens(_tokens(point.opener), point.shape)
+    after_a_delimiter_row = _tokens(point.opener + "|-\n")
+    assert _opens(after_a_delimiter_row, point.shape)
+    assert [token.type for token in after_a_delimiter_row][3] == "paragraph_open"
+
+    assert not _opens(_tokens("    " + point.opener), point.shape)
+    assert not _opens(_tokens("- ***\n"), point.shape)
+    assert not _opens(_tokens("> text\n"), point.shape)
+    assert not _opens(_tokens("> > ***\n"), point.shape)
+    assert not _opens([], point.shape)
+
+
+_QUOTE_SHAPE = (("blockquote_open", ">"), ("hr", "***"))
+_ITEM_SHAPE = (("bullet_list_open", "-"), ("list_item_open", "-"), ("hr", "***"))
+
+
+@pytest.mark.parametrize(
+    ("source", "shape", "lines", "end", "outer_end", "last"),
+    [
+        # The unended `>` is the quote's line and not the fence's ...
+        ("> ***\n> ~~~\n> \n>", _QUOTE_SHAPE, [""], 3, 4, True),
+        # ... and with its newline it is both's.
+        ("> ***\n> ~~~\n> \n>\n", _QUOTE_SHAPE, ["", ""], 4, 4, True),
+        ("- ***\n  ```\n  a\n  b", _ITEM_SHAPE, ["a", "b"], 4, 4, True),
+        # Not indented far enough: out of the item, and a block of its own.
+        ("- ***\n  ```\n  a\n2", _ITEM_SHAPE, ["a"], 3, 3, False),
+        # The fence's own line may close the opener's item and open more
+        # containers on the way (not followed at all at first: the closing
+        # token between the break and the fence was not stepped over).
+        ("-    ***\n- > ```\n  > a\n  > b", _ITEM_SHAPE, ["a", "b"], 4, 4, True),
+    ],
+)
+def test_a_fence_under_an_opener_is_read_exactly_as_the_text_stands(
+    source: str,
+    shape: tuple[tuple[str, str], ...],
+    lines: list[str],
+    end: int,
+    outer_end: int,
+    last: bool,
+    theme: Theme,
+) -> None:
+    """
+    `_leading_fence(..., shape, verbatim=True)`: the three facts a nested fence is shown by.
+
+    The first two rows are the measured pair the function's docstring quotes;
+    the stream reported the fence a line too long before `verbatim` existed.
+    """
+    found = _leading_fence(source, theme, shape, verbatim=True)
+    assert found is not None
+    assert [text_of(line) for line in found.lines] == lines
+    assert (found.end, found.outer_end, found.last) == (end, outer_end, last)
+
+
+def test_a_fence_in_another_top_level_block_is_not_the_opener_s_fence(theme: Theme) -> None:
+    """
+    The control for stepping over closing tokens: the outermost container must not close.
+
+    `> ***` then `- ~~~`: the quote ends and a list begins, so the fence on the
+    second line is in a different top-level block from the one the opener
+    re-opened, and following it as that block's would give it the wrong `top`
+    and keep the quote from committing.
+    """
+    assert _leading_fence("> ***\n- ~~~\n  a\n", theme, _QUOTE_SHAPE) is None
+    assert _leading_fence("> ***\n> - ~~~\n>   a\n", theme, _QUOTE_SHAPE) is not None
+
+
+@pytest.mark.parametrize("source", ["> a|b\n>-|-\n>", "> a|b\n> -|-\n> ", "> a|b\n>-|-\n>1|2\n>"])
+def test_a_quoted_table_under_an_unended_quote_marker_does_not_crash_the_parse(
+    source: str, theme: Theme
+) -> None:
+    """
+    markdown-it 4.2.0 raises `IndexError` on these; `build_document` must not.
+
+    The control is the library itself, asked directly: if an upgrade fixes it
+    this test says so, and `advtext.markdown._parse` can go. What comes back
+    is what the same text with its last line ended gives.
+    """
+    from markdown_it import MarkdownIt
+
+    with pytest.raises(IndexError):
+        MarkdownIt("commonmark").enable("table").parse(source)
+    document = build_document(source, theme, fake_resolve)
+    assert document.blocks == build_document(source + "\n", theme, fake_resolve).blocks
+    assert any(isinstance(block, TableBlock) for block in document.blocks)
+    assert all(where.span.end <= len(source) for where in document.sources)
+
+
+# ----------------------------------------------------------------------
+# Review 2, item 5b: a character the bound face has no glyph for.
+#
+# Real fonts, because which face lacks what is a fact about the files: the
+# code face shipped here has no Greek, the prose face has no arrows, the math
+# face has both, and nothing has CJK.
+# ----------------------------------------------------------------------
+
+
+def _chars(nodes: tuple[Node, ...]) -> list[tuple[str, str]]:
+    return [
+        (parse_font_key(node.font).face.value, chr(node.codepoint))
+        for node in nodes
+        if isinstance(node, CharNode)
+    ]
+
+
+def test_the_faces_lack_what_the_tests_below_say_they_lack(bundled_fonts: Path) -> None:
+    from advtext import fontlib
+
+    code, prose = fontlib.metrics(Face.CODE, 16.0), fontlib.metrics(Face.PROSE, 16.0)
+    maths = fontlib.math_metrics(16.0)
+    assert not code.has(ord("π")) and prose.has(ord("π"))
+    assert not prose.has(ord("→")) and maths.has(ord("→")) and code.has(ord("→"))
+    assert not prose.has(ord("∀")) and not code.has(ord("∀")) and maths.has(ord("∀"))
+    assert not any(face.has(ord("速")) for face in (code, prose, maths))
+    assert prose.has(0xFFFD)
+
+
+def test_a_character_the_code_face_lacks_is_set_from_the_prose_face(
+    theme: Theme, bundled_fonts: Path
+) -> None:
+    from advtext.style import fontlib_metrics
+
+    (block,) = build_document("area `πr` done", theme, fontlib_metrics).blocks
+    assert isinstance(block, TextBlock)
+    assert _chars(block.material)[4:6] == [("prose", "π"), ("code", "r")]
+    # The character is the character still: a copy of it is `π`.
+    assert "".join(character for _, character in _chars(block.material)) == "areaπrdone"
+    assert replaced_characters(block) == 0
+    # It has the borrowed face's width, not nothing.
+    borrowed = next(n for n in block.material if isinstance(n, CharNode) and n.codepoint == 0x3C0)
+    assert char_measure(fontlib_metrics)(borrowed).width > 0
+    # ... and there is no kern after a character that was stood in for.
+    after = block.material.index(borrowed) + 1
+    assert isinstance(block.material[after], CharNode)
+
+
+def test_the_order_is_prose_then_math_then_code(theme: Theme, bundled_fonts: Path) -> None:
+    from advtext.style import fontlib_metrics
+
+    (block,) = build_document("a → b `x ∀ π`", theme, fontlib_metrics).blocks
+    assert isinstance(block, TextBlock)
+    faces = dict((character, face) for face, character in _chars(block.material))
+    # The prose face lacks the arrow; math is asked before code and has it.
+    assert faces["→"] == "math"
+    # The code face lacks both: prose has the pi, only math has the quantifier.
+    assert (faces["π"], faces["∀"]) == ("prose", "math")
+    assert replaced_characters(block) == 0
+
+
+def test_a_character_no_face_has_is_the_prose_faces_replacement_and_is_counted(
+    theme: Theme, bundled_fonts: Path
+) -> None:
+    from advtext.style import fontlib_metrics
+
+    source = (
+        "# 速 title\n\n速度 is `速` here\n\n```\nv = 速度\n```\n\n"
+        "| 速 | b |\n|---|---|\n| c | 速度 |\n"
+    )
+    document = build_document(source, theme, fontlib_metrics)
+    heading, paragraph, code, table = document.blocks
+    assert [replaced_characters(block) for block in document.blocks] == [1, 3, 2, 3]
+    assert isinstance(paragraph, TextBlock) and isinstance(code, CodeBlock)
+    assert _chars(paragraph.material)[:2] == [("prose", "�")] * 2
+    # In a heading, a code span and a code block alike it is the regular prose face's.
+    for nodes in (heading.material, code.lines[0]):  # type: ignore[union-attr]
+        stood = [face for face, character in _chars(nodes) if character == "�"]
+        assert stood and set(stood) == {"prose"}
+    assert REPLACEMENT_CHARACTER == 0xFFFD
+    # The source still has the characters; the block does not.
+    assert "速度" in document.sources[1].top.of(source)
+
+
+def test_what_draws_nothing_on_purpose_is_left_alone(theme: Theme, bundled_fonts: Path) -> None:
+    from advtext.style import fontlib_metrics
+
+    # A zero-width joiner, a soft hyphen, a variation selector, a combining
+    # mark: none is replaced, whatever the face has.
+    source = "a‍b­c️d́e"
+    (block,) = build_document(source, theme, fontlib_metrics).blocks
+    assert "".join(character for _, character in _chars(block.material)) == source  # type: ignore[union-attr]
+    assert replaced_characters(block) == 0
+
+
+def test_text_the_faces_cover_is_node_for_node_what_it_was(
+    theme: Theme, bundled_fonts: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    `demo/sample.md` never reaches the stand-in rule, so its material is what
+    it was before the rule existed -- which the second half shows by putting
+    the old behaviour back and comparing. The control is a document that does
+    reach it.
+    """
+    import advtext.markdown as markdown_module
+    from advtext.style import fontlib_metrics
+
+    source = (Path(__file__).resolve().parent.parent / "demo" / "sample.md").read_text(
+        encoding="utf-8"
+    )
+    now = build_document(source, theme, fontlib_metrics)
+    asked: list[int] = []
+
+    def as_it_was(theme: Theme, resolve: object, key: FontKey, codepoint: int) -> tuple[str, int]:
+        asked.append(codepoint)
+        return key, codepoint
+
+    monkeypatch.setattr(markdown_module, "_stand_in", as_it_was)
+    before = build_document(source, theme, fontlib_metrics)
+    assert asked == []
+    assert now == before and len(now.blocks) > 30
+    assert sum(replaced_characters(block) for block in now.blocks) == 0
+    changed = build_document("a → b", theme, fontlib_metrics)
+    assert asked == [ord("→")]
+    monkeypatch.undo()
+    assert build_document("a → b", theme, fontlib_metrics) != changed
+
+
+def test_a_resolver_that_knows_only_the_bound_face_changes_nothing(theme: Theme) -> None:
+    # A host with no math face, or a test's fake: a face that does not
+    # resolve is skipped. Here only the code face lacks the character and no
+    # other face resolves, so it is left exactly as it was.
+    @dataclass(frozen=True, slots=True)
+    class Ascii(FakeMetrics):
+        def has(self, codepoint: int) -> bool:
+            return codepoint < 0x80
+
+    def resolve(key: FontKey) -> FontMetrics:
+        spec = parse_font_key(key)
+        if spec.face is not Face.CODE:
+            raise KeyError(key)
+        return Ascii(face=spec.face, size=float(spec.size))
+
+    block = code_block("π = 3\n", theme, resolve)
+    assert _chars(block.lines[0])[0] == ("code", "π")
+
+
+def test_a_stream_stands_in_for_the_same_characters_as_one_parse(
+    theme: Theme, bundled_fonts: Path
+) -> None:
+    from advtext.stream import StreamDocument
+    from advtext.style import fontlib_metrics
+
+    source = "Text → `π`\n\n```\nα = 速\nβ\n```\n\n- item\n\n  ~~~\n  π ∀ 速\n  ~~~\n\nend →\n"
+    stream = StreamDocument(theme, fontlib_metrics)
+    for character in source:
+        stream.append(character)
+        whole = build_document(stream.source, stream.live_theme, fontlib_metrics, references=False)
+        assert stream.blocks == whole.blocks, stream.source
+    assert sum(replaced_characters(block) for block in stream.blocks) == 2
+    faces = {
+        (face, character)
+        for block in stream.blocks
+        if isinstance(block, CodeBlock)
+        for line in block.lines
+        for face, character in _chars(line)
+        if character not in " =abcdefghijklmnopqrstuvwxyz"
+    }
+    assert faces == {("prose", "α"), ("prose", "β"), ("prose", "π"), ("math", "∀"), ("prose", "�")}
+
+
+# -- a replaced character is still the character: copy, find, text --------------
+#
+# C-hostfix left this unowned and the lead decided it: U+FFFD is what is *set*
+# for a character no face has, and it must not be what is *copied*. Written
+# first and run against the tree as found: every `速` below came back `�`.
+
+_UNSET = (
+    "# 速 title\n\n速度 is `速` here, twice 速.\n\n```\nv = 速度\n\nw = 2\n```\n\n"
+    "| 速 | b |\n|---|---|\n| c | 速度 |\n\n- item 速\n\n> said 速 once\n>\n> and 度 again\n"
+)
+_UNSET_COPIED = (
+    "速 title\n\n速度 is 速 here, twice 速.\n\nv = 速度\n\nw = 2\n\n"
+    "速\tb\nc\t速度\n\n• item 速\n\nsaid 速 once\n\nand 度 again"
+)
+
+
+def _unit_layout(blocks: Any, theme: Theme, width_px: float) -> Any:
+    from advtext.style import fontlib_metrics
+    from advtext.ui.units import layout_units
+    from advtext.units import sp_from_px
+
+    return layout_units(
+        blocks, theme, sp_from_px(width_px, theme.px_per_inch), char_measure(fontlib_metrics)
+    )
+
+
+@pytest.mark.parametrize("width_px", [150.0, 420.0])
+def test_a_replaced_character_is_set_as_the_replacement_and_copies_as_itself(
+    theme: Theme, bundled_fonts: Path, width_px: float
+) -> None:
+    """
+    In a heading, a paragraph, a code span, a code block, a table, a list and a quote.
+
+    At a width where the paragraph and the cells wrap and at one where they do
+    not, since what a copy is told about a block is told by shipped index and
+    wrapping is what moves those. The first assertion is the control: the
+    glyphs shipped are still U+FFFD, thirteen of them, and no `速` was drawn.
+    """
+    from advtext.selection import Selection
+    from advtext.shipout import Glyph
+    from advtext.style import fontlib_metrics
+
+    document = build_document(_UNSET, theme, fontlib_metrics)
+    layout = _unit_layout(document.blocks, theme, width_px)
+    drawn = [chr(cmd.codepoint) for cmd in layout.cmds if isinstance(cmd, Glyph)]
+    assert drawn.count("�") == 13 and "速" not in drawn and "度" not in drawn
+
+    model = layout.model
+    assert model.copy_text(Selection(0, model.length)) == _UNSET_COPIED
+
+
+def test_part_of_a_block_copies_its_replaced_characters_and_only_them(
+    theme: Theme, bundled_fonts: Path
+) -> None:
+    """
+    A selection inside one paragraph, and one character alone.
+
+    Also the two things that are not a replaced character and must stay what
+    they are: a U+FFFD that was in the source copies as U+FFFD, and a
+    character borrowed from another face (`→`, from the math face) as itself.
+    """
+    from advtext.selection import Selection
+    from advtext.shipout import Glyph
+    from advtext.style import fontlib_metrics
+
+    document = build_document("ab 速 → � 度 cd\n", theme, fontlib_metrics)
+    layout = _unit_layout(document.blocks, theme, 420.0)
+    model = layout.model
+    assert model.copy_text(Selection(0, model.length)) == "ab 速 → � 度 cd"
+    marks = [cmd.index for cmd in layout.cmds if isinstance(cmd, Glyph) and cmd.codepoint == 0xFFFD]
+    assert len(marks) == 3
+    assert [model.copy_text(Selection(index, index + 1)) for index in marks] == ["速", "�", "度"]
+    assert model.copy_text(Selection(marks[0], marks[1] + 1)) == "速 → �"
+    # Up to the first of them, not including it: the space before it is selected.
+    assert model.copy_text(Selection(0, marks[0])) == "ab "
+    # The count is of characters replaced, so the source's own U+FFFD is not in it.
+    assert replaced_characters(document.blocks[0]) == 2
+
+
+def test_a_stream_s_replaced_characters_copy_as_themselves_at_every_piece(
+    theme: Theme, bundled_fonts: Path
+) -> None:
+    """
+    A stream cuts a code block and a table into pieces, so nothing about a
+    replaced character may be kept *beside* a block: it has to survive the cut.
+
+    Fed a character at a time; whenever the source so far ends a line, a
+    copy of everything has as many `速` as the source so far does (and no
+    U+FFFD, the source having none). The final copy is the whole text.
+    """
+    from advtext.selection import Selection
+    from advtext.stream import StreamDocument
+    from advtext.style import fontlib_metrics
+
+    source = "速 one\n\n```\na = 速\nb = 度速\n```\n\n| 速 | b |\n|---|---|\n| c | 度 |\n\nend 速\n"
+    stream = StreamDocument(theme, fontlib_metrics)
+    checked = 0
+    for character in source:
+        stream.append(character)
+        if not stream.source.endswith("\n"):
+            continue
+        layout = _unit_layout(stream.blocks, stream.live_theme, 300.0)
+        copied = layout.model.copy_text(Selection(0, layout.model.length))
+        assert "�" not in copied, stream.source
+        assert copied.count("速") == stream.source.count("速"), stream.source
+        assert copied.count("度") == stream.source.count("度"), stream.source
+        checked += 1
+    assert checked > 8
+    assert copied == "速 one\n\na = 速\nb = 度速\n\n速\tb\nc\t度\n\nend 速"
+
+
+def test_find_and_the_text_of_a_block_see_the_character_that_was_written(
+    theme: Theme, bundled_fonts: Path
+) -> None:
+    """
+    `material_text`, `find_spans` and `FindIndex` read the document, not its glyphs.
+
+    A reader searching for `速度` typed what the source says; a search that
+    only found `��` would find every unset character at once and none by
+    name. The spans come back in the material's own coordinates, as for any
+    other character, so a highlight lands on the U+FFFD glyphs that stand
+    there.
+    """
+    from advtext.spans import FindIndex, find_spans, material_text
+    from advtext.style import fontlib_metrics
+
+    document = build_document(_UNSET, theme, fontlib_metrics)
+    heading, paragraph, code, _table, _item, *_quote = document.blocks
+    assert isinstance(paragraph, TextBlock) and isinstance(code, CodeBlock)
+    assert isinstance(heading, TextBlock)
+    assert material_text(heading).text == "速 title"
+    assert material_text(paragraph).text == "速度 is 速 here, twice 速."
+    assert material_text(code).text == "v = 速度\n\nw = 2"
+
+    (span,) = find_spans(paragraph, "速度")
+    assert (span.start, span.end) == (0, 2)
+    assert find_spans(paragraph, "�") == [] and len(find_spans(code, "速")) == 1
+
+    index = FindIndex.of(document.blocks)
+    found = index.find("速")
+    # heading 1, paragraph 3, code 1, two cells, the item, the quote's first paragraph
+    assert [(match.block, match.cell) for match in found] == [
+        (0, None),
+        (1, None),
+        (1, None),
+        (1, None),
+        (2, None),
+        (3, (0, 0)),
+        (3, (1, 1)),
+        (4, None),
+        (5, None),
+    ]
+    assert index.find("�") == ()
+
+
+STOOD_IN = r"""
+    import sys
+    from imgui_bundle import hello_imgui, imgui, immapp
+    import advtext.markdown as markdown
+    from advtext import Theme, build_document, char_measure, compose, draw, fontlib_metrics, ship
+    from advtext.shipout import Glyph, Point
+    from advtext.ui.fonts import ALL_FACES, load_faces
+    from advtext.units import sp_from_px
+
+    if sys.argv[1] == "before":
+        markdown._stand_in = lambda theme, resolve, key, codepoint: (key, codepoint)
+    SOURCE = "Area `πr²` → done, and 速度 too.\n\n```\nα = β ∀ 速\n```\n"
+    theme = Theme.build()
+    measure = char_measure(fontlib_metrics)
+    doc = build_document(SOURCE, theme, fontlib_metrics)
+    box = compose(doc, theme, sp_from_px(520.0, theme.px_per_inch), measure)
+    cmds = tuple(ship(box, Point(0, box.height), measure=measure))
+    marks = sum(isinstance(c, Glyph) and c.codepoint == 0xFFFD for c in cmds)
+    loaded, drawn = [], []
+
+    def load_fonts():
+        hello_imgui.imgui_default_settings.load_default_font_with_font_awesome_icons()
+        loaded.append(load_faces(ALL_FACES))
+
+    def gui():
+        imgui.set_next_window_size(imgui.ImVec2(600.0, 300.0), imgui.Cond_.first_use_ever)
+        if imgui.begin("stood in"):
+            drawn.append(draw(imgui.get_window_draw_list(), cmds,
+                              imgui.get_cursor_screen_pos(), fonts=loaded[-1],
+                              px_per_inch=theme.px_per_inch, metrics=fontlib_metrics))
+        imgui.end()
+        if len(drawn) >= 6:
+            hello_imgui.get_runner_params().app_shall_exit = True
+
+    params = hello_imgui.RunnerParams()
+    params.app_window_params.window_geometry.size = (700, 380)
+    params.imgui_window_params.default_imgui_window_type = (
+        hello_imgui.DefaultImGuiWindowType.no_default_window
+    )
+    params.ini_disable = True
+    params.callbacks.load_additional_fonts = load_fonts
+    params.callbacks.show_gui = gui
+    immapp.run(params)
+    last = drawn[-1]
+    print(f"mode={sys.argv[1]} frames={len(drawn)} marks={marks} "
+          f"glyphs={last.glyphs} missing={last.missing}")
+"""
+
+
+def test_stood_in_characters_are_drawn_in_a_real_window(window: Window) -> None:
+    """
+    The claim that needs a backend: the gaps were glyphs the backend could not
+    draw (`DrawStats.missing`), and with the stand-in rule there are none.
+    The same script with the rule switched off is the control. Counts only;
+    nobody looked at it.
+    """
+    import textwrap
+
+    script = window.out / "stood_in.py"
+    script.write_text(textwrap.dedent(STOOD_IN), encoding="utf-8")
+    counts = {}
+    for mode in ("before", "now"):
+        done = window.run([str(script), mode])
+        assert done.returncode == 0, f"on {window.where}:\n{done.stdout}\n{done.stderr}"
+        (line,) = [line for line in done.stdout.splitlines() if line.startswith("mode=")]
+        counts[mode] = {
+            key: int(value) for key, value in (part.split("=") for part in line.split()[1:])
+        }
+    # Measured 2026-10-07 under Xvfb: before marks=0 glyphs=23 missing=8,
+    # now marks=3 glyphs=31 missing=0.
+    assert counts["before"]["marks"] == 0 and counts["before"]["missing"] > 0
+    assert counts["now"]["marks"] == 3 and counts["now"]["missing"] == 0
+    assert counts["now"]["glyphs"] > counts["before"]["glyphs"]

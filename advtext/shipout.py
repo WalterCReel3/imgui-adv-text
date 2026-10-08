@@ -51,6 +51,18 @@ which is document reading order. Two node kinds take an index:
 - a `Glue` node **in a horizontal list**, which becomes a `SetGlue` and is the
   interword space a reader expects to be able to select across.
 
+- an **atom box** in a horizontal list (`is_atom`: an hbox whose contents open
+  with a `MathOn` and close with a `MathOff`), which becomes one `Atom` and
+  takes **one** index however much is inside it. This is an inline formula.
+  The glyphs inside are shipped after the `Atom` and carry *its* index, so a
+  colour over that index tints the whole formula; glue inside takes no index
+  and emits nothing; and no `Line` is emitted for the hboxes of a vlist inside
+  it, so a fraction's numerator is not a line of the paragraph. Measured
+  before this existed (`.concerns/demo-review0-snippets/S12.py.txt`): a
+  stacked box inside a line shipped a `Line` of its own, the glyph after it
+  on the outer line was then culled with the inner line's band while still on
+  screen, and a copy of `A`, the box's `B`, `C` came out `AC B`.
+
 Everything else takes none. Vertical glue is not a character, and a click
 between two lines belongs to a line rather than to the gap; `Line` commands are
 what answer that. A `Kern`, a `Penalty` and a discretionary are invisible and
@@ -63,7 +75,9 @@ wrong:
   markdown source.** Line breaking discards the glue at each chosen break before
   ship-out ever sees it, so the indices are dense over what was actually set and
   there is no correspondence to source offsets. Anything wanting to map back to
-  source has to carry its own spans, as `advtext.markdown.LinkSpan` does.
+  source has to carry its own spans, as `advtext.markdown.LinkSpan` does -- and
+  those spans are in *material* indices, which are not these either.
+  `advtext.spans` is the map between the two.
 - **What a `SetGlue` means as *text* is the selection task's decision, not
   this module's.** Most of them are interword spaces; a paragraph's
   `\parfillskip` is one too and serialises as a trailing space unless somebody
@@ -73,8 +87,13 @@ wrong:
 presentation and belongs to the backend, and the node model carries none, so a
 colour field here would have exactly one value forever and would be a second
 place to look for something that is not there. A backend that wants to tint a
-link reads `advtext.markdown.LinkSpan` and matches it against these indices,
-which is the same mechanism selection highlighting uses.
+link reads `advtext.markdown.LinkSpan`, turns its material range into ranges of
+these indices with `advtext.spans.map_text_block`, and draws from those -- the
+same mechanism selection highlighting uses. (This paragraph used to say a
+backend "matches it against these indices" as though that were a lookup. It is
+not: a `LinkSpan` counts kerns, penalties and the glue the breaker discarded,
+and these indices count the `\rightskip` it added, so until `advtext.spans`
+existed nothing in the tree could do the matching and nothing did.)
 
 **No size either.** A `FontKey` *is* a face at a size -- `advtext.style.font_key`
 encodes both and `parse_font_key` decodes them -- so a separate `size` field
@@ -118,12 +137,15 @@ from advtext.units import RUNNING, Scaled
 __all__ = [
     "BILLION",
     "ORIGIN",
+    "Atom",
     "DrawCmd",
     "Glyph",
     "Line",
     "Point",
     "RuleRect",
     "SetGlue",
+    "atom_box",
+    "is_atom",
     "pascal_round",
     "ship",
 ]
@@ -241,6 +263,70 @@ class SetGlue:
 
 
 @dataclass(frozen=True, slots=True)
+class Atom(SetGlue):
+    """
+    A box that is one pointable item: an inline formula, placed.
+
+    The rectangle a reader points at, with nothing in it to draw; the glyphs
+    and rules of the formula follow as ordinary commands, the glyphs carrying
+    this command's `index`. `width` and `natural` are both the box's width.
+    `y`, `height` and `depth` are the enclosing line's, as a `SetGlue`'s are,
+    so a highlight over it is as tall as the highlight over the words beside
+    it.
+
+    **A subclass of `SetGlue`, and that is a deliberate economy.** It adds no
+    field. What it adds is a type a consumer can ask about: `advtext.selection`
+    makes it one item that is neither a character nor a space, and
+    `advtext.spans` anchors on it. A consumer that does not ask -- a backend's
+    `match` -- takes it for a set glue, which draws nothing outside a debug
+    overlay, and that is the right thing for it to do. A fifth member of
+    `DrawCmd` would have been a type error in every backend's `assert_never`
+    for a command none of them draws.
+
+    What it copies as is not here: ship-out has the box and not the source it
+    was built from. `advtext.selection.FragmentQueries.text` takes that as
+    data (`atoms`), from the layer that has the block.
+    """
+
+
+def is_atom(box: Box) -> bool:
+    """
+    Whether a box ships as one pointable item: an hbox bracketed by math nodes.
+
+    `MathOn` first and `MathOff` last, *inside* the box. TeX puts the pair
+    around an inline formula in the paragraph's own list (§147); there the
+    line breaker prunes a `MathOn` that starts a line (§879, and
+    `advtext.linebreak` follows it), so a bracket in the list does not survive
+    to ship-out and one inside the box does. Nothing else in this tree builds
+    a box of this shape.
+    """
+    contents = box.contents
+    return (
+        box.kind is BoxKind.HLIST
+        and len(contents) >= 2
+        and isinstance(contents[0], MathOn)
+        and isinstance(contents[-1], MathOff)
+    )
+
+
+def atom_box(box: Box) -> Box:
+    """
+    `box` wrapped so that it ships as one item, with the same three dimensions.
+
+    The wrapper is an hbox at the box's natural size, so it measures and packs
+    exactly as the box did; the line breaker cannot cut inside a box, so it
+    also breaks as a unit.
+    """
+    return Box(
+        kind=BoxKind.HLIST,
+        contents=(MathOn(), box, MathOff()),
+        width=box.width,
+        height=box.height + max(0, -box.shift_amount),
+        depth=box.depth + max(0, box.shift_amount),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class Line:
     """
     An hbox that was an item of a vertical list: one line of set material.
@@ -298,12 +384,15 @@ class _Shipper:
     not, and that distinction is the bug this arrangement cannot have.
     """
 
-    __slots__ = ("cmds", "index", "measure")
+    __slots__ = ("cmds", "in_atom", "index", "measure")
 
     def __init__(self, measure: CharMeasure | None) -> None:
         self.cmds: list[DrawCmd] = []
         self.index = 0
         self.measure = measure
+        # True while walking the inside of an atom box: nothing in there takes
+        # an index of its own or is a line. See `Atom`.
+        self.in_atom = False
 
     def _advance_of(self, node: CharNode) -> Scaled:
         """
@@ -362,8 +451,30 @@ class _Shipper:
                             index=self.index,
                         )
                     )
-                    self.index += 1
+                    if not self.in_atom:
+                        self.index += 1
                     cur_h += self._advance_of(node)
+
+                case Box() if not self.in_atom and is_atom(node):
+                    # One item, then its ink. The index moves on only after
+                    # the inside has been walked, so every glyph in there
+                    # carries the atom's.
+                    self.cmds.append(
+                        Atom(
+                            x=cur_h,
+                            y=base_line,
+                            width=node.width,
+                            natural=node.width,
+                            height=box.height,
+                            depth=box.depth,
+                            index=self.index,
+                        )
+                    )
+                    self.in_atom = True
+                    self.hlist_out(node, cur_h, base_line + node.shift_amount)
+                    self.in_atom = False
+                    self.index += 1
+                    cur_h += node.width
 
                 case Box():
                     # §621: the sub-box is shifted *down* by shift_amount, and
@@ -398,18 +509,19 @@ class _Shipper:
 
                 case Glue():
                     set_width, cur_glue, cur_g = _set_glue_width(node, box, cur_glue, cur_g)
-                    self.cmds.append(
-                        SetGlue(
-                            x=cur_h,
-                            y=base_line,
-                            width=set_width,
-                            natural=node.spec.width,
-                            height=box.height,
-                            depth=box.depth,
-                            index=self.index,
+                    if not self.in_atom:
+                        self.cmds.append(
+                            SetGlue(
+                                x=cur_h,
+                                y=base_line,
+                                width=set_width,
+                                natural=node.spec.width,
+                                height=box.height,
+                                depth=box.depth,
+                                index=self.index,
+                            )
                         )
-                    )
-                    self.index += 1
+                        self.index += 1
                     cur_h += set_width
 
                 case Kern() | MathOn() | MathOff():
@@ -452,7 +564,9 @@ class _Shipper:
                     # line is -- `line_break` hpacks each line and appends it --
                     # so this is where a `Line` command comes from.
                     cur_v += node.height
-                    self.descend(node, left_edge + node.shift_amount, cur_v, as_line=True)
+                    self.descend(
+                        node, left_edge + node.shift_amount, cur_v, as_line=not self.in_atom
+                    )
                     cur_v += node.depth
 
                 case Rule():

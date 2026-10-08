@@ -2,14 +2,18 @@
 r"""
 Launch the ImGui demo, and refuse to hang when there is nowhere to open a window.
 
-**A display is reachable here and this script has been run.** An earlier version
-of this docstring opened "this cannot run in the development sandbox" and closed
-"**Never executed.** Nothing downstream of the guard has been run", on the
-grounds that the host display was unreachable and Xvfb could not create its lock
-file under `/tmp`. Both were re-measured and are false in this environment:
-`DISPLAY=:1` is live, `AF_UNIX` connects to `/tmp/.X11-unix/X1`, and a real
-window opens in about 0.4s with no Xvfb and no software rasteriser. The
-`Makefile` header records the same correction at length.
+**This script has been run, on a display that was reachable when it was.** An
+earlier version of this docstring opened "this cannot run in the development
+sandbox" and closed "**Never executed.** Nothing downstream of the guard has
+been run", on the grounds that the host display was unreachable and Xvfb could
+not create its lock file under `/tmp`. Both were re-measured in a later session
+and were false in it: `DISPLAY=:1` was live, `AF_UNIX` connected to
+`/tmp/.X11-unix/X1`, and a real window opened in about 0.4s with no Xvfb and no
+software rasteriser. The `Makefile` header records that correction at length,
+and the one after it: in the sandboxed session of 2026-10-06 `DISPLAY=:1` was
+set and unreachable again (`socket(AF_UNIX)` raised `PermissionError`), and a
+window opened only on an Xvfb in a user namespace over TCP. Reachability is a
+fact about a session, so this script does not assume it either way.
 
 **The guard is still the whole point of this script**, because a machine without
 a display is a real machine and not a historical one. An ImGui window does not
@@ -31,7 +35,10 @@ With no file it shows `demo/sample.md`, falling back to
 `advtext.ui.app.DEFAULT_MARKDOWN` outside a checkout, where `demo/` is genuinely
 absent. `--tab` takes `advtext.ui.app.parse_tab_request`'s grammar, so
 `--tab columns:3,debug` opens the Columns tab at three columns with the debug
-overlay on -- there are five tabs now, and this argument used to accept three.
+overlay on. A "tab" is a page of the sidebar since 2026-10-07: fourteen of them,
+found by scanning `advtext/ui/pages/` (`--help` lists the names; there were five
+tabs before that, and three before those), and a page may take option words of its
+own, as in `--tab diff:git,side` or `--tab stream:table,done`.
 """
 
 from __future__ import annotations
@@ -181,10 +188,11 @@ def _no_window(display: str | None) -> str:
     because a reader who goes looking assumes they are reading the wrong file.
 
     Cause 1's `AF_UNIX` probe is *not* stale and was checked separately rather
-    than assumed to fall with the Makefile block. It does not fire here -- unix
-    sockets work in this sandbox and `DISPLAY=:1` is reached over one -- but it
-    is still the diagnostic that separates a blocked socket from an absent
-    server on the machines where it does.
+    than assumed to fall with the Makefile block. In the session that wrote it
+    the probe did not fire -- unix sockets worked and `DISPLAY=:1` was reached
+    over one. In the sandboxed session of 2026-10-06 it did: `socket(AF_UNIX)`
+    raised `PermissionError`, which is exactly the case it describes. It is the
+    diagnostic that separates a blocked socket from an absent server.
     """
     where = f"DISPLAY={display}" if display else "no DISPLAY set"
     return f"""\

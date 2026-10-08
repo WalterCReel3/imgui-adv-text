@@ -1,16 +1,44 @@
 r"""
-The demo application: five tabs, one window, and a theme that stays out of the way.
+The demo application: a sidebar of pages, one window, and a theme that stays out of the way.
 
-**This has been executed and photographed.** `DISPLAY=:1` is live in this
-sandbox, `scripts/shot.py` drives this module's own `run` for N frames and grabs
-the window, and every claim below about how something *looks* was checked by
-reading the resulting PNG. The module docstring here used to open "Never
+**This has been executed and photographed.** `scripts/shot.py` drives this
+module's own `run` for N frames and grabs the window, and every claim below
+about how something *looks* was checked by reading the resulting PNG, taken on
+this machine's `DISPLAY=:1`. The module docstring here used to open "Never
 executed"; that was true for most of this project's life and is not true now.
-What is still unexercised is input: nothing in this environment synthesises a
-click, which is why `App.open_tab` exists and why it grew the small grammar
-`parse_tab_request` implements.
 
-Five tabs, because there are five claims worth looking at:
+Two sentences that stood here are withdrawn. *"`DISPLAY=:1` is live in this
+sandbox"*: whether a display is reachable is a fact about the session, and in
+the session of 2026-10-06 it was set and unreachable (`socket(AF_UNIX)` was
+refused), so every window opened then was on an Xvfb in a user namespace
+(`scripts/mouse_probe.py`, `xvfb_command`). *"Nothing in this environment
+synthesises a click"*: `scripts/mouse_probe.py` now does, into this app, through
+the real `immapp.run` -- eight gestures, eighteen checks on the selection and
+the clipboard, all passing in a real window and in a bare context. The events
+enter at `ImGuiIO`, not at the X server, and no person has dragged anything.
+`App.open_tab` and the grammar `parse_tab_request` implements were built when
+nothing could click a tab, and are still how a screenshot selects a page.
+
+**The tab bar is gone; the pages are discovered.** This module used to draw five
+tabs out of five methods of `App` and export their names as a tuple. The
+navigation is now a list down the left of the window, and what it lists is
+whatever `advtext.ui.pages.discover` finds: one module per page under
+`advtext/ui/pages/`, each exposing a `PAGE`. `advtext.ui.pages`' docstring is the
+contract. The five original tabs are five of those modules, and their frame code
+moved there unchanged; what stayed here is what `tests/test_app.py` pins without
+a window -- the column geometry and the caches on `App` -- plus the shell: the
+sidebar, the request grammar, the chrome, the fonts and `run`. The words "tab"
+and `--tab` survive in the grammar and in `TAB_NAMES` because scripts, Makefile
+targets and people's fingers already use them; they mean "page".
+
+**This is the demo, and it is no longer the smallest consumer of the library.**
+`examples/minimal.py` puts a markdown string in a plain ImGui window through
+`import advtext` alone, and a host embeds `advtext.ui.bare_view.BareView` or
+`advtext.ui.stream_view.StreamView`, not anything in this module. The page
+sheet, the capped measure and the pages are this application's presentation.
+`load_fonts` below is a thin caller of `advtext.ui.fonts.load_faces`.
+
+The five original pages, one for each claim that was worth looking at first:
 
 1. **Document** -- the markdown litmus test, laid out on a page and selectable.
    Drag to select, double click for a word, triple for a line, Ctrl+C to copy.
@@ -22,7 +50,8 @@ Five tabs, because there are five claims worth looking at:
    faked with two documents.
 3. **Specimen** -- every face this project renders, compared side by side, a size
    ladder, and a kerning demonstration. `advtext.ui.specimen` builds it.
-4. **Formula** -- nine formulae, each chosen because it is the only one that makes
+4. **Formula** -- eleven formulae (nine until the second build added a radical and a
+   sized pair of delimiters), each chosen because it is the only one that makes
    some rule of TeX's math mode visible: the display-size operator as a different
    glyph, the four math styles and where they stop, the inter-atom spacing table
    with and without its classes, and a binary operator that is only binary in
@@ -33,9 +62,9 @@ Five tabs, because there are five claims worth looking at:
 ## One page geometry, applied five times
 
 `advtext.ui.document_view.page_for` decides where the sheet sits and how wide the
-text on it is, and it carries the typographic argument for both. Every tab here
-goes through it -- `_paint_sheet` is the one place that turns a `Page` into a
-filled rectangle and a text-block origin, so a margin cannot be applied to the
+text on it is, and it carries the typographic argument for both. Each of the
+five goes through it -- `advtext.ui.pages.paint_sheet` is the one place that turns a
+`Page` into a filled rectangle and a text-block origin, so a margin cannot be applied to the
 document and forgotten on the specimen. `column_page` is the same arithmetic
 generalised to N columns and **reduces to `page_for` exactly at N = 1**, which is
 what `tests/test_app.py` pins rather than leaving as a comment.
@@ -46,7 +75,7 @@ what `tests/test_app.py` pins rather than leaving as a comment.
 that `advtext.backends.imgui_draw.Palette` already argues for. It is restrained
 on purpose. The text is the thing being shown and chrome that competes with it is
 a regression, so there is no accent on anything that is not interactive, no
-rounding on the tab bar, and nothing that draws the eye off the sheet.
+rounding on the sidebar's rows, and nothing that draws the eye off the sheet.
 
 Set once from hello_imgui's `setup_imgui_style` callback rather than per frame,
 for the reason pptmstr's `theme.apply_style` gives: `ImGuiStyle` is global mutable
@@ -94,12 +123,14 @@ editing.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, replace
+import sys
+import traceback
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
 from advtext import fontlib
-from advtext.backends.imgui_draw import DrawStats, Palette, rgba
+from advtext.backends.imgui_draw import rgba
 from advtext.columns import split_into_columns
 from advtext.fontmetrics import Face
 from advtext.markdown import Document, build_document
@@ -108,7 +139,7 @@ from advtext.nodes import Box, Glue, Kern, Node
 from advtext.pack import CharMeasure, PackMode, hpack, vpack
 from advtext.shipout import Point, ship
 from advtext.style import BlockKind, Theme, char_measure, fontlib_metrics
-from advtext.ui import HSS, CommandIndex, LayoutCache, Viewport, compose_blocks
+from advtext.ui import HSS, CommandIndex, LayoutCache, compose_blocks
 from advtext.ui.document_view import (
     MEASURE_ALPHABETS,
     TEXT_BLOCK_FRACTION,
@@ -117,10 +148,25 @@ from advtext.ui.document_view import (
     alphabet_length,
     text_margin,
 )
-from advtext.ui.formulas import ENTRIES as FORMULA_ENTRIES
-from advtext.ui.formulas import SUMMATION, Gallery, build_gallery, missing_glyphs
+from advtext.ui.formulas import SUMMATION, Gallery, build_gallery
+from advtext.ui.pages import (
+    DEMO_DIR,
+    PLATE_HEADS,
+    SHARED_OPTION,
+    Discovery,
+    Failure,
+    PageContext,
+    PageSpec,
+    PageView,
+    caption,
+    demo_text,
+    discover,
+    is_count,
+    plate,
+    split_options,
+)
 from advtext.ui.specimen import Specimen, build_specimen
-from advtext.units import DEFAULT_PX_PER_INCH, Scaled, px_from_sp, sp_from_px
+from advtext.units import DEFAULT_PX_PER_INCH, Scaled, sp_from_px
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from imgui_bundle import imgui
@@ -128,43 +174,111 @@ if TYPE_CHECKING:  # pragma: no cover - imported for types only
 __all__ = [
     "COLUMN_COUNTS",
     "DEFAULT_MARKDOWN",
+    "DEMO_DIR",
     "GUTTER_LEADINGS",
-    "TAB_NAMES",
+    "PLATE_HEADS",
+    "SIDEBAR_WIDTH_PX",
+    "WINDOW_SIZE",
     "App",
     "ColumnPage",
+    "Failure",
+    "PageError",
+    "SidebarRow",
     "TabRequest",
     "apply_style",
     "column_page",
+    "demo_text",
     "load_fonts",
+    "page_names",
     "parse_tab_request",
     "run",
+    "sidebar_rows",
 ]
 
 WINDOW_TITLE = "advtext"
 
-TAB_NAMES: Final = ("Document", "Columns", "Specimen", "Formula", "Blocks")
+SIDEBAR_WIDTH_PX: Final = 188.0
 """
-Every tab, in the order the tab bar shows them. **The single copy of this list.**
+The width of the navigation list, in pixels.
 
-`App.gui` iterates it and `parse_tab_request` validates against it, so the two
-cannot disagree, and a consumer outside this module has something to read
-instead of a copy to keep.
-
-**Three copies drifted before this existed, and the damage was measured.**
-`Makefile`'s `SHOT_TABS` listed the original three, so `make shot-all` silently
-skipped Columns and Specimen; `scripts/run_demo.py` rejected `columns:3` and
-`specimen` outright, so `make run` could not open either; and `scripts/shot.py`
-deliberately kept no copy, its comment reading "a copy of the tab list would go
-stale the first time a tab was added" -- a prediction that came true twice in one
-batch.
-
-Worse, nothing validated the *name*. T15-shot-tabs measured
-`scripts/shot.py --tab colums`, one letter wrong, producing an image
-**byte-identical to `--tab document`**: 0 of 2,640,800 decompressed bytes
-differed, exit 0, no warning. `parse_tab_request` already refused an unknown
-option after the colon on the stated grounds that "a wrong picture is worse than
-a refusal"; it now refuses an unknown name on the same grounds.
+Fixed rather than proportional: the list is chrome, and chrome that grew with the
+window would take width from the page when there is most of it to give. Wide
+enough for a two-word label at the default face with the row padding
+`apply_style` sets.
 """
+
+WINDOW_SIZE: Final = (1300, 800)
+"""
+The window `run` opens, in pixels, and what `scripts/shot.py` photographs by default.
+
+**1300 and not the 1100 it was, so that the page body is the width it was.** The
+sidebar costs `SIDEBAR_WIDTH_PX` plus one `item_spacing.x` (12 px, `apply_style`)
+between it and the body: 200 px. Under the tab bar the body was the window less
+its padding, 1100 - 2 x 16 = 1068 px; at 1300 it is 1068 px again, so every page
+sets the sheet it set before. The height is unchanged at 800, which makes the
+body *taller* than it was by the tab bar's row, since nothing sits above a page
+now.
+"""
+
+
+def _clip_depth(draw_list: Any) -> int | None:
+    """
+    How many clip rectangles are pushed on a draw list, or `None` if this
+    binding does not expose the stack (`ImDrawList::_ClipRectStack`).
+    """
+    stack = getattr(draw_list, "_clip_rect_stack", None)
+    try:
+        return len(stack) if stack is not None else None
+    except TypeError:
+        return None
+
+
+class PageError(RuntimeError):
+    """
+    Raised by `run` after the window has closed, if a page raised while it was open.
+
+    The exception was caught for the window's sake (`App._draw_page`) and is
+    not swallowed for the process's: a screenshot, a tour or a probe of a
+    broken page exits non-zero, and the message is every failed page's
+    traceback.
+    """
+
+    def __init__(self, errors: dict[str, str]) -> None:
+        self.errors = dict(errors)
+        names = ", ".join(self.errors)
+        super().__init__(
+            f"page(s) raised while drawing: {names}\n\n" + "\n".join(self.errors.values())
+        )
+
+
+def page_names() -> tuple[str, ...]:
+    """
+    The name of every discovered page, in sidebar order.
+
+    What `--tab` accepts, case-insensitively. Read by scanning
+    `advtext.ui.pages`, so there is no list here to keep.
+    """
+    return tuple(page.name for page in discover().pages)
+
+
+def __getattr__(name: str) -> object:
+    """
+    `TAB_NAMES`, computed when asked for.
+
+    It was a literal tuple of five names, "the single copy of this list", after
+    three hand-kept copies had drifted (`Makefile`, `scripts/run_demo.py`,
+    `scripts/shot.py`; `tests/test_shot_all.py` has the account). The pages are
+    now discovered, so the single copy is the directory listing and this is a
+    view of it: `scripts/visual_diff.py` and the tests that import the name keep
+    working and now see a page the day its module lands. A module attribute
+    cannot be computed at import here -- the page modules import this one --
+    hence the hook, and hence its absence from `__all__`, which may only name
+    what the module defines statically. New code should call `page_names()`.
+    """
+    if name == "TAB_NAMES":
+        return page_names()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 COLUMN_COUNTS: Final = (1, 2, 3)
 """
@@ -243,25 +357,8 @@ selectable and ImGui's own is not.
 > layout.
 """
 
-# The demo documents, beside the repository rather than inside the package. A
-# checkout therefore opens on the real document and an installed wheel opens on
-# DEFAULT_MARKDOWN, which is the honest degradation: the files are genuinely not
-# there in the second case.
-DEMO_DIR = Path(__file__).resolve().parents[2] / "demo"
-
-
-def demo_text(name: str) -> str | None:
-    """
-    A file from `demo/`, or `None` when this is not a checkout.
-
-    `OSError` and not `FileNotFoundError`: a wheel installed into a read-only
-    prefix, a broken symlink and a directory of the same name all have to come
-    back as "not available" rather than as a traceback on the way to a window.
-    """
-    try:
-        return (DEMO_DIR / name).read_text(encoding="utf-8")
-    except OSError:  # pragma: no cover - exercised only outside a checkout
-        return None
+# `DEMO_DIR` and `demo_text` live in `advtext.ui.pages` now, where a page can
+# reach them without importing this module; they are re-exported above.
 
 
 # ----------------------------------------------------------------------
@@ -272,85 +369,156 @@ def demo_text(name: str) -> str | None:
 @dataclass(frozen=True, slots=True)
 class TabRequest:
     """
-    A tab to open on the first frame, and the state to open it in.
+    A page to open on the first frame, and the state to open it in.
 
     Every field is `None`-or-default-meaning-"leave it alone", so a request can
-    name a tab without disturbing the column count and vice versa.
+    name a page without disturbing the column count and vice versa.
+
+    `options` are the words that are the named page's own (`PageSpec.options`),
+    in the order given. `debug` and the integer are not among them: every page
+    accepts those two and they keep the fields they always had.
     """
 
     tab: str | None = None
     columns: int | None = None
     debug: bool = False
+    options: tuple[str, ...] = ()
 
 
-def _check_tab_name(spec: str, name: str) -> None:
+def _check_tab_name(spec: str, name: str, found: Discovery) -> PageSpec | None:
     """
-    Refuse a tab name that is not in `TAB_NAMES`, naming the ones that are.
+    The page `name` addresses, refusing a name that is no page and naming the ones that are.
 
-    An empty name is allowed and means "leave the tab alone": `parse_tab_request`
+    An empty name is allowed and means "leave the page alone": `parse_tab_request`
     maps it to `TabRequest(tab=None)`, and `:debug` with no name in front of it
     is a legitimate way to ask for the overlay on whatever opens.
     """
-    if not name or name.lower() in {tab.lower() for tab in TAB_NAMES}:
-        return
+    if not name:
+        return None
+    page = found.find(name)
+    if page is not None:
+        return page
+    broken = ""
+    if found.failures:
+        broken = (
+            " (Not loaded, and so not among them: "
+            + "; ".join(f"{failure.module} -- {failure.reason}" for failure in found.failures)
+            + ".)"
+        )
     raise ValueError(
         f"{spec!r}: {name!r} is not a tab. "
-        f"The tabs are {', '.join(TAB_NAMES)} -- case does not matter. "
+        f"The tabs are {', '.join(page.name for page in found.pages)} -- case does not "
+        f"matter.{broken} "
         "Refused rather than ignored because an unmatched name opens the first "
-        "tab, which is a photograph of the wrong thing under a filename that "
+        "page, which is a photograph of the wrong thing under a filename that "
         "claims otherwise."
     )
 
 
-def parse_tab_request(spec: str | None) -> TabRequest:
+def parse_tab_request(spec: str | None, found: Discovery | None = None) -> TabRequest:
     """
-    Parse `NAME[:OPTION[,OPTION...]]`, the grammar a screenshot addresses a tab with.
+    Parse `NAME[:OPTION[,OPTION...]]`, the grammar a screenshot addresses a page with.
 
-    Nothing in this environment can click a control, so a tab whose interesting
-    states are only reachable by clicking is a tab that can never be photographed
-    in any of them. `App.open_tab` already existed to name the tab; this widens it
-    to the two pieces of state the tabs have:
+    Built when nothing could click a control, so that a page whose interesting
+    states are only reachable by clicking could still be photographed in them:
 
-        document            the Document tab, as it opens
+        document            the Document page, as it opens
         document:debug      ... with the debug overlay on
-        columns:3           the Columns tab, at three columns
+        columns:3           the Columns page, at three columns
         columns:3,debug     ... and the overlay
 
-    An option is either an integer, meaning the column count, or the word
-    `debug`. Anything else raises `ValueError` **before the window opens**: a
-    misspelt option that silently did nothing would produce a photograph of the
-    default state under a filename claiming otherwise, and a wrong picture is
-    worse than a refusal.
+    An option is an integer of 1 or more (the column count; any page may read it
+    through `PageContext.count_for`), the word `debug`, or one of the words the
+    named page declares in `PageSpec.options`. Anything else raises `ValueError`
+    **before the window opens**: a misspelt option that silently did nothing
+    would produce a photograph of the default state under a filename claiming
+    otherwise, and a wrong picture is worse than a refusal.
 
-    **The name is held to the same standard, and it was not always.** A name not
-    in `TAB_NAMES` raises here, case-insensitively as `App.gui` matches it.
-    Before this, an unknown name simply never matched, ImGui opened the first
-    tab, and `--tab colums` produced an image byte-identical to `--tab document`
-    at exit 0 -- the exact failure the paragraph above refuses for options, going
-    unrefused for the thing the option is attached to.
+    **The name is held to the same standard, and it was not always.** A name
+    that is not a discovered page raises here, case-insensitively as `App.gui`
+    matches it. Before this, an unknown name simply never matched, ImGui opened
+    the first tab, and `--tab colums` produced an image byte-identical to
+    `--tab document` at exit 0 -- the exact failure the paragraph above refuses
+    for options, going unrefused for the thing the option is attached to.
+
+    `found` is a scan the caller already has; without it the pages are scanned
+    here, which imports every page module.
     """
     if spec is None:
         return TabRequest()
+    if found is None:
+        found = discover()
     name, separator, rest = spec.partition(":")
-    _check_tab_name(spec, name)
+    page = _check_tab_name(spec, name, found)
     if not separator:
         return TabRequest(tab=name or None)
 
     columns: int | None = None
     debug = False
-    for option in rest.split(","):
-        option = option.strip()
-        if option == "debug":
+    words: list[str] = []
+    for option in split_options(rest) or ("",):
+        if option == SHARED_OPTION:
             debug = True
-        elif option.isdigit() and int(option) >= 1:
+        elif is_count(option):
             columns = int(option)
+        elif page is not None and option in page.options:
+            words.append(option)
         else:
+            own = (
+                f" {page.name} also takes {', '.join(repr(word) for word in page.options)}."
+                if page is not None and page.options
+                else ""
+            )
             raise ValueError(
                 f"{spec!r}: {option!r} is not a tab option. "
                 "Options are 'debug' or a column count of 1 or more, "
-                "comma separated, after a colon -- for instance 'columns:3,debug'."
+                f"comma separated, after a colon -- for instance 'columns:3,debug'.{own}"
             )
-    return TabRequest(tab=name or None, columns=columns, debug=debug)
+    return TabRequest(tab=name or None, columns=columns, debug=debug, options=tuple(words))
+
+
+@dataclass(frozen=True, slots=True)
+class SidebarRow:
+    """
+    One line of the navigation list: a group heading, a page, or a module that failed.
+
+    A value and not a draw call so the list can be checked without a frame:
+    `sidebar_rows` is pure, and `App._sidebar` draws exactly what it returns.
+    """
+
+    kind: str
+    """`"heading"`, `"page"` or `"failure"`."""
+    text: str
+    page: PageSpec | None = None
+    detail: str = ""
+
+
+def sidebar_rows(found: Discovery) -> tuple[SidebarRow, ...]:
+    """
+    The navigation list for a scan, top to bottom.
+
+    Pages are in `Discovery.pages`' order, which is `(order, name)`. A heading
+    is emitted whenever the group changes from one page to the next, so pages
+    of one group that are not adjacent in that order get the heading twice --
+    which is visible, and is how a page whose `order` strays into another
+    group's range gets noticed. Modules that could not be loaded come last,
+    under their own heading, with the reason as the row's detail.
+    """
+    rows: list[SidebarRow] = []
+    group: str | None = None
+    for page in found.pages:
+        if page.group != group:
+            group = page.group
+            if group:
+                rows.append(SidebarRow("heading", group))
+        rows.append(SidebarRow("page", page.label, page, page.caption))
+    if found.failures:
+        rows.append(SidebarRow("heading", "failed to load"))
+        for failure in found.failures:
+            rows.append(
+                SidebarRow("failure", failure.module.rpartition(".")[2], None, failure.reason)
+            )
+    return tuple(rows)
 
 
 # ----------------------------------------------------------------------
@@ -534,12 +702,18 @@ def _column_pages(material_height: Scaled, column_height: Scaled, count: int) ->
 @dataclass(slots=True)
 class App:
     """
-    The demo's whole state: two documents, one document view and three caches.
+    The shell, and the material of the five original pages.
 
-    The formula and the block layouts depend only on the measure; the specimen
-    depends on the measure; the columns depend on the measure, the visible height
-    and the column count. Each is cached against exactly what it depends on, and
-    `DocumentView` owns the Document tab's own cache.
+    The shell is `discovery` (what the sidebar lists), `current` (the page that
+    is showing), `context` (what every page is built from) and the page objects
+    themselves, built on first showing and kept.
+
+    The rest is two documents, one document view and three caches, which the
+    five original pages draw from. The formula and the block layouts depend only
+    on the measure; the specimen depends on the measure; the columns depend on
+    the measure, the visible height and the column count. Each is cached against
+    exactly what it depends on, and `DocumentView` owns the Document page's own
+    cache. A new page keeps its state on its own object, not here.
     """
 
     theme: Theme = field(default_factory=Theme.build)
@@ -558,21 +732,40 @@ class App:
     columns: int = 2
     """
     How many columns the Columns tab is showing. Two, because one demonstrates
-    nothing and three is tight in the default 980 px window.
+    nothing and three is tight in the default 1100 px window (`run` sets
+    1100 x 800; this said 980 px, which is not a size anything in the tree sets).
     """
     open_tab: str | None = None
     """
-    A tab to select on the first frame, in `parse_tab_request`'s grammar.
+    A page to select on the first frame, in `parse_tab_request`'s grammar.
 
-    Exists so a screenshot can name the tab it wants, and now the state it wants
-    it in. There is no synthetic-input tool in the environment that captures a
-    click, so without it only the tab ImGui opens by default, in the state it
-    opens in, could ever be photographed.
+    Exists so a screenshot can name the page it wants, and the state it wants
+    it in, without clicking for either. After construction it holds the bare
+    name; the first frame moves it into `current` and clears it.
     """
     view: DocumentView = field(init=False)
+    discovery: Discovery = field(init=False)
+    """
+    What `advtext.ui.pages.discover` found when this app was built. Scanned
+    once: the sidebar is drawn from it every frame.
+    """
+    context: PageContext = field(init=False)
+    current: str | None = field(default=None, init=False)
+    """
+    The name of the page that is showing; the first in sidebar order until
+    `open_tab` or a click says otherwise. `None` only if no page was found.
+    """
+    page_errors: dict[str, str] = field(default_factory=dict, init=False)
+    """
+    The traceback of each page whose factory or `draw` raised, by page name.
+
+    A page in here is not built or drawn; its body shows the traceback and a
+    button that calls `retry`. Empty in a healthy app, which is what a test
+    or `run` checks.
+    """
+    _views: dict[str, PageView] = field(default_factory=dict, init=False)
     _formula: Box | None = field(default=None, init=False)
     _formula_width: Scaled = field(default=0, init=False)
-    _formula_stats: DrawStats = field(default_factory=DrawStats, init=False)
     _specimen: Specimen | None = field(default=None, init=False)
     _specimen_width: Scaled = field(default=0, init=False)
     _gallery: Gallery | None = field(default=None, init=False)
@@ -603,11 +796,69 @@ class App:
             measure=self.measure,
             px_per_inch=self.px_per_inch,
         )
-        request = parse_tab_request(self.open_tab)
+        self.discovery = discover()
+        request = parse_tab_request(self.open_tab, self.discovery)
         if request.columns is not None:
             self.columns = request.columns
         self.view.debug = request.debug
         self.open_tab = request.tab
+        self.context = PageContext(
+            theme=self.theme,
+            measure=self.measure,
+            px_per_inch=self.px_per_inch,
+            fonts=_face_font,
+            metrics=fontlib_metrics,
+            debug=request.debug,
+            request_page=request.tab,
+            request_options=request.options,
+            request_count=request.columns,
+            app=self,
+        )
+        if self.discovery.pages:
+            self.current = self.discovery.pages[0].name
+
+    # ------------------------------------------------------------------
+    # Pages
+    # ------------------------------------------------------------------
+
+    def page(self, name: str) -> PageView:
+        """
+        The page object for `name` (any case), built on first request and kept.
+
+        Lazy because a factory may parse a document or lay one out, and a demo
+        with a dozen pages should not pay for eleven it has not shown. Kept for
+        the app's lifetime, which is what makes the object a place for a page
+        to hold its state.
+        """
+        spec = self.discovery.find(name)
+        if spec is None:
+            raise KeyError(f"{name!r} is not a page; the pages are {page_names()!r}")
+        made = self._views.get(spec.name)
+        if made is None:
+            made = self._views[spec.name] = spec.factory(self.context)
+        return made
+
+    def select(self, name: str) -> None:
+        """
+        Show page `name` (any case) from the next `gui` on. `KeyError` if it is no page.
+        """
+        spec = self.discovery.find(name)
+        if spec is None:
+            raise KeyError(f"{name!r} is not a page; the pages are {page_names()!r}")
+        self.current = spec.name
+
+    def retry(self, name: str) -> None:
+        """
+        Forget that page `name` failed, and the page object that did: the next frame builds it anew.
+
+        The object is dropped because an exception partway through a `draw`
+        or a constructor leaves no promise about its state.
+        """
+        spec = self.discovery.find(name)
+        if spec is None:
+            raise KeyError(f"{name!r} is not a page; the pages are {page_names()!r}")
+        self.page_errors.pop(spec.name, None)
+        self._views.pop(spec.name, None)
 
     # ------------------------------------------------------------------
     # Material
@@ -739,7 +990,7 @@ class App:
         `HSS` glues centre the pair on the page the rest of the demo sets. The
         construction is otherwise the one `tests/test_imgui_draw.py` pins.
 
-        **The Formula tab no longer draws this.** It draws `gallery`, whose
+        **The Formula page no longer draws this.** It draws `gallery`, whose
         `operator-style` entry is the same comparison with a caption and a label
         under each half. This is kept as the smallest reproduction of it: it is
         what `tests/test_app.py` pins the repack-on-measure-change behaviour
@@ -780,7 +1031,8 @@ class App:
 
         Cached for the reason the specimen is: **45 ms at the 468 px measure this
         tab sets, warm, best of three, against a 16.7 ms frame budget** -- and
-        nearly all of it is the nine captions going through `break_paragraph`. The
+        nearly all of it is the captions going through `break_paragraph` (nine of
+        them when that was measured; there are eleven now and it was not re-taken). The
         math is a few ms, because nothing in a formula is line-broken. Nothing in
         it depends on the window except the measure the captions break to.
         """
@@ -795,406 +1047,155 @@ class App:
 
     def gui(self) -> None:
         """
-        One frame: the tab bar and whichever tab is open.
+        One frame: the navigation list, and beside it whichever page is showing.
 
-        The order is `TAB_NAMES`'; the bodies are looked up by name out of it, so
-        a tab added to one and not the other is a `KeyError` on the first frame
-        rather than a tab that quietly never appears.
+        The list is a child window of fixed width; the page is drawn after a
+        `same_line`, inside a group and **not** inside a second child. A group
+        only moves the left edge: the page's own header row is still drawn on
+        the window's background and its own scrolling child is still a direct
+        child of the window, exactly as under the tab bar, which is what keeps
+        the five original pages' pixels where they were. A wrapping child would
+        have put the header on the darker child background and nested every
+        page's scroll one level down.
+
+        `open_tab` selects a page once, on the first frame, and is then cleared;
+        held, it would re-select every frame and the list could never be
+        clicked away from.
+
+        **An exception out of a page's factory or its `draw` is caught, per
+        page** (`_draw_page`): the body shows the traceback, the list still
+        works, and every other page is as it was. It used to end the app. The
+        reason given then -- a screenshot run must not photograph a blank
+        body -- is kept another way: `run` raises `PageError` once the window
+        has closed if anything is in `page_errors`, so `scripts/shot.py` and
+        the window tests still fail, with the page's own traceback.
         """
         from imgui_bundle import imgui
 
-        if not imgui.begin_tab_bar("##advtext-tabs"):
-            return
-        bodies = {
-            "Document": self._document_tab,
-            "Columns": self._columns_tab,
-            "Specimen": self._specimen_tab,
-            "Formula": self._formula_tab,
-            "Blocks": self._blocks_tab,
-        }
-        for name in TAB_NAMES:
-            body = bodies[name]
-            # `open_tab` selects a tab once, on the first frame that draws it,
-            # and is then cleared. Without the clear the flag would re-select it
-            # every frame and the tab bar could never be clicked away from --
-            # which looks like a broken tab bar rather than like a held flag.
-            flags = 0
-            if self.open_tab is not None and name.lower() == self.open_tab.lower():
-                flags = int(imgui.TabItemFlags_.set_selected)
-                self.open_tab = None
-            if imgui.begin_tab_item(name, None, flags)[0]:
-                body()
-                imgui.end_tab_item()
-        imgui.end_tab_bar()
-
-    def _document_tab(self) -> None:
-        from imgui_bundle import imgui
-
-        self._debug_toggle()
+        if self.open_tab is not None:
+            self.select(self.open_tab)
+            self.open_tab = None
+        self._sidebar()
         imgui.same_line()
-        _caption("drag to select  ·  double click a word  ·  triple click a line  ·  ctrl+C copies")
-        imgui.separator()
-        if imgui.begin_child("##advtext-scroll"):
-            stats = self.view.draw(fonts=_face_font)
-            if stats.missing:
-                _caption(f"{stats.missing} glyph(s) absent from the ImGui atlas")
-        imgui.end_child()
+        imgui.begin_group()
+        if self.current is None:
+            caption("no pages were found in advtext.ui.pages")
+        else:
+            self._draw_page(self.current)
+        imgui.end_group()
 
-    def _columns_tab(self) -> None:
+    def _draw_page(self, name: str) -> None:
+        """
+        Build and draw page `name`, or show why it could not be.
+
+        **ImGui's stacks are put back after an exception.** A `draw` that
+        raises between a `begin_child` and its `end_child` (or a push and its
+        pop) leaves the frame unbalanced, and ImGui then asserts at the
+        window's `End` -- through imgui-bundle, a second exception, out of
+        the frame. So the state is stored before the page runs
+        (`error_recovery_store_state`) and restored if it raises, with
+        ImGui's own reporting of what it had to close switched off for the
+        length of that call: the traceback is the report. Measured in
+        headless frames with a child, a style colour, an id and a group left
+        open (`tests/test_pages.py`), and with a table, a tab bar, a tooltip,
+        a disabled block and a second window.
+
+        **A clip rectangle left pushed on this window's draw list is popped
+        here**, because ImGui's recovery does not do it (review 3, item 11,
+        measured: no assertion and no exception, on that frame or the next
+        -- but everything drawn in the window after the page on the frame it
+        raised, the traceback included, was clipped to the rectangle the
+        page left: 58 vertices where the frames after it had 1,338). The
+        depth is read from the draw list's own stack (`_clip_depth`); where
+        a binding does not show it, nothing is popped and that one frame is
+        clipped as before.
+
+        `Exception` and not `BaseException`: Ctrl+C and `SystemExit` still
+        end the app. The traceback goes to stderr once, when it happens.
+        """
         from imgui_bundle import imgui
 
-        self._debug_toggle()
-        for count in sorted({*COLUMN_COUNTS, self.columns}):
+        error = self.page_errors.get(name)
+        if error is None:
+            state = imgui.internal.ErrorRecoveryState()
+            imgui.internal.error_recovery_store_state(state)
+            draw_list = imgui.get_window_draw_list()
+            clips = _clip_depth(draw_list)
+            try:
+                self.page(name).draw()
+            except Exception:
+                error = self.page_errors[name] = traceback.format_exc()
+                print(f"advtext: page {name!r} raised:\n{error}", file=sys.stderr)
+                io = imgui.get_io()
+                reporting = (
+                    io.config_error_recovery_enable_assert,
+                    io.config_error_recovery_enable_debug_log,
+                    io.config_error_recovery_enable_tooltip,
+                )
+                io.config_error_recovery_enable_assert = False
+                io.config_error_recovery_enable_debug_log = False
+                io.config_error_recovery_enable_tooltip = False
+                try:
+                    imgui.internal.error_recovery_try_to_recover_state(state)
+                finally:
+                    (
+                        io.config_error_recovery_enable_assert,
+                        io.config_error_recovery_enable_debug_log,
+                        io.config_error_recovery_enable_tooltip,
+                    ) = reporting
+                # The one stack ImGui's recovery does not look at: this
+                # window's clip rectangles. `imgui.pop_clip_rect` and not the
+                # draw list's own: it also puts the window's clip rectangle
+                # back, which is what items and text are culled against, and
+                # which `imgui.push_clip_rect` (as against the draw list's)
+                # had changed.
+                while clips is not None and (_clip_depth(draw_list) or 0) > clips:
+                    imgui.pop_clip_rect()
+        if error is not None:
+            caption(f"{name} raised an exception and is not being drawn")
             imgui.same_line()
-            if imgui.radio_button(f"{count}##columns", self.columns == count):
-                self.columns = count
-        imgui.same_line()
-        _caption("columns  ·  text continues from the foot of one to the head of the next")
-        imgui.separator()
-        if imgui.begin_child("##advtext-columns"):
-            self._draw_columns()
-        imgui.end_child()
+            if imgui.small_button(f"Retry##advtext-page-retry-{name}"):
+                self.retry(name)
+            imgui.begin_child(f"##advtext-page-error-{name}")
+            imgui.text_unformatted(error)
+            imgui.end_child()
 
-    def _specimen_tab(self) -> None:
-        from imgui_bundle import imgui
-
-        self._debug_toggle()
-        imgui.same_line()
-        _caption("every face at one size, one face at every size, and the kerning underneath")
-        imgui.separator()
-        if imgui.begin_child("##advtext-specimen"):
-            self._draw_specimen()
-        imgui.end_child()
-
-    def _formula_tab(self) -> None:
-        from imgui_bundle import imgui
-
-        self._debug_toggle()
-        imgui.same_line()
-        _caption(
-            f"{len(FORMULA_ENTRIES)} formulae, each one the only thing here that shows "
-            "some rule of TeX's math mode"
-        )
-        # Two independent failures, reported separately because either can happen
-        # alone. `missing_glyphs` is a codepoint the *font file* has no glyph for,
-        # answerable before anything is drawn. `DrawStats.missing` is a glyph ImGui
-        # could not raster, found while drawing. Collapsing them into one line
-        # would make a font swap and an atlas problem look like the same fault.
-        gallery_missing = missing_glyphs()
-        if gallery_missing:
-            imgui.text_colored(
-                imgui.ImVec4(0.9, 0.6, 0.2, 1.0),
-                f"{len(gallery_missing)} codepoint(s) have no glyph in the math face: "
-                + " ".join(f"U+{code:04X}" for code in gallery_missing),
-            )
-        if self._formula_stats.missing:
-            imgui.text_colored(
-                imgui.ImVec4(0.9, 0.6, 0.2, 1.0),
-                f"{self._formula_stats.missing} glyph(s) have no raster in ImGui's atlas. "
-                "Use `make svg` to see them.",
-            )
-        imgui.separator()
-        if imgui.begin_child("##advtext-formula"):
-            self._draw_gallery()
-        imgui.end_child()
-
-    def _blocks_tab(self) -> None:
-        from imgui_bundle import imgui
-
-        try:
-            from advtext import blocklayout
-        except ImportError:  # pragma: no cover - the stretch goal may be absent
-            _caption("advtext.blocklayout is not present in this build")
-            return
-        _caption(
-            "a toolbar at three widths: the centred title stays centred because two "
-            "fil glues split the surplus evenly"
-        )
-        imgui.separator()
-        if imgui.begin_child("##advtext-blocks"):
-            page = _plate(self.view.page(self._available_width()))
-            toolbar = blocklayout.Row(
-                children=(
-                    *blocklayout.centre(
-                        (
-                            blocklayout.Leaf(width=sp_from_px(80.0), height=sp_from_px(24.0)),
-                            blocklayout.Leaf(width=sp_from_px(160.0), height=sp_from_px(24.0)),
-                            blocklayout.Leaf(width=sp_from_px(80.0), height=sp_from_px(24.0)),
-                        )
-                    ),
-                )
-            )
-            # One sheet with the three rows stacked on it, not a sheet each. The
-            # claim is a *comparison* -- the same three leaves, three surpluses,
-            # one centre line -- and three separate pages would put the thing
-            # being compared on three different backgrounds.
-            #
-            # Fractions of the measure rather than the old fixed 420 and 700 px:
-            # 700 px is wider than the page the rest of the demo sets, so the
-            # wide row used to hang off the sheet. The narrowest is 0.75 and not
-            # less because the three leaves are 320 px natural and a row narrower
-            # than that has no surplus to split -- the glues collapse to zero and
-            # the tab demonstrates nothing.
-            rows: list[Node] = []
-            gap = self.theme.style(BlockKind.PARAGRAPH).interline.baselineskip.width
-            for index, fraction in enumerate((0.75, 0.875, 1.0)):
-                if index:
-                    rows.append(Kern(width=gap))
-                rows.append(blocklayout.layout(toolbar, width=round(page.measure * fraction)))
-            stacked = vpack(rows).box
-            height = stacked.height + stacked.depth
-            origin = _paint_sheet(page, self.px_per_inch, content_height=height)
-            # Debug on unconditionally: a `Leaf` has no glyphs, so with the
-            # overlay off this tab draws nothing at all.
-            _draw_at(stacked, origin, self.measure, self.px_per_inch, True)
-            _claim(page, height, self.px_per_inch)
-        imgui.end_child()
-
-    # ------------------------------------------------------------------
-
-    def _debug_toggle(self) -> None:
-        from imgui_bundle import imgui
-
-        _, self.view.debug = imgui.checkbox("debug overlay", self.view.debug)
-
-    def _available_width(self) -> Scaled:
-        from imgui_bundle import imgui
-
-        return sp_from_px(max(imgui.get_content_region_avail().x, 80.0), self.px_per_inch)
-
-    def _draw_specimen(self) -> None:
-
-        page = self.view.page(self._available_width())
-        specimen = self.specimen(page.measure)
-
-        # The rows are packed at their natural width and are wider than the prose
-        # measure -- `build_specimen` says so and it is the right call, because a
-        # comparison chart is not something anyone reads at 66 characters. So the
-        # sheet grows to hold them rather than the chart being cut to fit a sheet
-        # sized for prose.
-        content = max(page.measure, specimen.box.width)
-        wide = Page(
-            offset=max(0, (self._available_width() - content - 2 * page.margin) // 2),
-            width=content + 2 * page.margin,
-            margin=page.margin,
-            head=page.head,
-        )
-        origin = _paint_sheet(
-            wide,
-            self.px_per_inch,
-            content_height=specimen.box.height + specimen.box.depth,
-        )
-        _draw_at(specimen.box, origin, self.measure, self.px_per_inch, self.view.debug)
-        _claim(wide, specimen.box.height + specimen.box.depth, self.px_per_inch)
-        if specimen.absent:
-            _caption(f"{len(specimen.absent)} face(s) could not be resolved: no row for them")
-
-    def _draw_gallery(self) -> None:
+    def _sidebar(self) -> None:
         """
-        One frame of the Formula tab: the gallery on one sheet, scrolling.
+        Draw `sidebar_rows` and take a click on one of them.
 
-        A scroll of plates rather than the single `_plate` this tab used to set,
-        because there are now nine of them and a nine-page-tall sheet of air
-        between two formulae is not a page. The sheet grows sideways for a formula
-        wider than the prose measure by exactly the arithmetic `_draw_specimen`
-        uses -- `build_gallery` reports that case as `Gallery.box.width` exceeding
-        `Gallery.width`, and with the shipped entries at the default sizes it does
-        not happen at any width this demo opens at.
-        """
-        page = _plate(self.view.page(self._available_width()))
-        gallery = self.gallery(page.measure)
-        content = max(page.measure, gallery.box.width)
-        wide = Page(
-            offset=max(0, (self._available_width() - content - 2 * page.margin) // 2),
-            width=content + 2 * page.margin,
-            margin=page.margin,
-            head=page.head,
-        )
-        height = gallery.box.height + gallery.box.depth
-        origin = _paint_sheet(wide, self.px_per_inch, content_height=height)
-        self._formula_stats = _draw_at(
-            gallery.box, origin, self.measure, self.px_per_inch, self.view.debug
-        )
-        _claim(wide, height, self.px_per_inch)
-
-    def _draw_columns(self) -> None:
-        """
-        One frame of the Columns tab: N columns a page, pages stacked down a scroll.
-
-        The page height is the *visible* height of this child window, so a column
-        is as tall as the window and the reader sees a whole page at once. A
-        document longer than one page continues on the next sheet below, which is
-        the only honest thing to do with material that outruns the page: the
-        alternative is silently dropping the tail, and `ColumnSplit.overflow`
-        exists precisely so that this decision is the caller's.
+        The child's background is pushed to transparent, so the list sits on
+        the window's own colour: `child_bg` is the dark surround a page sheet
+        lies on, and the list is chrome, not a surround.
         """
         from imgui_bundle import imgui
 
-        from advtext.backends.imgui_draw import draw
-
-        available = imgui.get_content_region_avail()
-        page = self.page_for_columns(
-            sp_from_px(max(available.x, 80.0), self.px_per_inch), self.columns
-        )
-        column_height = max(
-            page.page.head,
-            sp_from_px(max(available.y, 80.0), self.px_per_inch) - 2 * page.page.head,
-        )
-        layout = self.column_layout(page.column_width, column_height, self.columns)
-
-        ppi = self.px_per_inch
-        region = imgui.get_cursor_screen_pos()
-        window_y = imgui.get_window_pos().y
-        window_height = imgui.get_window_size().y
-        draw_list = imgui.get_window_draw_list()
-        colours = Palette()
-
-        sheet_x = region.x + px_from_sp(page.page.offset, ppi)
-        sheet_width_px = px_from_sp(page.page.width, ppi)
-        head_px = px_from_sp(page.page.head, ppi)
-        column_height_px = px_from_sp(column_height, ppi)
-        sheet_height_px = column_height_px + 2 * head_px
-
-        stats = DrawStats()
-        for page_index in range(layout.pages):
-            top = region.y + page_index * (sheet_height_px + PAGE_GAP_PX)
-            draw_list.add_rect_filled(
-                imgui.ImVec2(sheet_x, top),
-                imgui.ImVec2(sheet_x + sheet_width_px, top + sheet_height_px),
-                colours.page,
-            )
-            for index in range(layout.count):
-                origin = imgui.ImVec2(
-                    region.x + px_from_sp(page.column_offset(index), ppi), top + head_px
-                )
-                viewport = Viewport.of_pixels(
-                    top_px=window_y - origin.y, height_px=window_height, px_per_inch=ppi
-                )
-                column = layout.indexes[page_index * layout.count + index]
-                issued = draw(
-                    draw_list,
-                    column.visible(viewport),
-                    origin,
-                    fonts=_face_font,
-                    palette=colours,
-                    px_per_inch=ppi,
-                    debug=self.view.debug,
-                )
-                stats = DrawStats(
-                    glyphs=stats.glyphs + issued.glyphs,
-                    missing=stats.missing + issued.missing,
-                    rules=stats.rules + issued.rules,
-                )
-            for index in range(layout.count - 1):
-                rule_x = region.x + px_from_sp(page.rule_offset(index), ppi)
-                draw_list.add_line(
-                    imgui.ImVec2(rule_x, top + head_px),
-                    imgui.ImVec2(rule_x, top + head_px + column_height_px),
-                    COLUMN_RULE,
-                )
-
-        total = layout.pages * (sheet_height_px + PAGE_GAP_PX) - PAGE_GAP_PX
-        imgui.dummy(imgui.ImVec2(px_from_sp(page.page.width, ppi), total))
-        if layout.overflow:
-            _caption(f"{layout.overflow} node(s) past {MAX_COLUMN_PAGES} pages are not shown")
+        imgui.push_style_color(imgui.Col_.child_bg, imgui.ImVec4(0.0, 0.0, 0.0, 0.0))
+        visible = imgui.begin_child("##advtext-sidebar", imgui.ImVec2(SIDEBAR_WIDTH_PX, 0.0))
+        imgui.pop_style_color()
+        if visible:
+            for index, row in enumerate(sidebar_rows(self.discovery)):
+                if row.kind == "heading":
+                    if index:
+                        imgui.spacing()
+                    caption(row.text.upper())
+                elif row.page is not None:
+                    label = f"{row.text}##advtext-page-{row.page.name}"
+                    if imgui.selectable(label, row.page.name == self.current)[0]:
+                        self.current = row.page.name
+                    if row.detail:
+                        imgui.set_item_tooltip(row.detail)
+                else:
+                    imgui.text_colored(imgui.ImVec4(0.9, 0.6, 0.2, 1.0), row.text)
+                    imgui.set_item_tooltip(row.detail)
+        imgui.end_child()
 
 
-# ----------------------------------------------------------------------
-# Drawing helpers, shared by every tab so the page is set once
-# ----------------------------------------------------------------------
-
-
-def _caption(text: str) -> None:
-    """
-    One line of chrome, in the muted colour `apply_style` reserves for it.
-    """
-    from imgui_bundle import imgui
-
-    imgui.text_disabled(text)
-
-
-PLATE_HEADS: Final = 3
-"""
-How many body leadings of air a plate gets above and below its content.
-
-A *plate* is the page the Formula and Blocks tabs set: one short thing on a sheet
-of its own. `Page.head` is one leading, which is right for a scroll of continuous
-prose -- it keeps the first baseline on the same rhythm as every baseline under it
--- and wrong for a sheet with a single line on it, where a one-line margin reads
-as a mis-cut scrap rather than as a page. Three is the smallest multiple at which
-the sheet stops looking like a strip.
-"""
-
-
-def _plate(page: Page) -> Page:
-    """
-    The same sheet, with the head a plate wants rather than the one a scroll wants.
-    """
-    return replace(page, head=page.head * PLATE_HEADS)
-
-
-def _paint_sheet(page: Page, px_per_inch: float, *, content_height: Scaled) -> imgui.ImVec2:
-    """
-    Fill the sheet at the cursor and return the text block's top-left corner.
-
-    The one place a `Page` becomes pixels, which is the point of it: hit testing,
-    culling and the draw all take the origin this returns, so a margin cannot be
-    applied to some of them and not the others. That is the failure mode of
-    insetting a draw call on its own, where the text moves and the mouse does not.
-    """
-    from imgui_bundle import imgui
-
-    region = imgui.get_cursor_screen_pos()
-    sheet_x = region.x + px_from_sp(page.offset, px_per_inch)
-    height_px = px_from_sp(page.sheet_height(content_height), px_per_inch)
-    imgui.get_window_draw_list().add_rect_filled(
-        imgui.ImVec2(sheet_x, region.y),
-        imgui.ImVec2(sheet_x + px_from_sp(page.width, px_per_inch), region.y + height_px),
-        Palette().page,
-    )
-    return imgui.ImVec2(
-        sheet_x + px_from_sp(page.margin, px_per_inch),
-        region.y + px_from_sp(page.head, px_per_inch),
-    )
-
-
-def _draw_at(
-    box: Box, origin: imgui.ImVec2, measure: CharMeasure, px_per_inch: float, debug: bool
-) -> DrawStats:
-    """
-    Ship one packed box and draw it at a screen position.
-    """
-    from imgui_bundle import imgui
-
-    from advtext.backends.imgui_draw import draw
-
-    return draw(
-        imgui.get_window_draw_list(),
-        ship(box, Point(0, box.height), measure=measure),
-        origin,
-        fonts=_face_font,
-        palette=Palette(),
-        px_per_inch=px_per_inch,
-        debug=debug,
-    )
-
-
-def _claim(page: Page, content_height: Scaled, px_per_inch: float) -> None:
-    """
-    Advance the cursor past a sheet the draw list wrote without advancing it.
-
-    The draw list writes pixels and does not move the cursor, so without this the
-    next widget is drawn on top of the page. `pptmstr/ui/inbox.py:722,785` had to
-    do the same thing for the same reason.
-    """
-    from imgui_bundle import imgui
-
-    imgui.dummy(
-        imgui.ImVec2(
-            px_from_sp(page.width, px_per_inch),
-            px_from_sp(page.sheet_height(content_height), px_per_inch),
-        )
-    )
+# The drawing helpers every page shared (`_caption`, `_plate`, `_paint_sheet`,
+# `_draw_at`, `_claim`) are `advtext.ui.pages.caption`, `plate`, `paint_sheet`,
+# `draw_at` and `claim` now, so that a page module does not import this one to
+# set a sheet. `_plate` keeps its old name here for `tests/test_app.py`.
+_plate = plate
 
 
 # ----------------------------------------------------------------------
@@ -1246,11 +1247,15 @@ def apply_style() -> None:
     gain.
 
     Restrained deliberately. Square corners everywhere the eye might otherwise
-    read a widget as a card, no borders except the hairline under the tab bar, and
+    read a widget as a card, no borders except the hairline under a tab bar, and
     the accent only on things that respond to a mouse. `docs/imgui-risks.md`'s
     argument that the text is what is being demonstrated applies to the chrome
     too: the most useful thing this function does is stop the default theme's blue
-    tabs from being the brightest object in a photograph of a page of type.
+    from being the brightest object in a photograph of a page of type.
+
+    The shell has no tab bar any more -- its navigation is a list of
+    selectables, coloured by the three `header` entries below -- but the tab
+    colours are kept for a page that wants tabs of its own inside its body.
     """
     from imgui_bundle import imgui
 
@@ -1319,6 +1324,12 @@ def load_fonts() -> None:
     """
     Register every face with ImGui, from the paths `advtext.fontlib` resolves.
 
+    A thin caller of `advtext.ui.fonts.load_faces`, which is where the loading
+    now lives so that a host can call it too. What stays here is what is the
+    demo's own: `hello_imgui`'s loader, the decision to load mathematics up
+    front (`ALL_FACES` -- the first page has a formula in it), and the module
+    global the pages read through `PageContext.fonts`.
+
     A hello_imgui callback rather than something `run` calls directly: fonts must
     be built after the backend exists and before the first frame, and the runner
     owns that window. A face that fails to load is left absent rather than fatal
@@ -1334,20 +1345,18 @@ def load_fonts() -> None:
     """
     from imgui_bundle import hello_imgui
 
+    from advtext.ui.fonts import ALL_FACES, DEFAULT_LOAD_PX, load_faces
+
     _FACES.clear()
     params = hello_imgui.FontLoadingParams()
     # The files live in the imgui-bundle wheel, not in an assets folder of ours,
     # so they are loaded by absolute path rather than through the asset system.
     params.inside_assets = False
-    for face in Face:
-        try:
-            # `imgui_font_file`, not `font_file`: the math face needs our synthetic
-            # codepoints written into its cmap or ImGui cannot find the display-size
-            # summation, which is the one glyph this demo exists to show. For every
-            # other face the two return the same path.
-            _FACES[face] = hello_imgui.load_font(str(fontlib.imgui_font_file(face)), 16.0, params)
-        except Exception:  # pragma: no cover - a missing face must not be fatal
-            _FACES[face] = None
+    loaded = load_faces(
+        ALL_FACES,
+        loader=lambda path: hello_imgui.load_font(str(path), DEFAULT_LOAD_PX, params),
+    )
+    _FACES.update(loaded.fonts)
 
 
 def _face_font(face: Face) -> imgui.ImFont | None:
@@ -1368,12 +1377,16 @@ def run(
     columns_source: str | None = None,
 ) -> None:
     """
-    Open the demo window. Needs a display, and there is one here.
+    Open the demo window. Needs a display.
 
-    `DISPLAY=:1` is live in this sandbox and a window opens in about 0.4 s. On a
-    machine without one this does not hang: GLFW aborts in about 0.6 s with
+    On this machine's `DISPLAY=:1` a window opens in about 0.4 s. Whether that
+    display is reachable is a fact about the session and not about this
+    function: from the sandbox of 2026-10-06 it was not, and the window was
+    opened on an Xvfb in a user namespace instead (`scripts/mouse_probe.py`,
+    `xvfb_command`). Without a reachable display this does not hang: GLFW
+    aborts in about 0.6 s with
     `IM_ASSERT( glfwInitSuccess )`, and `scripts/run_demo.py` turns that into
-    something readable. `make shot` photographs any tab without a terminal
+    something readable. `make shot` photographs any page without a terminal
     attached to a display, and `make shot-headless` is the Xvfb fallback for a
     machine that has none.
 
@@ -1381,8 +1394,11 @@ def run(
     back to `DEFAULT_MARKDOWN` when this is not a checkout -- `demo/` is not
     inside the package and is absent from an installed wheel.
 
-    `tab` selects a tab on the first frame in `parse_tab_request`'s grammar, which
-    is how a screenshot reaches a state no click in this environment can produce.
+    `tab` selects a page on the first frame in `parse_tab_request`'s grammar, which
+    is how a screenshot reaches a state without clicking for it. (This used to
+    say "a state no click in this environment can produce";
+    `scripts/mouse_probe.py` posts clicks into this app now, though it does not
+    click the navigation list.)
 
     `ini_folder_type` is set to the app's own user-config folder rather than the
     default current folder, so running this does not scatter `.ini` files across
@@ -1399,7 +1415,7 @@ def run(
 
     params = hello_imgui.RunnerParams()
     params.app_window_params.window_title = WINDOW_TITLE
-    params.app_window_params.window_geometry.size = (1100, 800)
+    params.app_window_params.window_geometry.size = WINDOW_SIZE
     params.imgui_window_params.default_imgui_window_type = (
         hello_imgui.DefaultImGuiWindowType.provide_full_screen_window
     )
@@ -1411,3 +1427,5 @@ def run(
     params.callbacks.setup_imgui_style = apply_style
     params.callbacks.show_gui = app.gui
     immapp.run(params)
+    if app.page_errors:
+        raise PageError(app.page_errors)

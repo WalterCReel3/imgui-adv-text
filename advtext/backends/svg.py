@@ -53,8 +53,11 @@ Deliberately out of scope:
   it much harder to read next to the command list it came from.
 - **Colour as a document property.** `advtext.shipout` carries none, for the
   reason its docstring gives, so colours are render-time arguments with plain
-  defaults. A caller that wants links tinted matches
-  `advtext.markdown.LinkSpan` against reading-order indices itself.
+  defaults. This backend takes no per-glyph inks, so links are not tinted
+  here. Where a link's glyphs are among the shipped commands is no longer the
+  caller's to work out by hand: `advtext.spans.decorate` turns a block's
+  `LinkSpan`s into shipped index ranges and rectangles, which is what the
+  ImGui views draw from.
 - **Font embedding.** The outlines are already in the file; there is nothing
   left for a font to contribute.
 """
@@ -126,6 +129,11 @@ def _face_outlines(face: Face) -> tuple[Any, int]:
     """
     from advtext import fontlib
 
+    # `glyph_outline` below is keyed by face, so it has to be dropped when a host
+    # registers a different file for one. Asked for here, on a cache miss, rather
+    # than at import: this module names `fontlib` nowhere at module level, and
+    # registering the same callable again is a no-op.
+    fontlib.on_registry_change(glyph_outline.cache_clear)
     return fontlib.glyph_set(face)
 
 

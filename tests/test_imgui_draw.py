@@ -42,6 +42,7 @@ import pytest
 
 from advtext import fontlib
 from advtext.backends.imgui_draw import (
+    DARK_PALETTE,
     DEFAULT_PALETTE,
     Palette,
     baked_size_px,
@@ -1530,3 +1531,862 @@ def _bounds(draw_list: Any, first: int) -> tuple[float, float, float, float]:
     ys = [draw_list.vtx_buffer[i].pos.y for i in range(first, draw_list.vtx_buffer.size())]
     assert xs, "nothing was appended at all"
     return min(xs), max(xs), min(ys), max(ys)
+
+
+# --------------------------------------------------------------------------------
+# The per-draw memo of the per-glyph preamble (`_Preambles`).
+#
+# These use fakes for the fonts and the draw list, and that is the right
+# fidelity for what they ask. The *geometry* the memo must not change is pinned
+# by every test above, which runs the memoised path through real ImGui and would
+# go red on a moved vertex. What those tests cannot see is **how often** a
+# question was asked or **whose** answer was used, because a real `ImFont`
+# cannot be counted or swapped for one with a different ascent. Fakes can.
+# --------------------------------------------------------------------------------
+
+
+class _CountedBaked:
+    """
+    The two numbers `_baked` reads off an `ImFontBaked`.
+    """
+
+    def __init__(self, size: float, ascent: float) -> None:
+        self.size = size
+        self.ascent = ascent
+
+
+class _CountedFont:
+    """
+    A stand-in `ImFont` that records every question `draw` asks of it.
+
+    `rounding` mimics the one thing ImGui does to a requested size that matters
+    here -- `GetFontBaked` quantises it -- so two keys at two sizes come back
+    with two different baked sizes and a memo keyed too coarsely is caught.
+    `ascent_per_px` is a plain multiplier so an expected `top` can be computed
+    by hand.
+    """
+
+    def __init__(self, ascent_per_px: float = 0.75, absent: frozenset[int] = frozenset()) -> None:
+        self.ascent_per_px = ascent_per_px
+        self.absent = set(absent)
+        self.bakes: list[float] = []
+        self.probes: list[int] = []
+
+    def is_glyph_in_font(self, codepoint: int) -> bool:
+        self.probes.append(codepoint)
+        return codepoint not in self.absent
+
+    def get_font_baked(self, size_px: float) -> _CountedBaked:
+        self.bakes.append(size_px)
+        size = float(int(size_px + 0.5))
+        return _CountedBaked(size=size, ascent=size * self.ascent_per_px)
+
+
+class _RecordingDrawList:
+    """
+    A draw list that keeps the arguments of every `add_text` instead of drawing.
+
+    `flags` is here because `draw` borrows and restores it; nothing else of an
+    `ImDrawList` is reached by a list of glyphs.
+    """
+
+    def __init__(self) -> None:
+        self.flags = 0
+        self.texts: list[tuple[Any, float, float, float, str]] = []
+
+    def add_text(self, font: Any, size: float, position: Any, _colour: int, text: str) -> None:
+        self.texts.append((font, size, position.x, position.y, text))
+
+
+class _SquareMetrics:
+    """
+    Metrics whose ascent plus descent equals the em, so `baked_size_px` is the identity.
+
+    That makes the size ImGui is asked for the key's own size in pixels, which is
+    what lets the assertions below state sizes outright.
+    """
+
+    ascent = 0.8
+    descent = 0.2
+    em = 1.0
+
+
+def _counting_metrics() -> tuple[Any, list[str]]:
+    """
+    A `MetricsResolver` and the list of keys it has been asked for.
+    """
+    asked: list[str] = []
+
+    def resolve(key: str) -> Any:
+        asked.append(key)
+        return _SquareMetrics()
+
+    return resolve, asked
+
+
+def _word(face: Face, size_px: float, text: str, *, x_px: float = 0.0, index: int = 0) -> list[Any]:
+    """
+    Abutting glyphs of one key, 10 px apart, on a baseline at y = 100 px.
+    """
+    key = font_key(face, sp_from_px(size_px))
+    return [
+        Glyph(
+            font=key,
+            codepoint=ord(character),
+            x=sp_from_px(x_px + 10.0 * offset),
+            y=sp_from_px(100.0),
+            index=index + offset,
+        )
+        for offset, character in enumerate(text)
+    ]
+
+
+def test_the_preamble_is_resolved_once_per_font_key_and_not_once_per_glyph() -> None:
+    """
+    The memo exists: forty glyphs of two keys ask each constant question twice.
+
+    Before `_Preambles`, `fonts` was called 40 times here, `metrics` 40 times and
+    `get_font_baked` 40 times, and that re-derivation was most of a frame
+    (`docs/guide/future.md` item 2). The counts below are the whole claim; a
+    revert to the unmemoised `_glyph` fails every one of them.
+
+    `is_glyph_in_font` is constant per (key, codepoint) rather than per key, so
+    it is asked once per distinct character: "minimum" has four.
+    """
+    from imgui_bundle import imgui
+
+    prose, code = _CountedFont(), _CountedFont()
+    asked_faces: list[Face] = []
+
+    def fonts(face: Face) -> Any:
+        asked_faces.append(face)
+        return {Face.PROSE: prose, Face.CODE: code}[face]
+
+    metrics, asked_keys = _counting_metrics()
+    cmds = [
+        *(_word(Face.PROSE, 16.0, "minimum" * 4)),
+        SetGlue(x=0, y=0, width=1, natural=1, height=1, depth=0, index=99),
+        *(_word(Face.CODE, 14.0, "minimum" + "nnnnn", x_px=400.0, index=28)),
+    ]
+    draw_list = _RecordingDrawList()
+
+    stats = draw(draw_list, cmds, imgui.ImVec2(0.0, 0.0), fonts=fonts, metrics=metrics)
+
+    assert stats.glyphs == 40 and len(draw_list.texts) == 40
+    assert asked_faces == [Face.PROSE, Face.CODE]
+    assert asked_keys == [
+        font_key(Face.PROSE, sp_from_px(16.0)),
+        font_key(Face.CODE, sp_from_px(14.0)),
+    ]
+    assert prose.bakes == pytest.approx([16.0]) and code.bakes == pytest.approx([14.0])
+    assert sorted(prose.probes) == sorted(map(ord, "minu"))
+    assert sorted(code.probes) == sorted(map(ord, "minu"))
+
+
+def test_drawing_runs_no_import_statement_per_glyph(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    How many `import` statements a draw executes does not depend on how many glyphs it draws.
+
+    Review 5, item 6. `_glyph` reached `imgui.ImVec2` through `from
+    imgui_bundle import imgui` in its own body, so every glyph went through
+    `builtins.__import__` and the import machinery's `_handle_fromlist`:
+    21,895 of those for five draws of `demo/sample.md` under cProfile, and
+    15.9 ms a draw against 14.3 with the constructor handed in (one run of
+    each, twenty draws, this machine). The count is what is pinned: 40 glyphs
+    and 400 run the same imports, the ones `draw` itself makes once a call.
+    """
+    import builtins
+
+    from imgui_bundle import imgui
+
+    metrics, _ = _counting_metrics()
+    imports: list[str] = []
+    real = builtins.__import__
+
+    def counting(name: str, *args: Any, **kwargs: Any) -> Any:
+        imports.append(name)
+        return real(name, *args, **kwargs)
+
+    def drawn(repeats: int) -> tuple[int, list[Any]]:
+        cmds = _word(Face.PROSE, 16.0, "minimum" * repeats)
+        draw_list = _RecordingDrawList()
+        font = _CountedFont()
+        imports.clear()
+        with monkeypatch.context() as patch:
+            patch.setattr(builtins, "__import__", counting)
+            stats = draw(
+                draw_list, cmds, imgui.ImVec2(0.0, 0.0), fonts=lambda face: font, metrics=metrics
+            )
+        assert stats.glyphs == 7 * repeats
+        return len(imports), draw_list.texts
+
+    few, texts = drawn(4)
+    many, _ = drawn(60)
+    assert few == many, f"{few} imports for 28 glyphs and {many} for 420"
+    assert many < 10
+    assert [text[4] for text in texts] == list("minimum" * 4)
+
+
+def test_two_sizes_of_one_face_do_not_share_a_preamble() -> None:
+    """
+    The memo is keyed by font key, not by face: a heading is not set at body size.
+
+    This is the mistake a memo here is most likely to make, because `fonts` is
+    asked by face and it is tempting to cache at the same grain. Both keys below
+    resolve to the *same* `ImFont`; what differs is the size, and with it the
+    baked ascent that places the top-left corner.
+    """
+    from imgui_bundle import imgui
+
+    font = _CountedFont(ascent_per_px=0.75)
+    metrics, _ = _counting_metrics()
+    cmds = [
+        *(_word(Face.PROSE, 16.0, "ab")),
+        SetGlue(x=0, y=0, width=1, natural=1, height=1, depth=0, index=99),
+        *(_word(Face.PROSE, 36.0, "ab", x_px=200.0, index=2)),
+    ]
+    draw_list = _RecordingDrawList()
+
+    draw(draw_list, cmds, imgui.ImVec2(0.0, 0.0), fonts=lambda _face: font, metrics=metrics)
+
+    assert [(size, top) for _font, size, _x, top, _text in draw_list.texts] == [
+        (16.0, 88.0),
+        (16.0, 88.0),
+        (36.0, 73.0),
+        (36.0, 73.0),
+    ], "the baseline is at 100 px and the top-left is one baked ascent above it"
+    assert font.bakes == pytest.approx([16.0, 36.0])
+
+
+def test_nothing_about_the_fonts_survives_from_one_draw_to_the_next() -> None:
+    """
+    Reloading the fonts needs no invalidation call, because there is no memo to invalidate.
+
+    Three things a host can do between two frames, each of which a memo held
+    across frames would get wrong and each of which is silent when it is wrong:
+
+    1. **Map the face to a different `ImFont`** -- an atlas cleared and rebuilt
+       hands back new objects, and the old ones are freed.
+    2. **Rebuild the same `ImFont` in place** so that it bakes a different
+       ascent for the same size.
+    3. **Change what the face can raster**, as loading through `imgui_font_file`
+       instead of `font_file` does.
+
+    The second draw must reflect all three with nothing called in between. The
+    key and the commands are identical in both draws, so nothing but the
+    lifetime of the memo can make this pass.
+    """
+    from imgui_bundle import imgui
+
+    cmds = _word(Face.PROSE, 16.0, "ab")
+    metrics, _ = _counting_metrics()
+    origin = imgui.ImVec2(0.0, 0.0)
+
+    before = _CountedFont(ascent_per_px=0.75)
+    first = _RecordingDrawList()
+    draw(first, cmds, origin, fonts=lambda _face: before, metrics=metrics)
+    assert [(font, top, text) for font, _size, _x, top, text in first.texts] == [
+        (before, 88.0, "a"),
+        (before, 88.0, "b"),
+    ]
+
+    # 1. A new object for the same face.
+    after = _CountedFont(ascent_per_px=0.5)
+    second = _RecordingDrawList()
+    draw(second, cmds, origin, fonts=lambda _face: after, metrics=metrics)
+    assert [(font, top, text) for font, _size, _x, top, text in second.texts] == [
+        (after, 92.0, "a"),
+        (after, 92.0, "b"),
+    ], "the second draw used a font or an ascent left over from the first"
+    assert before.bakes == pytest.approx([16.0]), "the font that was replaced was asked again"
+
+    # 2. The same object, baking differently.
+    after.ascent_per_px = 0.25
+    third = _RecordingDrawList()
+    draw(third, cmds, origin, fonts=lambda _face: after, metrics=metrics)
+    assert [top for _font, _size, _x, top, _text in third.texts] == [96.0, 96.0]
+
+    # 3. The same object, now without one of the glyphs.
+    after.absent.add(ord("a"))
+    fourth = _RecordingDrawList()
+    stats = draw(fourth, cmds, origin, fonts=lambda _face: after, metrics=metrics)
+    assert (stats.glyphs, stats.missing) == (1, 1)
+    assert [text for *_rest, text in fourth.texts] == ["b"]
+
+
+def test_the_next_draw_honours_a_different_resolver_and_a_different_density() -> None:
+    """
+    `metrics` and `px_per_inch` are arguments of a call, so the memo is too.
+
+    A window dragged to a display of another density changes `px_per_inch`
+    between two frames with the same commands and the same fonts. The size asked
+    of ImGui is `px_from_sp(size) * (ascent + descent) / em`, so both arguments
+    reach it, and a memo that outlived the call would keep the old size.
+    """
+    from imgui_bundle import imgui
+
+    class Tall:
+        ascent, descent, em = 1.0, 0.5, 1.0
+
+    font = _CountedFont()
+    cmds = _word(Face.PROSE, 16.0, "a")
+    origin = imgui.ImVec2(0.0, 0.0)
+    square, _ = _counting_metrics()
+
+    draw(_RecordingDrawList(), cmds, origin, fonts=lambda _face: font, metrics=square)
+    draw(_RecordingDrawList(), cmds, origin, fonts=lambda _face: font, metrics=lambda _key: Tall())
+    draw(
+        _RecordingDrawList(),
+        cmds,
+        origin,
+        fonts=lambda _face: font,
+        metrics=square,
+        px_per_inch=2 * DEFAULT_PX_PER_INCH,
+    )
+
+    assert font.bakes == pytest.approx([16.0, 24.0, 32.0])
+
+
+def test_a_face_that_can_draw_nothing_is_never_measured_or_baked() -> None:
+    """
+    The memo is no more eager than the code it replaced.
+
+    The unmemoised `_glyph` returned on a missing glyph *before* it consulted
+    `metrics` or asked ImGui for an `ImFontBaked`. Resolving the whole preamble
+    on first sight of a key would have been simpler and would have changed that:
+    a face whose every glyph is missing would bake a size into the atlas that
+    nothing draws, and a resolver that cannot measure the key would raise where
+    it used not to be asked. The missing glyphs are still counted, once each,
+    though the face is probed only once per codepoint.
+    """
+    from imgui_bundle import imgui
+
+    font = _CountedFont(absent=frozenset(map(ord, "ab")))
+
+    def unmeasurable(key: str) -> Any:
+        raise AssertionError(f"{key!r} was measured though nothing of it can be drawn")
+
+    draw_list = _RecordingDrawList()
+    stats = draw(
+        draw_list,
+        _word(Face.PROSE, 16.0, "abab"),
+        imgui.ImVec2(0.0, 0.0),
+        fonts=lambda _face: font,
+        metrics=unmeasurable,
+    )
+
+    assert (stats.glyphs, stats.missing) == (0, 4)
+    assert font.bakes == [] and draw_list.texts == []
+    assert font.probes == [ord("a"), ord("b")]
+
+
+def test_a_face_reloaded_into_the_atlas_is_drawn_from_its_new_raster(
+    frame: Any, imgui_context: Any
+) -> None:
+    """
+    The same claim as the fakes make, once, against a real atlas.
+
+    The same file is added to the atlas twice, which is what a host reloading
+    its fonts does, and the same glyph is drawn at the same place through each
+    in turn. The two `ImFont`s rasterise into different atlas rectangles, so the
+    texture coordinates say which one a quad was drawn from: a memo that kept
+    the first font would emit the second quad with the first one's `uv`.
+
+    Positions are compared as well, and must agree -- same file, same size, same
+    ascent -- so this also says the reload moved nothing.
+    """
+    imgui = imgui_context
+    atlas = imgui.get_io().fonts
+    path = str(fontlib.imgui_font_file(Face.PROSE))
+    loaded = atlas.add_font_from_file_ttf(path, DISPLAY_SIZE_PX)
+    reloaded = atlas.add_font_from_file_ttf(path, DISPLAY_SIZE_PX)
+    cmds = _word(Face.PROSE, 16.0, "g")
+    origin = imgui.ImVec2(20.0, 20.0)
+
+    quads = []
+    for font in (loaded, reloaded, loaded):
+        first = frame.vtx_buffer.size()
+        stats = draw(frame, cmds, origin, fonts=lambda _face, font=font: font)
+        assert stats.glyphs == 1
+        ((near, far),) = _glyph_quads(frame, first)
+        quads.append(((near.pos.x, near.pos.y, far.pos.x, far.pos.y), (near.uv.x, near.uv.y)))
+
+    (place_a, uv_a), (place_b, uv_b), (place_c, uv_c) = quads
+    assert place_a == place_b == place_c
+    assert uv_a != uv_b, "the reloaded face was drawn from the first face's raster"
+    assert uv_c == uv_a, "going back to the first face did not go back to its raster"
+
+
+# --------------------------------------------------------------------------------
+# Ink per block role, and a palette that is not the light one.
+#
+# Two claims. A run of commands is drawn in the ink it is handed, with the
+# geometry `draw` would have given it; and **every** colour that reaches the
+# draw list was read from the palette, so a dark palette needs nothing but
+# itself. The second is checked by recording colours rather than by reading the
+# source for literals, which a later edit could add back.
+# --------------------------------------------------------------------------------
+
+
+class _ColouredDrawList(_RecordingDrawList):
+    """
+    `_RecordingDrawList`, also keeping the colour of everything it is asked to draw.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.inks: list[int] = []
+        self.fills: list[int] = []
+        self.strokes: list[int] = []
+
+    def add_text(self, font: Any, size: float, position: Any, colour: int, text: str) -> None:
+        super().add_text(font, size, position, colour, text)
+        self.inks.append(colour)
+
+    def add_rect_filled(self, _near: Any, _far: Any, colour: int) -> None:
+        self.fills.append(colour)
+
+    def add_rect(self, _near: Any, _far: Any, colour: int) -> None:
+        self.strokes.append(colour)
+
+    def add_line(self, _start: Any, _end: Any, colour: int, _thickness: float) -> None:
+        self.strokes.append(colour)
+
+
+def _drawn_runs(
+    runs: Sequence[tuple[Sequence[Any], int]], palette: Palette, **kwargs: Any
+) -> _ColouredDrawList:
+    from imgui_bundle import imgui
+
+    from advtext.backends.imgui_draw import draw_runs
+
+    font = _CountedFont()
+    resolve, _ = _counting_metrics()
+    recorded = _ColouredDrawList()
+    draw_runs(
+        recorded,  # type: ignore[arg-type]
+        runs,
+        imgui.ImVec2(0.0, 0.0),
+        fonts=lambda face: font,  # type: ignore[arg-type, return-value]
+        palette=palette,
+        metrics=resolve,
+        **kwargs,
+    )
+    return recorded
+
+
+def test_the_default_palette_names_no_roles_and_inks_every_kind_alike() -> None:
+    from advtext.style import BlockKind
+
+    assert DEFAULT_PALETTE.roles == ()
+    assert {DEFAULT_PALETTE.ink_for(kind) for kind in BlockKind} == {DEFAULT_PALETTE.ink}
+    # And it is still a value: hashable, comparable, safe to share.
+    assert hash(DEFAULT_PALETTE) == hash(Palette())
+
+
+def test_a_role_ink_applies_to_its_kind_and_to_no_other() -> None:
+    from advtext.style import BlockKind
+
+    red, green, blue = 0xFF0000FF, 0xFF00FF00, 0xFFFF0000
+    palette = DEFAULT_PALETTE.with_roles({BlockKind.HEADING_1: red, BlockKind.CODE: green})
+    assert palette.ink_for(BlockKind.HEADING_1) == red
+    assert palette.ink_for(BlockKind.CODE) == green
+    for kind in (BlockKind.HEADING_2, BlockKind.PARAGRAPH, BlockKind.QUOTE, BlockKind.TABLE):
+        assert palette.ink_for(kind) == palette.ink
+    # Adding roles keeps the ones already there, and a later one wins.
+    more = palette.with_roles({BlockKind.CODE: blue, BlockKind.QUOTE: red})
+    assert more.ink_for(BlockKind.HEADING_1) == red
+    assert more.ink_for(BlockKind.CODE) == blue
+    assert more.ink_for(BlockKind.QUOTE) == red
+    # The order roles were given in is not part of the value.
+    assert DEFAULT_PALETTE.with_roles(
+        {BlockKind.CODE: green, BlockKind.HEADING_1: red}
+    ) == DEFAULT_PALETTE.with_roles({BlockKind.HEADING_1: red, BlockKind.CODE: green})
+    assert DEFAULT_PALETTE.roles == (), "with_roles returned a new palette"
+
+
+def test_a_rule_cannot_be_given_a_role_ink_because_it_has_no_glyphs() -> None:
+    from advtext.style import BlockKind
+
+    with pytest.raises(ValueError, match="rule"):
+        DEFAULT_PALETTE.with_roles({BlockKind.RULE: 0xFF0000FF})
+
+
+def test_each_run_is_drawn_in_its_own_ink_at_the_geometry_draw_gives_it() -> None:
+    red, green = 0xFF0000FF, 0xFF00FF00
+    heading = [*_word(Face.PROSE_BOLD, 24.0, "Head")]
+    body = [*_word(Face.PROSE, 16.0, "body", x_px=80.0, index=4)]
+    split = _drawn_runs([(heading, red), (body, green)], DEFAULT_PALETTE)
+    assert split.inks == [red] * 4 + [green] * 4
+
+    # Splitting into runs moved nothing: same faces, sizes, positions, text as
+    # one `draw` of the concatenated list -- which is one run in `palette.ink`.
+    whole = _drawn_runs([([*heading, *body], DEFAULT_PALETTE.ink)], DEFAULT_PALETTE)
+    assert [text[1:] for text in split.texts] == [text[1:] for text in whole.texts]
+    assert whole.inks == [DEFAULT_PALETTE.ink] * 8
+
+
+def test_draw_is_one_run_in_the_palettes_ink() -> None:
+    from imgui_bundle import imgui
+
+    font = _CountedFont()
+    resolve, _ = _counting_metrics()
+    word = _word(Face.PROSE, 16.0, "same")
+    plain, as_run = _ColouredDrawList(), _ColouredDrawList()
+    palette = Palette(ink=0xFF123456)
+    draw(
+        plain,  # type: ignore[arg-type]
+        word,
+        imgui.ImVec2(3.0, 4.0),
+        fonts=lambda face: font,  # type: ignore[arg-type, return-value]
+        palette=palette,
+        metrics=resolve,
+    )
+    from advtext.backends.imgui_draw import draw_runs
+
+    draw_runs(
+        as_run,  # type: ignore[arg-type]
+        [(word, palette.ink)],
+        imgui.ImVec2(3.0, 4.0),
+        fonts=lambda face: font,  # type: ignore[arg-type, return-value]
+        palette=palette,
+        metrics=resolve,
+    )
+    assert plain.texts == as_run.texts
+    assert plain.inks == as_run.inks == [0xFF123456] * 4
+
+
+def test_the_font_preamble_is_shared_by_every_run_of_one_call() -> None:
+    # The reason there is one `draw_runs` and not a `draw` per block: forty
+    # blocks in one face ask for that face once.
+    from imgui_bundle import imgui
+
+    from advtext.backends.imgui_draw import draw_runs
+
+    font = _CountedFont()
+    asked: list[Face] = []
+
+    def fonts(face: Face) -> Any:
+        asked.append(face)
+        return font
+
+    resolve, keys = _counting_metrics()
+    runs = [
+        (_word(Face.PROSE, 16.0, "word", x_px=50.0 * n, index=4 * n), 0xFF000000 + n)
+        for n in range(40)
+    ]
+    recorded = _ColouredDrawList()
+    draw_runs(
+        recorded,  # type: ignore[arg-type]
+        runs,
+        imgui.ImVec2(0.0, 0.0),
+        fonts=fonts,
+        metrics=resolve,
+    )
+    assert len(recorded.texts) == 160
+    assert asked == [Face.PROSE]
+    assert len(keys) == 1
+    assert len(font.bakes) == 1
+
+
+def test_every_colour_drawn_comes_from_the_palette_it_was_given() -> None:
+    # A palette of colours that appear nowhere else, the debug overlay on, a
+    # highlight, a rule and glyphs: whatever reaches the draw list must be one
+    # of them. A literal colour anywhere in the draw path fails this.
+    from advtext.selection import Rect
+
+    palette = Palette(
+        page=0xA0000001,
+        ink=0xA0000002,
+        rule=0xA0000003,
+        highlight=0xA0000004,
+        debug_box=0xA0000005,
+        debug_baseline=0xA0000006,
+        debug_stretched=0xA0000007,
+        debug_shrunk=0xA0000008,
+        link=0xA0000009,
+    )
+    px = sp_from_px
+    cmds: list[Any] = [
+        Line(x=0, y=px(100.0), width=px(300.0), height=px(12.0), depth=px(4.0), start=0, end=6),
+        *_word(Face.PROSE, 16.0, "ab"),
+        SetGlue(
+            x=px(20.0), y=px(100.0), width=px(9.0), natural=px(6.0), height=0, depth=0, index=2
+        ),
+        *_word(Face.PROSE, 16.0, "cd", x_px=30.0, index=3),
+        SetGlue(
+            x=px(50.0), y=px(100.0), width=px(3.0), natural=px(6.0), height=0, depth=0, index=5
+        ),
+        RuleRect(x=0, y=px(120.0), width=px(300.0), height=px(1.0)),
+    ]
+    highlight = Rect(x=0, y=px(88.0), width=px(40.0), height=px(16.0))
+    recorded = _drawn_runs([(cmds, 0xA000000A)], palette, highlights=[highlight], debug=True)
+
+    assert set(recorded.inks) == {0xA000000A}, "glyphs take the run's ink, not the palette's"
+    assert recorded.fills.count(palette.highlight) == 1
+    assert recorded.fills.count(palette.rule) == 1
+    assert set(recorded.fills) == {
+        palette.highlight,
+        palette.rule,
+        palette.debug_stretched,
+        palette.debug_shrunk,
+    }
+    assert set(recorded.strokes) == {palette.debug_box, palette.debug_baseline}
+
+
+def test_the_dark_palette_is_legible_on_its_own_page_and_is_not_the_light_one() -> None:
+    from advtext.backends.imgui_draw import DARK_PALETTE
+
+    assert _contrast(DARK_PALETTE.ink, DARK_PALETTE.page) >= 4.5
+    assert _contrast(DARK_PALETTE.link, DARK_PALETTE.page) >= 4.5
+    assert _contrast(DARK_PALETTE.rule, DARK_PALETTE.page) >= 3.0
+    # The light ink on the dark page is the failure `Palette` warns about.
+    assert _contrast(DEFAULT_PALETTE.ink, DARK_PALETTE.page) < 4.5
+    assert DARK_PALETTE.roles == ()
+
+
+# --------------------------------------------------------------------------------
+# Colour finer than a run: ink ranges over glyph indices, and extra fills.
+# --------------------------------------------------------------------------------
+
+
+class _OrderedDrawList(_ColouredDrawList):
+    """
+    `_ColouredDrawList`, also keeping the order fills and glyphs arrived in.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.order: list[tuple[str, int]] = []
+
+    def add_text(self, font: Any, size: float, position: Any, colour: int, text: str) -> None:
+        super().add_text(font, size, position, colour, text)
+        self.order.append(("text", colour))
+
+    def add_rect_filled(self, near: Any, far: Any, colour: int) -> None:
+        super().add_rect_filled(near, far, colour)
+        self.order.append(("fill", colour))
+        self.rects = [*getattr(self, "rects", []), (near.x, near.y, far.x, far.y)]
+
+
+def _drawn_with(recorded: Any, runs: Sequence[tuple[Sequence[Any], int]], **kwargs: Any) -> Any:
+    from imgui_bundle import imgui
+
+    from advtext.backends.imgui_draw import draw_runs
+
+    font = _CountedFont()
+    resolve, _ = _counting_metrics()
+    draw_runs(
+        recorded,
+        runs,
+        imgui.ImVec2(0.0, 0.0),
+        fonts=lambda face: font,  # type: ignore[arg-type, return-value]
+        metrics=resolve,
+        **kwargs,
+    )
+    return recorded
+
+
+def test_an_ink_range_recolours_exactly_the_glyphs_whose_index_is_in_it() -> None:
+    red, green, body = 0xFF0000FF, 0xFF00FF00, 0xFF101010
+    word = _word(Face.PROSE, 16.0, "abcdefgh")
+    recorded = _drawn_with(_ColouredDrawList(), [(word, body)], inks=[(1, 3, red), (5, 6, green)])
+    assert recorded.inks == [body, red, red, body, body, green, body, body]
+    # Half-open, like every other range here: index 3 and index 6 are not in.
+    # And nothing moved: the same calls as with no ranges at all.
+    plain = _drawn_with(_ColouredDrawList(), [(word, body)])
+    assert [text[1:] for text in recorded.texts] == [text[1:] for text in plain.texts]
+    assert plain.inks == [body] * 8
+
+
+def test_ink_ranges_are_by_index_whichever_run_the_glyph_is_in() -> None:
+    red = 0xFF0000FF
+    first = _word(Face.PROSE, 16.0, "abcd")
+    second = _word(Face.PROSE, 16.0, "efgh", x_px=60.0, index=4)
+    recorded = _drawn_with(
+        _ColouredDrawList(), [(first, 0xFF000001), (second, 0xFF000002)], inks=[(3, 5, red)]
+    )
+    assert recorded.inks == [0xFF000001] * 3 + [red, red] + [0xFF000002] * 3
+
+
+def test_extra_fills_go_under_the_selection_and_under_the_glyphs_in_their_own_colours() -> None:
+    from advtext.selection import Rect
+
+    px = sp_from_px
+    mark, underline, body = 0xFF00BFFF, 0xFFFF0000, 0xFF101010
+    word = _word(Face.PROSE, 16.0, "ab")
+    fills = [
+        (Rect(x=0, y=px(88.0), width=px(20.0), height=px(16.0)), mark),
+        (Rect(x=0, y=px(102.3), width=px(20.0), height=px(0.6)), underline),
+    ]
+    selection = Rect(x=0, y=px(88.0), width=px(10.0), height=px(16.0))
+    recorded = _drawn_with(_OrderedDrawList(), [(word, body)], fills=fills, highlights=[selection])
+    assert recorded.order == [
+        ("fill", mark),
+        ("fill", underline),
+        ("fill", DEFAULT_PALETTE.highlight),
+        ("text", body),
+        ("text", body),
+    ]
+    # The underline is thinner than a pixel and off the grid. It keeps a whole
+    # pixel, on the grid, as a rule would.
+    left, top, right, bottom = recorded.rects[1]
+    assert (left, right) == (0.0, 20.0)
+    assert bottom - top == 1.0 and top == float(int(top))
+
+
+# -- the diff roles -----------------------------------------------------------
+
+
+def test_a_palette_carries_the_diff_roles_and_a_dark_one_carries_dark_ones() -> None:
+    from dataclasses import fields, replace
+
+    from advtext.backends.imgui_draw import (
+        DARK_DIFF_PALETTE,
+        DARK_PALETTE,
+        DEFAULT_DIFF_PALETTE,
+        DiffPalette,
+    )
+
+    assert DEFAULT_PALETTE.diff is DEFAULT_DIFF_PALETTE == DiffPalette()
+    assert DARK_PALETTE.diff is DARK_DIFF_PALETTE != DEFAULT_DIFF_PALETTE
+    # The roles C-diffview was asked for, by name: four inks, two bands, the
+    # intra-line marks, the gutter and the headers.
+    names = {field.name for field in fields(DiffPalette)}
+    assert names >= {
+        "add",
+        "remove",
+        "context",
+        "meta",
+        "add_fill",
+        "remove_fill",
+        "add_emphasis",
+        "remove_emphasis",
+        "gutter",
+        "header",
+    }
+    # A value like the rest of the palette: hashable, and a host replaces one
+    # role without restating the others.
+    mine = replace(DEFAULT_PALETTE, diff=replace(DEFAULT_DIFF_PALETTE, add=0xFF00FF00))
+    assert hash(mine) != hash(DEFAULT_PALETTE) and mine.diff.remove == DEFAULT_DIFF_PALETTE.remove
+    assert mine.ink == DEFAULT_PALETTE.ink
+
+
+def test_added_and_removed_are_told_apart_by_more_than_one_role_in_both_defaults() -> None:
+    """
+    What is checked is that the roles differ, light and dark: ink, band and
+    mark each. Whether they can be told apart *by eye* is not checked and is
+    not the point -- the view draws `+` and `-` for that, and
+    `tests/test_diff_view.py` holds it to them.
+    """
+    from advtext.backends.imgui_draw import DARK_DIFF_PALETTE, DEFAULT_DIFF_PALETTE
+
+    for colours in (DEFAULT_DIFF_PALETTE, DARK_DIFF_PALETTE):
+        assert colours.add != colours.remove
+        assert colours.add_fill != colours.remove_fill
+        assert colours.add_emphasis != colours.remove_emphasis
+        # A band is translucent, so it tints the host's background, and the
+        # mark over it is stronger than the band.
+        for band, mark in (
+            (colours.add_fill, colours.add_emphasis),
+            (colours.remove_fill, colours.remove_emphasis),
+        ):
+            assert (band >> 24) < 0xFF and (mark >> 24) > (band >> 24)
+
+
+# ---------------------------------------------------------------------------
+# Review 3, item 7: every diff ink on every ground it is drawn on
+# ---------------------------------------------------------------------------
+
+DIFF_INK_GROUNDS = {
+    # ink: the grounds `advtext.ui.diff_view.DiffView.frame_plan` draws it on.
+    "gutter": ("page", "add_fill", "remove_fill"),  # line numbers and the +/- marker
+    "add": ("add_fill", "add_emphasis"),
+    "remove": ("remove_fill", "remove_emphasis"),
+    "context": ("page",),
+    # The no-newline row; a collapsed-context and a folded row (on the header
+    # band); the end-of-line mark, which is on added and removed rows.
+    "meta": ("page", "header_fill", "add_fill", "remove_fill"),
+    "header": ("header_fill",),
+    # The header's warnings, and a placeholder wherever a character can be.
+    "warning": (
+        "page",
+        "header_fill",
+        "add_fill",
+        "remove_fill",
+        "add_emphasis",
+        "remove_emphasis",
+    ),
+}
+
+
+def _rgba_parts(colour: int) -> tuple[int, int, int, int]:
+    return colour & 255, colour >> 8 & 255, colour >> 16 & 255, colour >> 24 & 255
+
+
+def _over(colour: int, ground: tuple[float, ...]) -> tuple[float, ...]:
+    red, green, blue, alpha = _rgba_parts(colour)
+    t = alpha / 255
+    return tuple(t * c + (1 - t) * g for c, g in zip((red, green, blue), ground, strict=True))
+
+
+def _luminance(rgb: tuple[float, ...]) -> float:
+    def linear(value: float) -> float:
+        v = value / 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+
+
+def ratio_of(a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    """WCAG 2 contrast ratio of two opaque colours."""
+    high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def diff_contrasts(palette: Palette) -> dict[tuple[str, str], float]:
+    """
+    The contrast of each diff ink on each ground it is drawn on, the fills
+    composited as the view draws them: a band over the page, an emphasis
+    mark over its band.
+    """
+    page = tuple(float(c) for c in _rgba_parts(palette.page)[:3])
+    colours = palette.diff
+    grounds = {
+        "page": page,
+        "header_fill": _over(colours.header_fill, page),
+        "add_fill": _over(colours.add_fill, page),
+        "remove_fill": _over(colours.remove_fill, page),
+    }
+    grounds["add_emphasis"] = _over(colours.add_emphasis, grounds["add_fill"])
+    grounds["remove_emphasis"] = _over(colours.remove_emphasis, grounds["remove_fill"])
+    return {
+        (ink, ground): ratio_of(
+            tuple(float(c) for c in _rgba_parts(getattr(colours, ink))[:3]), grounds[ground]
+        )
+        for ink, on in DIFF_INK_GROUNDS.items()
+        for ground in on
+    }
+
+
+@pytest.mark.parametrize("palette", [DEFAULT_PALETTE, DARK_PALETTE], ids=["light", "dark"])
+def test_every_diff_ink_is_at_least_4_5_to_1_on_every_ground_it_is_drawn_on(
+    palette: Palette,
+) -> None:
+    """
+    A number, not a statement about how anything looks. The `+`/`-` marker
+    is the channel that does not depend on hue, and it was 4.17 and 3.91 to
+    1 on the light bands (4.36 and 4.46 on the dark); the warning ink was
+    under on the header band and far under on an emphasis mark, which is
+    exactly where the placeholder for an added invisible character is drawn.
+    """
+    found = diff_contrasts(palette)
+    assert len(found) == 19
+    low = {pair: round(ratio, 2) for pair, ratio in found.items() if ratio < 4.5}
+    assert low == {}
+
+
+def test_the_contrast_arithmetic_is_the_standard_one() -> None:
+    assert round(ratio_of((0.0, 0.0, 0.0), (255.0, 255.0, 255.0)), 2) == 21.0
+    assert round(ratio_of((119.0, 119.0, 119.0), (255.0, 255.0, 255.0)), 2) == 4.48  # #777 fails
+    assert _over(0x80FFFFFF, (0.0, 0.0, 0.0))[0] == pytest.approx(128.0)

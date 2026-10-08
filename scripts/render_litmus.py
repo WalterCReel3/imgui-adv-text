@@ -21,9 +21,15 @@ evidenced separately -- by `tests/test_imgui_draw.py`, which runs a real ImGui
 frame with no display and asserts on the vertex buffer it produces. Neither
 proves the other, and `docs/imgui-risks.md` is where that boundary is kept.
 
-What remains true of both is that **nothing here has been composited to a
-screen**: no window can open in this environment, so these artifacts and those
-vertex buffers are the whole of what anyone has looked at.
+**This paragraph used to say "no window can open in this environment", and that
+stopped being true of the tree.** `make shot` runs the real app through
+`immapp.run` and photographs it, and `docs/imgui-risks.md` records all five tabs
+the app then had composited that way (it has fourteen pages now, in a sidebar).
+What is still true is narrower and is about this script:
+*it* opens no window and needs no display, so what it writes is evidence for the
+layout and for the SVG backend only. Whether a display is reachable is a fact
+about the machine and the session rather than about the code -- it has been
+recorded both ways in this tree -- so ask `make shot`, not this docstring.
 
 **The document policy is not here.** It was, once, and `docs/litmus.md` still
 records the period when this script and `advtext.ui.compose` were two

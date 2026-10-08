@@ -146,6 +146,58 @@ def test_a_discarding_draw_list_accepts_every_call_the_backend_makes() -> None:
     assert discarding.add_line(None, None, 0, 1.0) is None
 
 
+def test_a_discarding_draw_list_has_the_flags_the_backend_sets_and_restores() -> None:
+    """
+    `draw` reads `draw_list.flags`, ORs in a bit, and writes the old value back.
+
+    The stand-in had no such attribute after the backend learned to set
+    `text_no_pixel_snap`, and the script then raised `AttributeError` at row 2
+    of the anatomy table -- after printing two tables, so a reader skimming the
+    top of the output saw a benchmark that worked. Found by running it. The
+    four-method test above could not see it because it calls the stub and never
+    `draw`; this one reads and writes the attribute the way `draw` does.
+    """
+    discarding = bench._Discarding()
+    restore = discarding.flags
+    assert isinstance(restore, int)
+    discarding.flags = restore | (1 << 3)
+    assert discarding.flags == restore | (1 << 3)
+    discarding.flags = restore
+    assert bench._Discarding().flags == restore, "one stand-in's flags leaked into the next"
+
+
+def test_a_rigid_span_is_a_maximal_run_of_glyphs() -> None:
+    """
+    `rigid_spans` counts what `draw` snaps as one unit: glyphs with nothing between.
+
+    Built from a real shipped list rather than hand-made commands, and checked
+    against an independent count -- one span starts at every glyph whose
+    predecessor is not a glyph -- so the two cannot share an off-by-one.
+    """
+    source = "Two words.\n\n```\na  b\n```\n"
+    cmds = bench.shipped_commands(source, 1, bench.DEFAULT_WIDTH_PT)
+    starts = sum(
+        1
+        for index, cmd in enumerate(cmds)
+        if isinstance(cmd, Glyph) and (index == 0 or not isinstance(cmds[index - 1], Glyph))
+    )
+    assert bench.rigid_spans(cmds) == starts
+    assert starts >= 3, "two words and a code line should be at least three spans"
+    assert bench.rigid_spans(()) == 0
+
+
+def test_shipped_commands_takes_a_theme_and_defaults_to_the_default_one() -> None:
+    """
+    The first three tables must not move because a fourth learned a parameter.
+    """
+    source = "A *short* paragraph with `code` in it.\n"
+    assert bench.shipped_commands(source, 1, bench.DEFAULT_WIDTH_PT) == bench.shipped_commands(
+        source, 1, bench.DEFAULT_WIDTH_PT, bench.Theme.build()
+    )
+    mono = bench.shipped_commands(source, 1, bench.DEFAULT_WIDTH_PT, bench.mono_ragged_theme())
+    assert set(bench.glyphs_by_face(mono)) == {bench.Face.CODE}
+
+
 def test_the_budget_fraction_is_against_a_sixty_hertz_frame() -> None:
     """
     Every percentage in the output comes from here, so the denominator is pinned.

@@ -25,20 +25,23 @@ from pathlib import Path
 
 import pytest
 
+import advtext.ui as ui_module
 from advtext.backends.imgui_draw import DEFAULT_PALETTE, DrawStats, rgba
 from advtext.badness import INF_BAD, badness
 from advtext.fontmetrics import Face, FontMetrics, GlyphBBox
 from advtext.linebreak import LineBreakParams
 from advtext.markdown import TextBlock, build_document
-from advtext.nodes import Box, BoxKind, FontKey, Glue, GlueSign, GlueSpec
+from advtext.nodes import Box, BoxKind, CharNode, FontKey, Glue, GlueSign, GlueSpec
 from advtext.pack import CharMeasure
 from advtext.selection import SelectionModel
 from advtext.shipout import Glyph, Line, Point, RuleRect, SetGlue, ship
-from advtext.style import Spacing, Theme, char_measure, fontlib_metrics, parse_font_key
+from advtext.style import Align, Spacing, Theme, char_measure, fontlib_metrics, parse_font_key
 from advtext.ui import (
     PROSE_BREAKING,
     PROSE_BREAKING_BOUNDED,
+    PROSE_BREAKING_TOTAL_FIT_RAGGED,
     CacheStats,
+    ComposeParams,
     LayoutCache,
     _theme_key,
     compose,
@@ -1165,3 +1168,183 @@ def test_the_bounded_setting_costs_the_column_document_a_line_in_the_margin(
     three_column = sp_from_px(399.5)
     assert _overfull(_compose_demo("columns.md", theme, PROSE_BREAKING, three_column)) == []
     assert _overfull(_compose_demo("columns.md", theme, PROSE_BREAKING_BOUNDED, three_column)) != []
+
+
+# -- non-justified blocks are broken first-fit, at natural spacing ---------
+#
+# Decision 13 in `.concerns/lead--adoption-tasks.md`, wired in
+# `advtext.ui._text_boxes`. What changed is a statement about *which lines are
+# produced*, and each test below either compares the two paths or pins one of
+# the measured reasons for preferring one. None of them says which looks better.
+
+
+def _ragged(theme: Theme) -> Theme:
+    """
+    `theme` with every block `Align.LEFT`, which is what a ragged host theme is.
+    """
+    return replace(
+        theme,
+        blocks={kind: replace(style, align=Align.LEFT) for kind, style in theme.blocks.items()},
+    )
+
+
+def _compressed(box: Box) -> bool:
+    """
+    Whether any line inside `box` was set with its glue shrunk.
+
+    Recursive because a list item's first line is re-wrapped by `_hang_marker`
+    and the box that was actually set tight is one level down.
+    """
+    if box.kind is BoxKind.HLIST and box.glue_sign is GlueSign.SHRINKING and box.glue_set > 0:
+        return True
+    return any(_compressed(node) for node in box.contents if isinstance(node, Box))
+
+
+def _characters(box: Box) -> int:
+    """
+    How many characters a line box holds, at any depth.
+    """
+    return sum(
+        _characters(node) if isinstance(node, Box) else isinstance(node, CharNode)
+        for node in box.contents
+    )
+
+
+def test_only_a_block_that_is_not_justified_is_broken_first_fit(
+    theme: Theme, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[tuple[tuple, LineBreakParams]] = []
+    real = ui_module.break_paragraph
+
+    def spy(material: tuple, shape: object, params: LineBreakParams, **kwargs: object) -> object:
+        seen.append((material, params))
+        return real(material, shape, params, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(ui_module, "break_paragraph", spy)
+    document = build_document("# A heading here\n\nA paragraph here.\n", theme, fake_resolve)
+    compose(document, theme, MEASURE, char_measure(fake_resolve))
+    (heading_material, heading_params), (body_material, body_params) = seen
+    heading, body = document.blocks
+    assert isinstance(heading, TextBlock) and isinstance(body, TextBlock)
+
+    # The heading is ragged: first-fit, and handed nothing that can shrink.
+    assert heading_params.first_fit
+    glues = [node for node in heading_material if isinstance(node, Glue)]
+    assert glues and all(glue.spec.shrink == 0 for glue in glues)
+    assert any(
+        isinstance(n, Glue) and n.spec.shrink for n in heading.material
+    ), "the fixture's glue must have had shrink to remove"
+    # The paragraph is justified: the optimiser, and its material untouched.
+    assert not body_params.first_fit
+    assert body_material is body.material
+
+
+def test_asking_for_total_fit_ragged_gets_the_path_every_block_used_to_take(
+    theme: Theme, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[tuple[tuple, LineBreakParams]] = []
+    real = ui_module.break_paragraph
+
+    def spy(material: tuple, shape: object, params: LineBreakParams, **kwargs: object) -> object:
+        seen.append((material, params))
+        return real(material, shape, params, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(ui_module, "break_paragraph", spy)
+    ragged = _ragged(theme)
+    document = build_document(
+        "Enough words in a row that the line has to be broken somewhere.\n", ragged, fake_resolve
+    )
+    (block,) = document.blocks
+    assert isinstance(block, TextBlock)
+    measure = char_measure(fake_resolve)
+    width = sp_from_px(200.0)
+    old = compose(document, ragged, width, measure, PROSE_BREAKING_TOTAL_FIT_RAGGED)
+    ((material, params),) = seen
+    # The material as emitted, the optimiser, and the same skips as before.
+    assert material is block.material
+    assert not params.first_fit
+    assert params == ui_module._skips(Align.LEFT, PROSE_BREAKING_TOTAL_FIT_RAGGED)
+    # And the constant is `PROSE_BREAKING` in everything but the one switch.
+    for spec in fields(LineBreakParams):
+        assert getattr(PROSE_BREAKING_TOTAL_FIT_RAGGED, spec.name) == getattr(
+            PROSE_BREAKING, spec.name
+        )
+    assert isinstance(PROSE_BREAKING_TOTAL_FIT_RAGGED, ComposeParams)
+
+    # One cache serves both without confusing them: the params are in the key.
+    cache = LayoutCache()
+    new = compose(document, ragged, width, measure, cache=cache)
+    assert (
+        compose(document, ragged, width, measure, PROSE_BREAKING_TOTAL_FIT_RAGGED, cache=cache)
+        == old
+    )
+    assert compose(document, ragged, width, measure, cache=cache) == new
+
+
+def test_a_ragged_line_is_never_compressed_and_the_optimiser_used_to_compress_some(
+    bundled_fonts: Path, theme: Theme
+) -> None:
+    # The measured difference between the two paths, on the demo document set
+    # ragged at the demo page's measure: the optimiser sets some ragged lines
+    # with their spaces shrunk, and so fits a word that natural spacing puts
+    # on the next line. The search is for the first short block where it did,
+    # so the test does not depend on a block number and cannot pass on a
+    # document where the two paths agree everywhere.
+    ragged = _ragged(theme)
+    source = (Path(__file__).resolve().parent.parent / "demo" / "sample.md").read_text(
+        encoding="utf-8"
+    )
+    measure = char_measure(fontlib_metrics)
+    width = sp_from_px(467.0)
+    found = 0
+    for block in build_document(source, ragged, fontlib_metrics).blocks:
+        # Short blocks only: the optimiser's ragged cost is why this path exists.
+        if not isinstance(block, TextBlock) or len(block.material) > 100:
+            continue
+        before = ui_module._text_boxes(
+            block, ragged, width, measure, PROSE_BREAKING_TOTAL_FIT_RAGGED
+        )
+        after = ui_module._text_boxes(block, ragged, width, measure, PROSE_BREAKING)
+        assert not any(_compressed(line) for line in after)
+        if any(_compressed(line) for line in before):
+            found += 1
+            # A compressed line held a word that natural spacing moves down.
+            assert [_characters(line) for line in before] != [_characters(line) for line in after]
+    assert found >= 1, "no short block of the sample is compressed by the optimiser any more"
+
+
+def test_the_default_themes_demo_document_did_not_move(bundled_fonts: Path, theme: Theme) -> None:
+    # In the default theme only headings are not justified, and at the measures
+    # the demo and the litmus render use every heading is one line. One line is
+    # one line under either breaker, so the shipped commands are identical.
+    # This is the assertion that the change of breaker did not alter the demo.
+    measure = char_measure(fontlib_metrics)
+    for width in (sp_from_px(467.0), sp_from_px(558.0)):
+        new = _compose_demo("sample.md", theme, PROSE_BREAKING, width)
+        old = _compose_demo("sample.md", theme, PROSE_BREAKING_TOTAL_FIT_RAGGED, width)
+        assert ship(new, Point(0, new.height), measure=measure) == ship(
+            old, Point(0, old.height), measure=measure
+        )
+
+
+def test_a_word_wider_than_the_measure_no_longer_unsets_the_words_before_it(
+    theme: Theme,
+) -> None:
+    # The other measured reason. Ahead of a word that cannot fit, the
+    # optimiser's last-resort break comes from the chain with the most lines:
+    # every earlier word on a line of its own. First-fit fills the lines before
+    # the wide word as if it were not there.
+    ragged = _ragged(theme)
+    source = "aa bb cc dd ee ff " + "W" * 40 + " gg hh\n"
+    document = build_document(source, ragged, fake_resolve)
+    measure = char_measure(fake_resolve)
+    width = sp_from_px(200.0)
+
+    def words_per_line(params: LineBreakParams) -> list[int]:
+        box = compose(document, ragged, width, measure, params)
+        cmds = ship(box, Point(0, box.height), measure=measure)
+        model = SelectionModel.from_commands(cmds)
+        return [len(model.text(model.select(f.start, f.end)).split()) for f in model.fragments]
+
+    assert words_per_line(PROSE_BREAKING) == [6, 1, 2]
+    assert words_per_line(PROSE_BREAKING_TOTAL_FIT_RAGGED) == [1, 1, 1, 1, 1, 1, 1, 2]

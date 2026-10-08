@@ -37,14 +37,16 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from conftest import Window
 
 _ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts" / "visual_diff.py"
@@ -544,41 +546,47 @@ def test_a_misspelt_tab_name_is_refused_before_anything_is_photographed() -> Non
 # Everything above runs with no display. These two do not, and they are the only
 # tests here that can show the matcher works on a real render rather than on a
 # fixture built from the same metrics it consults. Gated exactly as
-# `tests/test_shot.py` gates its one real shot: on DISPLAY being *set*, not on it
-# being reachable, so a broken display goes red instead of quietly skipping.
-
-
-_NO_DISPLAY = pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="no DISPLAY is set")
+# `tests/test_shot.py` gates its one real shot: by the `window` fixture in
+# `tests/conftest.py`, which runs them on the session's display if that accepts
+# a connection, on an Xvfb in a user namespace if it does not, and skips only
+# when neither can be had. (They used to be gated on DISPLAY being *set* and
+# were red in every session where it was set and unreachable.)
+#
+# What the Xvfb changes, stated rather than hidden: the rasteriser is llvmpipe,
+# so the pixels are not the GPU's. Both tests assert on where ink is, to within
+# 3 px, and on counts of matching rows -- not on colours or on bytes.
 
 
 @pytest.fixture(scope="module")
-def real_columns_shot(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    if not os.environ.get("DISPLAY"):  # pragma: no cover - the skip marker handles it
-        pytest.skip("no DISPLAY is set")
-    out = tmp_path_factory.mktemp("visual-diff") / "columns.png"
-    result = subprocess.run(
+def real_columns_shot(window: Window) -> Path:
+    out = window.out / "visual-diff-columns.png"
+    result = window.run(
         [
-            sys.executable,
             str(_SCRIPT),
             "shoot",
             "--spec",
             "columns:2",
+            # 1300x764 since the tab bar became a sidebar (C-shell, 2026-10-07),
+            # and it is the same page as the 1100x800 the two tests below were
+            # measured at: the sidebar takes 200 px of width and the tab bar's
+            # row gave back 36 px of height, so this window has the 1068x740 px
+            # body that one had. Measured, not assumed: outside two 2-px seams
+            # at the windows' own mid-heights the two bodies are pixel for
+            # pixel the same (`.concerns/C-shell--builder--result.md`). Shot at
+            # 1100x800 now, the columns are narrower and the phrase the first
+            # test proves absent is matched.
             "--width",
-            "1100",
+            "1300",
             "--height",
-            "800",
+            "764",
             "--out",
             str(out),
-        ],
-        capture_output=True,
-        text=True,
-        cwd=str(_ROOT),
+        ]
     )
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, f"on {window.where}:\n{result.stdout}\n{result.stderr}"
     return out
 
 
-@_NO_DISPLAY
 def test_a_real_two_column_shot_is_addressable_by_content(real_columns_shot: Path) -> None:
     """
     End to end on real pixels: sheet, both columns, and a phrase located by the
@@ -609,7 +617,6 @@ def test_a_real_two_column_shot_is_addressable_by_content(real_columns_shot: Pat
         vd.locate_line(grey, "zzqq wwxx vvkk")
 
 
-@_NO_DISPLAY
 def test_the_word_space_test_is_what_makes_a_match_unique(real_columns_shot: Path) -> None:
     """
     The ablation that a synthetic fixture cannot do honestly.

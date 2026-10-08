@@ -41,6 +41,7 @@ markdown actually sets it in.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -78,8 +79,10 @@ from advtext.style import (
 )
 from advtext.ui import compose_blocks
 from advtext.ui.formulas import (
+    CLASSIC_ENTRIES,
     ENTRIES,
     FORMULA_PX,
+    SIZED_ENTRIES,
     Gallery,
     _continued_fraction,
     _tower,
@@ -126,9 +129,13 @@ def theme() -> Theme:
 @pytest.fixture(scope="session")
 def gallery(bundled_fonts: Path, theme: Theme) -> Gallery:
     """
-    The real gallery, built once: every test below reads the same one.
+    The nine `CLASSIC_ENTRIES`, built once: every test below reads the same one.
+
+    The nine and not all of `ENTRIES`, because most of this file is claims about
+    those nine plates (and one digest of them taken before the engine grew).
+    `eleven` is the gallery as it ships.
     """
-    return build_gallery(theme, MEASURE, fontlib_metrics)
+    return build_gallery(theme, MEASURE, fontlib_metrics, entries=CLASSIC_ENTRIES)
 
 
 @pytest.fixture(scope="session")
@@ -137,6 +144,14 @@ def fonts(bundled_fonts: Path, theme: Theme) -> MathFonts:
     The three math sizes the gallery sets its formulae from.
     """
     return math_fonts(sp_from_px(FORMULA_PX, theme.px_per_inch), fontlib_math_metrics)
+
+
+@pytest.fixture(scope="session")
+def eleven(bundled_fonts: Path, theme: Theme) -> Gallery:
+    """
+    The gallery as it ships, by `build_gallery`'s default: the nine and then the two.
+    """
+    return build_gallery(theme, MEASURE, fontlib_metrics)
 
 
 def _set(items: Sequence[MathItem], fonts: MathFonts, style: Style = Style.DISPLAY) -> Box:
@@ -173,7 +188,7 @@ def test_every_entry_key_is_unique_and_survives_into_the_built_gallery(gallery: 
     """
     keys = [entry.key for entry in gallery.entries]
     assert len(keys) == len(set(keys))
-    assert keys == [entry.key for entry in ENTRIES]
+    assert keys == [entry.key for entry in CLASSIC_ENTRIES]
 
 
 def test_every_panel_sets_every_glyph_its_formula_names(gallery: Gallery, theme: Theme) -> None:
@@ -909,3 +924,185 @@ def test_every_letter_in_every_formula_is_set_in_math_italic(gallery: Gallery) -
         if (chr(code).isalpha() and code < 0x2000) or code == 0x2202
     }
     assert upright == set()
+
+
+# ----------------------------------------------------------------------
+# The second build: nine unchanged, and two more held to the same standard
+# ----------------------------------------------------------------------
+
+NINE_PANELS_BEFORE_THE_SECOND_BUILD = {
+    ("operator-style", 0): "1b6c2ddeac0c4e03",
+    ("operator-style", 1): "72714c302ec47da3",
+    ("euler", 0): "7177cd1c70d5279d",
+    ("schrodinger", 0): "f451e1a3c66288fd",
+    ("basel", 0): "ee80c8a651fcce9d",
+    ("cauchy", 0): "ea41e046a8e3ebc1",
+    ("continued-fraction", 0): "89f72ebca1be29bc",
+    ("script-towers", 0): "5f71271f69e6cbf3",
+    ("script-towers", 1): "7b961fa297fd225d",
+    ("atom-classes", 0): "f81f846340201f6a",
+    ("atom-classes", 1): "922350c653e07bea",
+    ("binary-or-not", 0): "bab29b3f3937136b",
+    ("binary-or-not", 1): "f99fc9f331679cb1",
+}
+"""
+The first sixteen hex digits of `sha256(repr(panel.box))` for every panel of the
+nine, taken from the tree **before** the math engine gained radicals, sized
+delimiters, spaces and prose.
+
+A digest of a `repr` is a blunt instrument and is meant to be. The engine's first
+pass, its second pass and `math_fonts` were all rewritten to carry the new items,
+and "the existing formulae set byte for byte as they did" is a claim about every
+node of every box, not about a width. Anything that moves one node of one of these
+thirteen boxes fails here. If the move is intended, regenerate the table and say
+why in the commit; if it is not, this is the only test that would have noticed.
+"""
+
+
+def _digest(box: Box) -> str:
+    return hashlib.sha256(repr(box).encode()).hexdigest()[:16]
+
+
+def test_the_nine_set_exactly_as_they_did_before_the_engine_grew(gallery: Gallery) -> None:
+    now = {
+        (entry.key, index): _digest(panel.box)
+        for entry in gallery.entries
+        for index, panel in enumerate(entry.panels)
+    }
+    assert now == NINE_PANELS_BEFORE_THE_SECOND_BUILD
+
+
+def test_the_digest_is_looking_at_something(fonts: MathFonts) -> None:
+    """
+    The control: one scaled point of difference in one node changes the digest.
+    """
+    box = _set([var("a"), bin_("+"), var("b")], fonts)
+    assert _digest(box) == _digest(_set([var("a"), bin_("+"), var("b")], fonts))
+    assert _digest(box) != _digest(replace(box, width=box.width + 1))
+
+
+def test_entries_is_the_nine_and_then_the_sized_two() -> None:
+    r"""
+    `ENTRIES` is what ships: `CLASSIC_ENTRIES`, then `SIZED_ENTRIES`, and nothing else.
+
+    The two were held beside `ENTRIES` until `advtext.mathtext` could read
+    `\sqrt` and `\left` (`tests/test_mathtext.py` writes every entry as a
+    source). They are folded in now, and the default gallery has eleven plates.
+    """
+    assert [entry.key for entry in CLASSIC_ENTRIES] == [
+        "operator-style",
+        "euler",
+        "schrodinger",
+        "basel",
+        "cauchy",
+        "continued-fraction",
+        "script-towers",
+        "atom-classes",
+        "binary-or-not",
+    ]
+    assert [entry.key for entry in SIZED_ENTRIES] == ["radical", "sized-delimiters"]
+    assert ENTRIES == (*CLASSIC_ENTRIES, *SIZED_ENTRIES)
+    assert len({entry.key for entry in ENTRIES}) == 11
+
+
+def test_the_eleven_build_as_one_gallery_and_every_panel_sets_what_it_names(
+    eleven: Gallery,
+) -> None:
+    """
+    The anti-vacuity test again, over the two new plates as well.
+
+    A radical names one character no field holds -- its surd -- and a sized
+    delimiter is set as a variant of the one that was asked for, so this is also
+    the check that `codepoints` counts both.
+    """
+    measure = char_measure(fontlib_metrics)
+    assert [entry.key for entry in eleven.entries][-2:] == ["radical", "sized-delimiters"]
+    assert len(eleven.entries) == 11
+    assert eleven.missing == ()
+    for entry in eleven.entries[-2:]:
+        assert entry.missing == ()
+        for panel in entry.panels:
+            wanted = codepoints(panel.items)
+            drawn = _glyphs(panel.box, measure)
+            assert len(drawn) == len(wanted) > 0, entry.key
+            assert all(parse_font_key(key).face is Face.MATH for key in char_fonts(panel.box))
+
+
+def test_the_two_new_plates_do_not_move_the_nine_above_them(
+    gallery: Gallery, eleven: Gallery
+) -> None:
+    for before, after in zip(gallery.entries, eleven.entries, strict=False):
+        assert before.box == after.box
+    assert eleven.box.width == gallery.box.width
+
+
+def test_the_two_radicals_are_set_with_different_outlines(eleven: Gallery) -> None:
+    """
+    The claim the `radical` plate makes: chosen from the font, not stretched.
+    """
+    one_line, fraction = eleven.entry("radical").panels
+    surds = [
+        fontlib.glyph_name(Face.MATH, _chars(panel.box)[0].codepoint)
+        for panel in (one_line, fraction)
+    ]
+    assert surds == ["radical.v1", "radical.v3"]
+    # One rule over one line; over a fraction two, the vinculum and the bar, and
+    # they are the same width because the radicand is the fraction and nothing else.
+    measure = char_measure(fontlib_metrics)
+    assert len(_rules(one_line.box, measure)) == 1
+    over, bar = sorted(_rules(fraction.box, measure), key=lambda rule: rule.y)
+    assert over.width == bar.width > 0
+    # The vinculum starts where the surd's advance ends, and the surd is first.
+    surd = _glyphs(fraction.box, measure)[0]
+    assert surd.x == 0 and over.x == round(
+        fontlib.math_metrics(float(sp_from_px(FORMULA_PX))).advance(surd.codepoint)
+    )
+
+
+def test_the_fitted_parentheses_are_one_larger_outline_on_both_sides(eleven: Gallery) -> None:
+    """
+    The claim the `sized-delimiters` plate makes, and its control beside it.
+    """
+    fixed, fitted = eleven.entry("sized-delimiters").panels
+    names = [fontlib.glyph_name(Face.MATH, node.codepoint) for node in _chars(fixed.box)]
+    assert (names[0], names[-1]) == ("parenleft", "parenright")
+    names = [fontlib.glyph_name(Face.MATH, node.codepoint) for node in _chars(fitted.box)]
+    assert (names[0], names[-1]) == ("parenleft.v6", "parenright.v6")
+    # Same fraction between them: the middles are the same characters.
+    assert [n.codepoint for n in _chars(fixed.box)[1:-1]] == [
+        n.codepoint for n in _chars(fitted.box)[1:-1]
+    ]
+    assert fitted.box.depth > fixed.box.depth
+    assert fitted.box.width > fixed.box.width
+
+
+def test_the_two_new_captions_are_set_only_in_glyphs_their_faces_have(
+    bundled_fonts: Path, theme: Theme
+) -> None:
+    measure = char_measure(fontlib_metrics)
+    for entry in SIZED_ENTRIES:
+        document = build_document(entry.caption, theme, fontlib_metrics)
+        box = compose_blocks(document.blocks, theme, MEASURE, measure)
+        nodes = _chars(box)
+        assert nodes
+        for node in nodes:
+            face = parse_font_key(node.font).face
+            assert fontlib.glyph_name(face, node.codepoint) != ".notdef", (entry.key, node)
+
+
+def test_every_letter_in_the_two_new_plates_is_math_italic_too(eleven: Gallery) -> None:
+    upright = {
+        (entry.key, chr(code))
+        for entry in eleven.entries[-2:]
+        for panel in entry.panels
+        for code in codepoints(panel.items)
+        if (chr(code).isalpha() and code < 0x2000) or code == 0x2202
+    }
+    assert upright == set()
+
+
+def test_codepoints_names_a_surd_and_a_delimiter_and_no_prose_or_space() -> None:
+    from advtext.math import THIN_SPACE, delimited, prose_text, radical
+
+    items = [radical("x"), THIN_SPACE, delimited("(", "y", None), prose_text("if")]
+    assert [chr(code) for code in codepoints(items)] == ["√", "x", "(", "y"]

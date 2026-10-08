@@ -16,25 +16,40 @@ be transcribed rather than reinvented as a lookup table. `cur_style < TEXT`
 means "display", `cur_style < SCRIPT` means "display or text", and an odd style
 is a cramped one -- three tests that appear all over `mlist.py`.
 
-**Atom class is not the same thing as atom type.** Thirteen types exist, and
-only the first eight -- Ord, Op, Bin, Rel, Open, Close, Punct, Inner -- index
+**Atom class is not the same thing as atom type.** Fifteen noad types are here,
+and only the first eight -- Ord, Op, Bin, Rel, Open, Close, Punct, Inner -- index
 the inter-atom spacing table. §761 maps the rest onto one of the eight for
-spacing: Over, Under, Vcenter, Radical and Accent all space as Ord, and a
-fraction spaces as Inner. `spacing_class` is that map, and it is the only thing
-the spacing table is ever indexed by.
+spacing: Over, Under, Vcenter, Radical and Accent all space as Ord, a fraction
+spaces as Inner, and the two boundary types space as Open and Close
+(`make_left_right` returns exactly that, `tex.web:15029`). `spacing_class` is
+that map, and it is the only thing the spacing table is ever indexed by.
+
+**`SPACE` is the one type that is not a noad, and it is here for a reason that
+is not typographic.** In TeX an explicit math space is a glue or kern *node*
+sitting in the mlist among the noads (`tex.web:14363-14367`); both passes step
+over it and it has no class at all. The faithful model is a third member of
+`MathItem`. It is an `Atom` whose kind is `SPACE` instead, because `MathItem`
+is a two-member union that callers outside this package branch on, and widening
+it would have broken code that was being written while this was. The cost is
+that a `SPACE` atom has three fields that mean nothing (`sup`, `sub`, `limits`)
+and no `spacing_class`. `advtext.math.mlist` treats it as the node it is.
 
 **A field is a tagged union, not an optional pile.** §681's `math_type` is one
-of empty, `math_char`, `sub_box` and `sub_mlist`, and `Field` is exactly that
-set with `None` for empty. The alternative -- an atom carrying a codepoint *and*
+of empty, `math_char`, `sub_box` and `sub_mlist`, and `Field` is that set with
+`None` for empty, plus two that TeX has no need of: `MathText`, prose that
+cannot be packed until the style (and so the size) is known, and `MuGlue`, the
+amount a `SPACE` carries. The alternative -- an atom carrying a codepoint *and*
 a box *and* a sublist, three of which are always `None` -- makes "which one is
 set" a runtime question in a module whose whole job is to branch on it.
 
-Deliberately out of scope: `\mathchoice` (`docs/decisions.md`), delimiters and
-the `left_noad`/`right_noad` pair that `var_delimiter` serves, and `\halign`.
-Radical and Accent atoms are *declared* here because they are part of the
-vocabulary and the spacing map needs them, and `mlist.py` raises on them rather
-than pretending -- both need a delimiter or accent chain walk that nothing in
-this project implements.
+Deliberately out of scope: `\mathchoice` (`docs/decisions.md`), `\halign`,
+delimiters around a fraction (`\atopwithdelims`), and **anything extensible**:
+a radical and a `LEFT`/`RIGHT` pair choose among the glyphs the font's variant
+chain holds and are refused when none is tall enough, because building a
+delimiter out of pieces is glyph assembly and this project does not do it.
+An Accent atom is *declared* because it is part of the vocabulary and the
+spacing map needs it, and `mlist.py` raises on it rather than pretending -- it
+needs a width-fitting chain walk that nothing in this project implements.
 """
 
 from __future__ import annotations
@@ -44,6 +59,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TypeAlias
 
+from advtext.fontmetrics import Face
 from advtext.nodes import Box
 from advtext.units import Scaled
 
@@ -56,12 +72,21 @@ __all__ = [
     "MathChar",
     "MathItem",
     "MathSize",
+    "MathText",
+    "MED_SPACE",
+    "MuGlue",
+    "NEGATIVE_THIN_SPACE",
+    "QQUAD",
+    "QUAD",
     "Style",
     "SubBox",
     "SubList",
+    "THICK_SPACE",
+    "THIN_SPACE",
     "bin_",
     "close_",
     "cramped_style",
+    "delimited",
     "denom_style",
     "frac",
     "group",
@@ -70,9 +95,12 @@ __all__ = [
     "op",
     "open_",
     "ord_",
+    "prose_text",
     "punct",
+    "radical",
     "rel",
     "size_for",
+    "space",
     "sub_style",
     "sup_style",
     "text",
@@ -179,6 +207,14 @@ class AtomType(enum.Enum):
 
     The first eight are §682's `ord_noad..inner_noad` and index the spacing
     table directly. The rest space as something else; see `spacing_class`.
+
+    `LEFT` and `RIGHT` are §687's `left_noad` and `right_noad`
+    (`tex.web:13546`): a delimiter to be sized to the list it stands in, held
+    in the nucleus as TeX holds it (`delimiter==nucleus`, `tex.web:13548`). A
+    nucleus of `None` is the null delimiter, `\\left.`.
+
+    `SPACE` is not a noad. It is an explicit math space, with a `MuGlue` for a
+    nucleus; the module docstring says why it is an atom type at all.
     """
 
     ORD = enum.auto()
@@ -194,13 +230,22 @@ class AtomType(enum.Enum):
     VCENTER = enum.auto()
     RADICAL = enum.auto()
     ACCENT = enum.auto()
+    LEFT = enum.auto()
+    RIGHT = enum.auto()
+    SPACE = enum.auto()
 
     @property
     def spacing_class(self) -> int:
         """
         The row or column this atom uses in §764's table, 0..7.
+
+        Raises `ValueError` for `SPACE`, which is a node among the atoms and
+        not one of them: nothing is ever put either side of it on its account.
         """
-        return _SPACING_CLASS[self]
+        try:
+            return _SPACING_CLASS[self]
+        except KeyError:
+            raise ValueError(f"{self.name} has no spacing class: it is not a noad") from None
 
 
 # §761: Over, Under, Vcenter, Radical and Accent are all spaced as Ord. The
@@ -219,6 +264,9 @@ _SPACING_CLASS: dict[AtomType, int] = {
     AtomType.VCENTER: 0,
     AtomType.RADICAL: 0,
     AtomType.ACCENT: 0,
+    # `make_left_right` returns `open_noad` or `close_noad` (tex.web:15029).
+    AtomType.LEFT: 4,
+    AtomType.RIGHT: 5,
 }
 
 
@@ -267,9 +315,48 @@ class SubList:
     items: tuple[MathItem, ...]
 
 
-Field: TypeAlias = MathChar | SubBox | SubList | None
+@dataclass(frozen=True, slots=True)
+class MathText:
+    r"""
+    Upright prose inside a formula: `\text{if }`, a unit, a word.
+
+    Not a `SubBox` because a box has a size and this does not yet: prose in a
+    subscript is set at the script size, and which size that is depends on the
+    style the atom is converted at. `advtext.math.mlist` packs it then, in
+    `face` at the size of the style, with that face's own kerning and one
+    interword space per space character -- leading and trailing ones included,
+    since `\text{ if }` is how a formula asks for the air around a word.
+
+    The characters are Unicode in a prose face, not math characters: nothing
+    is italicised, classified or spaced by the table, and the box as a whole is
+    whatever class the atom holding it says.
+    """
+
+    text: str
+    face: Face = Face.PROSE
+
+
+@dataclass(frozen=True, slots=True)
+class MuGlue:
+    """
+    A glue spec in math units, before it is scaled by `cur_mu` (§716).
+
+    Eighteen to the quad of the *current* size, so a thin space in a subscript
+    is a thinner space. What a `SPACE` atom carries, and what the spacing table
+    in `advtext.math.mlist` is written in.
+    """
+
+    width: int
+    stretch: int = 0
+    shrink: int = 0
+
+
+Field: TypeAlias = MathChar | SubBox | SubList | MathText | MuGlue | None
 """
 One of an atom's three slots. `None` is §681's `empty`.
+
+`MuGlue` is legal only as the nucleus of a `SPACE` atom, which is the price of
+`SPACE` being an atom; see the module docstring.
 """
 
 
@@ -316,6 +403,8 @@ Anything that can appear in a math list. A union, so `match` over it is total.
 # There is no LaTeX parser here and there should not be: a parser would be the
 # thing being demonstrated instead of the typesetting. These functions exist so
 # that the sigma litmus test can be written out and still be read back.
+# (Still true of this package. `advtext.mathtext`, outside it, reads a fixed
+# `$...$` subset into exactly these atoms and refuses the rest with a reason.)
 # --------------------------------------------------------------------------------
 
 Buildable: TypeAlias = "Field | MathItem | str | Sequence[MathItem]"
@@ -332,7 +421,7 @@ def _as_field(value: Buildable) -> Field:
     what a string in a formula means; anything needing other classes says so.
     """
     match value:
-        case None | MathChar() | SubBox() | SubList():
+        case None | MathChar() | SubBox() | SubList() | MathText() | MuGlue():
             return value
         case str():
             return SubList(text(value))
@@ -352,8 +441,10 @@ def group(*parts: Buildable) -> SubList:
         match field:
             case SubList(inner_items):
                 items.extend(inner_items)
-            case MathChar() | SubBox():
+            case MathChar() | SubBox() | MathText():
                 items.append(Atom(AtomType.ORD, field))
+            case MuGlue():
+                items.append(Atom(AtomType.SPACE, field))
             case None:
                 continue
     return SubList(tuple(items))
@@ -453,3 +544,115 @@ def frac(
     A fraction. `thickness=0` is `\\atop`: stacked, with no rule between.
     """
     return Fraction(_as_field(numerator), _as_field(denominator), thickness)
+
+
+def radical(nucleus: Buildable, *, sup: Buildable = None, sub: Buildable = None) -> Atom:
+    r"""
+    A square root over `nucleus`: `\sqrt{...}`.
+
+    No degree: `\sqrt[3]{x}` is a macro in plain TeX that places a box over
+    the surd by hand, not a second field of the noad, and nothing here does it.
+    The surd is sized to the radicand from the font's variant chain, and a
+    radicand taller than the tallest surd is refused at conversion
+    (`advtext.math.mlist.DelimiterTooSmallError`).
+    """
+    return Atom(AtomType.RADICAL, _as_field(nucleus), _as_field(sup), _as_field(sub))
+
+
+def delimited(
+    left: str | None,
+    body: Buildable,
+    right: str | None,
+    *,
+    sup: Buildable = None,
+    sub: Buildable = None,
+) -> Atom:
+    r"""
+    `\left` ... `\right`: `body` between two delimiters sized to cover it.
+
+    The result is what TeX builds for the same input (`math_left_right`,
+    `tex.web:22380`): **one Inner atom** whose nucleus is the list
+    `LEFT, body..., RIGHT`. So the group spaces as Inner against its
+    neighbours, scripts hang off the whole group, and inside it the delimiters
+    space as Open and Close.
+
+    `None` for either side is the null delimiter (`\left.`), an empty box of
+    `\nulldelimiterspace`. A delimiter is one character; it is looked up in
+    the math face's vertical variant chain by TeX's rule (`make_left_right`).
+    Content no entry of the chain satisfies takes the last entry while that
+    covers three quarters of it, and below that is refused at conversion
+    rather than set with a delimiter that plainly does not reach.
+    """
+
+    def boundary(kind: AtomType, delimiter: str | None) -> Atom:
+        if delimiter is None:
+            return Atom(kind)
+        if len(delimiter) != 1:
+            raise ValueError(f"a delimiter is one character, not {delimiter!r}")
+        return Atom(kind, MathChar(ord(delimiter)))
+
+    inside = group(body).items
+    return Atom(
+        AtomType.INNER,
+        SubList((boundary(AtomType.LEFT, left), *inside, boundary(AtomType.RIGHT, right))),
+        _as_field(sup),
+        _as_field(sub),
+    )
+
+
+def space(width: int, *, stretch: int = 0, shrink: int = 0) -> Atom:
+    r"""
+    An explicit space of `width` math units: `\mskip`.
+
+    Transparent to everything else: it does not stop a `Bin` from binding what
+    is on its far side and the spacing table does not see it, exactly as a glue
+    node in an mlist is stepped over by both passes (`tex.web:14363`, 15000).
+    """
+    return Atom(AtomType.SPACE, MuGlue(width, stretch, shrink))
+
+
+# plain.tex's \thinmuskip, \medmuskip and \thickmuskip, and the macros built
+# on them. They are macro-package values and not in tex.web, which defines only
+# the three glue parameters and leaves them zero; these are the ones every
+# LaTeX document has been set with since 1984, so they are the ones a reader
+# will recognise the output of.
+THIN_MU = MuGlue(3)
+MED_MU = MuGlue(4, stretch=2, shrink=4)
+THICK_MU = MuGlue(5, stretch=5)
+
+THIN_SPACE = Atom(AtomType.SPACE, THIN_MU)
+r"""`\,`"""
+MED_SPACE = Atom(AtomType.SPACE, MED_MU)
+r"""`\:` (`\>` in plain TeX)"""
+THICK_SPACE = Atom(AtomType.SPACE, THICK_MU)
+r"""`\;`"""
+NEGATIVE_THIN_SPACE = Atom(AtomType.SPACE, MuGlue(-3))
+r"""`\!`"""
+QUAD = Atom(AtomType.SPACE, MuGlue(18))
+r"""
+`\quad`, as eighteen math units.
+
+**Not quite plain TeX's**, which is `\hskip 1em` in the font current *outside*
+the formula and so does not shrink in a script. Eighteen mu is one quad of the
+math face at the size of the style it lands in. At text size the two agree
+whenever the prose and math faces are set at the same size.
+"""
+QQUAD = Atom(AtomType.SPACE, MuGlue(36))
+r"""`\qquad`"""
+
+
+def prose_text(
+    value: str,
+    *,
+    face: Face = Face.PROSE,
+    sup: Buildable = None,
+    sub: Buildable = None,
+) -> Atom:
+    r"""
+    Upright prose as an ordinary atom: `\text{...}`.
+
+    Named apart from `text`, which is something else -- every character of a
+    string as its own *math* atom. This is one box of prose, set in a prose
+    face; see `MathText`.
+    """
+    return Atom(AtomType.ORD, MathText(value, face), _as_field(sup), _as_field(sub))

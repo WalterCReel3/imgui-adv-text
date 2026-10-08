@@ -30,7 +30,7 @@ from advtext.selection import (
     Selection,
     SelectionModel,
 )
-from advtext.shipout import DrawCmd, Glyph, Line, Point, RuleRect, SetGlue, ship
+from advtext.shipout import Atom, DrawCmd, Glyph, Line, Point, RuleRect, SetGlue, ship
 from advtext.style import BlockKind, Theme
 from advtext.ui import compose_blocks
 from advtext.units import Scaled, sp_from_px
@@ -562,3 +562,205 @@ def test_a_selection_across_the_real_line_break_joins_with_a_space() -> None:
     model = SelectionModel.from_commands(ship(page, Point(0, page.height), measure=_measure))
     assert model.text(model.select(0, 4)) == "ab cd"
     assert model.text(model.select(0, 4), hard_breaks={2}) == "ab\ncd"
+
+
+# --------------------------------------------------------------------------
+# Fill, separators, and lines side by side (2026-10-07)
+#
+# Three things the tests above could not exercise, because they need a kind of
+# item or a kind of geometry `_line` does not build: glue with no natural
+# width, a break that is content in the middle of a line, and two lines that
+# share a vertical band. Each is built by hand here so the expected answer can
+# be read off the fixture; the same rules are checked against real tables and
+# documents in `tests/test_units_layout.py` and `tests/test_bare_view.py`.
+# --------------------------------------------------------------------------
+
+
+def _fill(index: int, x: Scaled, *, width: Scaled = 0, y: Scaled = _HEIGHT) -> SetGlue:
+    """
+    Glue with no natural width, as a `\\rightskip`, a `\\parfillskip` or an `\\hss` ships.
+    """
+    return SetGlue(x=x, y=y, width=width, natural=0, height=_HEIGHT, depth=_DEPTH, index=index)
+
+
+def _cells(*texts: str, y: Scaled = _HEIGHT, start: int = 0) -> tuple[list[DrawCmd], list[int]]:
+    """
+    One line holding several cells, each `fill text fill`, as an unwrapped table row ships.
+
+    Returns the commands and the index each cell begins at.
+    """
+    cmds: list[DrawCmd] = []
+    begins: list[int] = []
+    index, pen = start, 0
+    for text in texts:
+        begins.append(index)
+        cmds.append(_fill(index, pen, y=y))
+        index += 1
+        for character in text:
+            cmds.append(Glyph(font=FONT, codepoint=ord(character), x=pen, y=y, index=index))
+            index += 1
+            pen += _ADV
+        cmds.append(_fill(index, pen, width=3 * _ADV, y=y))
+        index += 1
+        pen += 3 * _ADV
+    header = Line(x=0, y=y, width=pen, height=_HEIGHT, depth=_DEPTH, start=start, end=index)
+    return [header, *cmds], begins
+
+
+def test_fill_at_the_ends_of_a_line_is_not_a_space_and_fill_between_words_is_one() -> None:
+    cmds, _ = _cells("ab", "cd")
+    model = SelectionModel.from_commands(cmds)
+    # fill a b fill | fill c d fill: nothing before "ab", nothing after "cd",
+    # and the two fills between them are one space, not two.
+    assert model.text(Selection(0, model.length)) == "ab cd"
+    # A selection of nothing but fill is no text at all.
+    assert model.text(Selection(3, 5)) == ""
+
+
+def test_a_separator_inside_a_line_replaces_the_fill_around_it() -> None:
+    cmds, begins = _cells("ab", "cd", "ef")
+    model = SelectionModel.from_commands(cmds)
+    everything = Selection(0, model.length)
+    tabs = {begins[1]: "\t", begins[2]: "\t"}
+    assert model.text(everything, separators=tabs) == "ab\tcd\tef"
+    # Starting at a cell's own first index, its separator is not between two
+    # selected things and is not written.
+    assert model.text(Selection(begins[1], model.length), separators=tabs) == "cd\tef"
+    # Any string will do, and one given for an index the selection does not
+    # reach changes nothing.
+    assert model.text(everything, separators={begins[1]: "\n\n", 999: "!"}) == "ab\n\ncd ef"
+
+
+def test_a_separator_with_no_selected_character_after_it_is_not_written() -> None:
+    # A selection that ends on the fill a cell (or a list item, ahead of its
+    # marker) begins with has crossed that item's separator and reached none
+    # of its text. Measured before this was pinned: "ab\t", and through
+    # `advtext.ui.units` a copy ending at a nested list item's marker ended
+    # with that item's newline and its indent.
+    cmds, begins = _cells("ab", "cd", "ef")
+    model = SelectionModel.from_commands(cmds)
+    tabs = {begins[1]: "\t", begins[2]: "\t"}
+    assert model.text(Selection(0, begins[1] + 1), separators=tabs) == "ab"
+    assert model.text(Selection(0, begins[1] + 2), separators=tabs) == "ab\tc"
+    assert model.text(Selection(0, begins[1] + 1)) == "ab"
+
+
+def test_a_separator_at_the_start_of_a_line_takes_the_place_of_the_wrap() -> None:
+    model = _document("ab", "cd", "ef")
+    everything = Selection(0, model.length)
+    assert model.text(everything) == "ab cd ef"
+    assert model.text(everything, separators={2: "\n"}) == "ab\ncd ef"
+    assert model.text(everything, separators={2: "\n\n", 4: "\t"}) == "ab\n\ncd\tef"
+    # `hard_breaks` is the same thing with the separator fixed at a newline,
+    # and a separator given for the same boundary wins over it.
+    assert model.text(everything, hard_breaks={2, 4}) == "ab\ncd\nef"
+    assert model.text(everything, hard_breaks={2}, separators={2: "\t"}) == "ab\tcd ef"
+    # A space as a separator is a wrap: it is not doubled after a space.
+    spaced = _document("ab ", "cd")
+    assert spaced.text(Selection(0, spaced.length), separators={3: " "}) == "ab cd"
+
+
+def test_a_line_that_holds_only_a_rule_is_not_a_line_of_text() -> None:
+    first = _line("ab", start=0, y=_HEIGHT)
+    rule_line = Line(x=0, y=_HEIGHT + _LEADING, width=40, height=1, depth=0, start=2, end=2)
+    rule = RuleRect(x=0, y=_HEIGHT + _LEADING - 1, width=40, height=1)
+    blank = Line(
+        x=0, y=_HEIGHT + 2 * _LEADING, width=0, height=_HEIGHT, depth=_DEPTH, start=2, end=2
+    )
+    last = _line("cd", start=2, y=_HEIGHT + 3 * _LEADING)
+
+    ruled = SelectionModel.from_commands([*first, rule_line, rule, *last])
+    assert [len(fragment.items) for fragment in ruled.fragments] == [2, 2]
+    assert ruled.text(Selection(0, 4)) == "ab cd"
+
+    # A blank line of text -- no rule in it -- is still a line, and still copies
+    # as a break of its own.
+    blanked = SelectionModel.from_commands([*first, blank, *last])
+    assert [len(fragment.items) for fragment in blanked.fragments] == [2, 0, 2]
+    assert blanked.text(Selection(0, 4)) == "ab\ncd"
+
+
+def test_a_highlight_does_not_cover_fill_at_either_end_of_what_is_selected() -> None:
+    cmds, begins = _cells("ab", "cd")
+    model = SelectionModel.from_commands(cmds)
+    # Everything: from the left of "a" to the right of "d", fill between them
+    # included, but not the fill before "a" nor the 3-cell fill after "d".
+    (whole,) = model.rects(Selection(0, model.length))
+    assert (whole.x, whole.width) == (0, 2 * _ADV + 3 * _ADV + 2 * _ADV)
+    # The second cell alone: its two letters, and none of the blank beside them.
+    (second,) = model.rects(Selection(begins[1], model.length))
+    assert (second.x, second.width) == (5 * _ADV, 2 * _ADV)
+    # Only fill selected: nothing to highlight.
+    assert model.rects(Selection(3, 5)) == []
+
+
+def _side_by_side() -> tuple[SelectionModel, list[DrawCmd]]:
+    """
+    A row of two cells as a wrapped table row ships: a container line, then a stack of lines a cell.
+
+    The left cell has one line, `ab`, at x 0. The right cell has three, `cd`,
+    `ef`, `gh`, at x 100. So the left cell's column is empty beside the right
+    cell's second and third lines.
+    """
+    row = Line(
+        x=0, y=_HEIGHT, width=200, height=_HEIGHT, depth=_DEPTH + 2 * _LEADING, start=0, end=8
+    )
+    left = _line("ab", start=0, x=0, y=_HEIGHT)
+    right = [
+        cmd
+        for number, text in enumerate(("cd", "ef", "gh"))
+        for cmd in _line(text, start=2 + 2 * number, x=100, y=_HEIGHT + number * _LEADING)
+    ]
+    below = _line("zz", start=8, x=0, y=_HEIGHT + 4 * _LEADING, width=200)
+    cmds = [row, *left, *right, *below]
+    return SelectionModel.from_commands(cmds), cmds
+
+
+def test_a_point_under_a_short_cell_belongs_to_that_cell_not_to_its_taller_neighbour() -> None:
+    model, _ = _side_by_side()
+    by_text = {model.text(Selection(f.start, f.end)): f for f in model.fragments}
+    assert sorted(by_text) == ["ab", "cd", "ef", "gh", "zz"]
+    assert by_text["ab"].outer is not None and by_text["zz"].outer is None
+    assert by_text["ab"].reach == by_text["gh"].reach
+
+    third_row_y = _HEIGHT + 2 * _LEADING
+    # Level with the right cell's third line, under the left cell's only one.
+    assert model.fragment_at(Point(5, third_row_y)) is by_text["ab"]
+    # The same height in the right cell is that cell's third line.
+    assert model.fragment_at(Point(105, third_row_y)) is by_text["gh"]
+    # Between the two cells, where no line's extent reaches: the line whose
+    # band holds the point, nearest in x -- as before.
+    assert model.fragment_at(Point(70, third_row_y)) is by_text["gh"]
+    assert model.fragment_at(Point(70, _HEIGHT)) is by_text["cd"]
+    assert model.fragment_at(Point(30, _HEIGHT)) is by_text["ab"]
+    # Below the row, in the next line's band: that line, wherever x is.
+    assert model.fragment_at(Point(105, _HEIGHT + 4 * _LEADING)) is by_text["zz"]
+    # And a drag from the short cell down its empty column stays in it.
+    assert (
+        model.text(
+            model.select_at(Point(0, _HEIGHT), Point(15, third_row_y), Granularity.CHARACTER)
+        )
+        == "ab"
+    )
+
+
+def test_an_atom_of_no_width_is_an_item_and_not_fill() -> None:
+    """
+    Review 2, item 8. An `Atom` is a `SetGlue` by subclass, and glue of no
+    natural width is fill: positioning, skipped by the highlight and by a
+    copy. A formula that happens to be zero wide (`${}$`) is not that.
+    """
+    cmds: list[DrawCmd] = [
+        Line(x=0, y=100, width=30, height=8, depth=2, start=0, end=4),
+        Glyph(font="f@1", codepoint=ord("a"), x=0, y=100, index=0),
+        Atom(x=10, y=100, width=0, natural=0, height=8, depth=2, index=1),
+        SetGlue(x=10, y=100, width=10, natural=0, height=8, depth=2, index=2),
+        Glyph(font="f@1", codepoint=ord("b"), x=20, y=100, index=3),
+    ]
+    model = SelectionModel.from_commands(cmds)
+    assert model.text(Selection(0, 4), atoms={1: "${}$"}) == "a${}$ b"
+    # Selected alone it is highlighted (a rectangle of no width, on its line)
+    # and copied; the real fill beside it is neither.
+    assert model.text(Selection(1, 2), atoms={1: "${}$"}) == "${}$"
+    assert len(model.rects(Selection(1, 2))) == 1
+    assert model.rects(Selection(2, 3)) == []

@@ -41,12 +41,25 @@ the spread recorded under "What it found" before comparing two days' numbers.
    the document. A single offset could land in whitespace and flatter the result;
    the spread is what says the number is about the window and not about where the
    window happens to be.
-3. **Where a frame's time goes** -- `draw` decomposed, to answer whether the cost
-   is our per-glyph Python work or ImGui's per-call work. Read the
-   `_anatomy` docstring before drawing a conclusion from it, because two of its
-   rows are timing probes that do not draw correct geometry.
+3. **Where a frame's time goes** -- `draw` against ImGui's share of it, to
+   answer whether the cost is our per-glyph Python work or ImGui's per-call
+   work. Four rows, all of them timings of real calls. Read the `_anatomy`
+   docstring before drawing a conclusion from it, because two of its rows are
+   timing probes that do not draw correct geometry. It had seven rows until
+   2026-10-07; "Rows 5 to 7, retired" below says what they were and why they
+   went.
+4. **`Face.CODE` set ragged, against the default theme** -- the same source and
+   measure through `mono_ragged_theme`, which is what a host with an all-mono,
+   ragged-right transcript would draw. See "The mono ragged run" below.
 
-## What it found, and the answer is not the one that was expected
+## What it found
+
+**Every millisecond in this section was re-taken on 2026-10-07**, one run of
+`python scripts/bench_draw.py --copies 1,2,4 --repeat 7` on this machine with a
+load average of 0.4, after the per-key memo this section used to recommend had
+been built (`advtext.backends.imgui_draw._Preambles`, 2026-10-06). The figures
+it replaces are kept under "Before the memo" because they are the measurement
+that justified the change.
 
 ### Read the counts as fact and the milliseconds as an order of magnitude
 
@@ -61,53 +74,166 @@ for a whole batch after `demo/sample.md` grew, and nothing anywhere reported it.
 were.** Best-of-N defends against the one-sided noise *inside* one run; it does
 not defend against a machine that is busy for the whole run, because a sustained
 background load moves the floor itself. Four runs of this script taken within
-twenty minutes on this machine, over the identical 5,378 commands, gave a full
-draw of **28.0, 30.3, 33.9 and 34.1 ms** -- a 22% spread with no code change.
-Compare *ratios* between rows of one run, which is what the conclusions below
-rest on; do not compare an absolute against a different day's absolute.
+twenty minutes on this machine, over the identical 5,378 commands and before the
+memo, gave a full draw of **28.0, 30.3, 33.9 and 34.1 ms** -- a 22% spread with
+no code change. Compare *ratios* between rows of one run, which is what the
+conclusions below rest on; do not compare an absolute against a different day's
+absolute.
 
 The tables are one run, `--copies 1,2,4 --repeat 7`:
 
     | copies | commands | full draw | visible | culled draw |
-    |      1 |    5,378 |   30.32ms |   1,952 |     10.46ms |
-    |      2 |   10,756 |   59.86ms |   1,952 |     11.00ms |
-    |      4 |   21,512 |  114.52ms |   1,952 |     10.35ms |
+    |      1 |    5,378 |   15.94ms |   1,952 |      5.90ms |
+    |      2 |   10,756 |   30.82ms |   1,952 |      5.80ms |
+    |      4 |   21,512 |   62.51ms |   1,952 |      5.82ms |
 
-**The per-frame cost is our Python, not ImGui's drawing.** The `bench-draw` task
-asked whether the per-frame cost is Python call overhead or ImGui's per-call
-work, on the grounds that if it is the former a batched path for agreeing runs
-might be worth building. The anatomy table says it is overwhelmingly the former,
-and it says the batched path is the wrong thing to build:
+The full column doubles with the file and the culled column does not move. A
+culled draw is about a third of a 16.67ms frame; before the memo it was about
+two thirds (10.5ms in the table under "Before the memo", and 13.2 to 13.9ms in
+the before-and-after its builder took on a loaded machine,
+`.concerns/A4-draw--builder--result.md`).
 
-    | 1. `draw`, as shipped                            | 29.36ms |
-    | 2. the real `draw`, into a draw list that discards| 28.47ms |
-    | 3. per-glyph `add_text` alone, precomputed        |  1.38ms |
+**The per-frame cost is still our Python, not ImGui's drawing.** The `bench-draw`
+task asked whether the per-frame cost is Python call overhead or ImGui's
+per-call work, on the grounds that if it is the former a batched path for
+agreeing runs might be worth building. The anatomy table said it was
+overwhelmingly the former before the memo and says the same after it:
+
+    | 1. `draw`, as shipped                            | 15.77ms |
+    | 2. the real `draw`, into a draw list that discards| 15.09ms |
+    | 3. per-glyph `add_text` alone, precomputed        |  1.27ms |
     | 4. batched `add_text` over 71 runs                |  0.03ms |
-    | 5. a reconstruction of that loop                  | 20.49ms |
-    | 6. ...minus `is_glyph_in_font` and `get_font_baked`| 18.78ms |
-    | 7. ...minus our own arithmetic                    |  1.95ms |
 
-ImGui's share is `1 - 2` = **0.9ms**, and row 3 agrees at 1.4ms measuring the
-same thing from the other end. So **batching every glyph in the document into 71
-`add_text` calls would save about 1ms of 29**, or 3%, and it would have to give
-up the per-glyph positioning `docs/imgui-risks.md` item 3 exists to defend. That
-share was 5% when these tables were first taken and it has only got smaller,
-because the sample grew and the saving did not.
+ImGui's share is `1 - 2` = **0.7ms**, and row 3 reads 1.3ms measuring the same
+thing from the other end (`_Discarding` says why the first understates). So
+**batching every
+glyph in the document into 71 `add_text` calls would save about 1ms of 16**, and
+it would have to give up the per-glyph positioning `docs/imgui-risks.md` item 3
+exists to defend. As a share that is larger than it was (about 6% against 3%),
+because the memo took 13ms out of the denominator and nothing out of ImGui's
+millisecond; as an amount it is what it always was.
 
-Where the rest goes, from the reconstruction: **16.8ms** (`6 - 7`) is our own
-per-glyph arithmetic -- `parse_font_key` re-parsing the same key string,
+What the other 15ms is made of is **not decomposed by this script any more**
+(see the next section). One `cProfile` run over five draws on 2026-10-07, which
+inflates call-heavy code and is good for an order and no better, put the
+internal time in this order: `_glyph` itself, `_RigidSpan.pen`, the `draw_runs`
+loop, `snap_px`, and a function-local `from imgui_bundle import imgui` that
+`_glyph` executed once per glyph. Each is per-glyph Python. None of that is
+this script's to change.
+
+The last of those has since been removed (later on 2026-10-07: `draw_runs`
+hands `_glyph` the `ImVec2` constructor, and
+`tests/test_imgui_draw.py::test_drawing_runs_no_import_statement_per_glyph`
+counts imports). The tables in this docstring were taken before that and are
+left as taken; one run afterwards, same command, quiet machine, read 13.68 /
+27.05 / 54.04 ms full and 5.12 / 5.09 / 5.08 ms culled at one, two and four
+copies, anatomy rows 1 to 4 at 13.88 / 13.13 / 1.26 / 0.03 ms. The profile
+order above was not re-taken.
+
+### Rows 5 to 7, retired
+
+The anatomy table used to go on for three more rows: a hand-written copy of
+`advtext.backends.imgui_draw._glyph`'s body, then the same with ImGui's metric
+calls dropped, then the bare loop. They attributed the cost *inside* `_glyph`
+by subtraction, and they are how the per-key memo was found. Their own
+docstring said they would go stale silently if `_glyph` changed, and it did:
+they went on timing a per-glyph `parse_font_key`, `fontlib_metrics`,
+`baked_size_px` and `get_font_baked` that `draw` now does once per key. On the
+last run that had them (2026-10-07, minutes before the run above) the
+reconstruction read **19.5ms against the 15.8ms of the `draw` it claimed to
+reconstruct** -- slower than the real thing, so the "reconstruction's
+own error" the table told a reader to subtract was negative.
+
+They are deleted rather than rewritten against the memoised `_glyph`. A
+reconstruction of the new body would be stale at the next backend edit in the
+same way, and what is left to attribute is spread over five small things (the
+profile above) rather than concentrated in one that a subtraction can isolate.
+Rows 1 to 4 call the real `draw` and real `add_text` and cannot go stale that
+way.
+
+### Before the memo
+
+One run from before 2026-10-06, `--copies 1,2,4 --repeat 7`, of the backend as
+it was at commit `cb7bebf`. Kept as history; the counts are the same counts.
+
+    copies 1 / 2 / 4:   full draw 30.32 / 59.86 / 114.52 ms,  culled 10.46 / 11.00 / 10.35 ms
+
+    row 1  `draw`, as shipped                                 29.36 ms
+    row 2  the real `draw`, into a draw list that discards    28.47 ms
+    row 3  per-glyph `add_text` alone, precomputed             1.38 ms
+    row 4  batched `add_text` over the same runs               0.03 ms
+    row 5  a reconstruction of that loop                      20.49 ms
+    row 6  ...minus `is_glyph_in_font` and `get_font_baked`   18.78 ms
+    row 7  ...minus our own arithmetic                         1.95 ms
+
+What was read off it then: ImGui's share `1 - 2` = 0.9ms; **16.8ms** (`6 - 7`)
+our own per-glyph arithmetic -- `parse_font_key` re-parsing the same key string,
 `fontlib_metrics` re-resolving the same face, `baked_size_px` recomputing the
-same ratio, two `px_from_sp` calls and two `ImVec2` constructions. **8.0ms**
-(`2 - 5`) is Python dispatch `draw` performs and the reconstruction does not: the
-per-command `match`, the `_glyph` call and the `at` closure. **2.0ms** (row 7) is
-the bare loop and the `DrawStats` rebuild, which is one frozen dataclass per
-glyph.
+same ratio, two `px_from_sp` calls and two `ImVec2` constructions; 8.0ms
+(`2 - 5`) Python dispatch the reconstruction did not have; 2.0ms the bare loop
+and the `DrawStats` rebuild.
 
-Every one of those is a value that is constant across the run of glyphs sharing a
-`FontKey`, and there are 71 such runs in 4,362 glyphs. **Memoising the preamble
-per key is worth an order of magnitude more than batching the draw, and it costs
-no geometry at all.** That is a real optimisation and it is out of scope here;
-saying which one is worth doing was in scope, and this is the answer.
+Every one of those was a value constant across the run of glyphs sharing a
+`FontKey`, and there are 71 such runs in 4,362 glyphs. The conclusion drawn was
+that memoising the preamble per key was worth an order of magnitude more than
+batching the draw and cost no geometry. It was built, per *key* rather than per
+run (8 keys in this document), and the first table above is the result: a full
+draw of 16ms where this one reads 30.
+
+## The mono ragged run
+
+Added 2026-10-06 for `docs/adoption-plan.md` phase 0. Every figure above is for
+justified Roboto, and the adopting host sets everything in one monospace face,
+ragged right. Nothing had drawn that through this backend and timed it.
+
+The same run as the tables above (2026-10-07), 420pt, a 768px window:
+
+    | theme       | commands | glyphs | spans | runs | full draw | visible | culled draw |
+    | default     |    5,378 |  4,362 |   876 |   71 |   15.76ms |   1,952 |      5.84ms |
+    | mono ragged |    5,392 |  4,362 |   876 |   12 |   15.81ms |   1,763 |      5.27ms |
+
+**The mono ragged row's counts are of first-fit breaking.** Since 2026-10-06
+composition breaks a non-justified block first-fit at natural spacing
+(`advtext.ui._text_boxes`). When this table was first taken the ragged lines
+came from the total-fit breaker, which set some of them with their spaces
+compressed and so broke them in other places, and the row read 5,387 commands
+and 1,831 visible. Glyphs, spans and runs are the same under both, and the
+default row's counts did not move.
+
+**The theme is one call now.** `mono_ragged_theme` is
+`Theme.build(faces=Faces.mono(bold=Face.CODE), align=Align.LEFT)`. Until
+2026-10-07 it was a private `Theme` subclass overriding `face_for`, because
+`Theme.build` took neither faces nor an alignment. Checked before the subclass
+was deleted: the two themes have equal `blocks`, and `demo/sample.md` ships
+equal command tuples under both at one, two and four copies (5,392 commands at
+one). `bold=Face.CODE` because this tree bundles no bold monospace file and the
+unregistered `Face.CODE_BOLD` stands in Roboto Bold (`advtext.fontlib`); a host
+that registers one draws two faces and more runs than this row.
+
+The counts are exact and `tests/test_bench_numbers.py` re-derives them. What
+they say, and it is about counts and not about appearance:
+
+- **Every glyph is `Face.CODE`**: the default theme sets the same 4,362 glyphs
+  in five faces (3,811 prose, 310 code, 206 bold, 24 italic, 11 bold italic).
+  `demo/sample.md` contains no mathematics, so this run says nothing about
+  `Face.MATH`, which a theme does not choose.
+- **Per-glyph cost is the same to within the run's noise**, 3.61 against
+  3.62 microseconds: a monospace glyph goes through the same `_glyph` as a
+  proportional one.
+- **The glyph count and the rigid-span count do not move** (4,362 and 876 under
+  both). Fourteen more commands ship and 189 fewer are visible in the first window,
+  because the lines break in different places and the page is a different
+  height; that is a difference in the layout and not in the cost of drawing it.
+- **`runs` falls from 71 to 12** because there is one face left to change to and
+  only sizes still differ. That is the count a batched path would issue calls
+  for; it is a bound, and nothing here builds a batched path.
+
+Whether a monospace run's advances agree with ImGui's closely enough to batch is
+`scripts/verify_advances.py`'s question. It was asked on 2026-10-06
+(`.concerns/A4-draw--builder--result.md`): at 12, 14, 16, 18 and 20 px, 0 of 94
+printable ASCII characters disagree; at 13, 15 and 17 px all 94 do, by half a
+pixel each, because Inconsolata's advance is half an em and ImGui quantises an
+advance to a whole pixel. Nothing was built on it.
 
 ## Two things that quietly ruin these numbers
 
@@ -123,8 +249,9 @@ saying which one is worth doing was in scope, and this is the answer.
 
 Deliberately out of scope: timing composition and ship-out, which
 `scripts/bench_reflow.py` owns; anything about how the result *looks*, which
-needs a display; and implementing the batched draw path table 3 measures the
-headroom for.
+needs a display; implementing the batched draw path table 3 measures the
+headroom for; and attributing the Python inside `draw`, which rows 5 to 7 once
+did and a profiler now does better.
 """
 
 from __future__ import annotations
@@ -142,11 +269,18 @@ if __package__ in (None, ""):  # pragma: no cover - import shim for direct execu
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from advtext import fontlib
-from advtext.backends.imgui_draw import DEFAULT_PALETTE, DrawStats, baked_size_px, draw
+from advtext.backends.imgui_draw import DEFAULT_PALETTE, baked_size_px, draw
 from advtext.fontmetrics import Face
 from advtext.markdown import build_document
 from advtext.shipout import DrawCmd, Glyph, Point, ship
-from advtext.style import Theme, char_measure, fontlib_metrics, parse_font_key
+from advtext.style import (
+    Align,
+    Faces,
+    Theme,
+    char_measure,
+    fontlib_metrics,
+    parse_font_key,
+)
 from advtext.ui import CommandIndex, Viewport, compose
 from advtext.units import DEFAULT_PX_PER_INCH, px_from_sp, sp_from_pt
 
@@ -156,7 +290,10 @@ __all__ = [
     "DEFAULT_WIDTH_PT",
     "DEFAULT_WINDOW_PX",
     "DrawTiming",
+    "glyphs_by_face",
     "main",
+    "mono_ragged_theme",
+    "rigid_spans",
     "shipped_commands",
 ]
 
@@ -273,15 +410,89 @@ def _best_frame(imgui: Any, repeat: int, work: Callable[[Any], T]) -> tuple[floa
     return best * 1000.0, result
 
 
-def shipped_commands(source: str, copies: int, width_pt: float) -> tuple[DrawCmd, ...]:
+def mono_ragged_theme() -> Theme:
+    """
+    The default theme with every block in `Face.CODE` and set ragged right.
+
+    Sizes, leading, indents and spacing are the default theme's, so the type
+    scale still has four sizes and the only things that differ from the other
+    tables' input are the two the name says: the face, and `Align.LEFT` where
+    the default has `Align.JUSTIFY`. Headings, code blocks, rules and tables are
+    already `Align.LEFT` in the default theme.
+
+    **One call to `Theme.build`.** This used to return a private `_MonoTheme`
+    subclass that overrode `face_for`, because `Theme.face_for` chose a run's
+    face without consulting the block's and `Theme.build` took no faces. Both
+    changed on 2026-10-06 (`advtext.style.Faces`), and the subclass was deleted
+    on 2026-10-07 after checking that the two themes have equal `blocks` and
+    ship `demo/sample.md` to equal command tuples at one, two and four copies.
+
+    `bold=Face.CODE` and not the default `Face.CODE_BOLD`: no bold monospace
+    file is bundled, and the unregistered `CODE_BOLD` role is backed by Roboto
+    Bold, which would put a proportional face in the headings. Bold and italic
+    therefore collapse to the one monospace face, as they did in the subclass.
+    A host that registers a bold monospace will draw two faces, and so more
+    runs, than this benchmark's figure.
+
+    What it does **not** change is mathematics. A formula's glyphs are
+    `Face.MATH`, chosen by `advtext.mathlist` and not by the theme, and they
+    stay that way; the table prints glyphs by face so a reader can see how many.
+    """
+    return Theme.build(faces=Faces.mono(bold=Face.CODE), align=Align.LEFT)
+
+
+def rigid_spans(cmds: Sequence[DrawCmd]) -> int:
+    """
+    How many maximal runs of consecutive `Glyph` commands a list holds.
+
+    This is the unit `advtext.backends.imgui_draw.draw` snaps as one piece: it
+    opens a span at a `Glyph` that follows anything else and drops it at the
+    next `SetGlue`, `Line` or `RuleRect`. Counted from the command list alone,
+    the way `draw` delimits them, so it needs no atlas.
+
+    Measured on `demo/sample.md` at 420pt it is 876 under the default theme and
+    876 under `mono_ragged_theme`: a ragged setting moves the slack to the end
+    of the line and leaves the same glue between the same words.
+    """
+    count = 0
+    inside = False
+    for cmd in cmds:
+        if isinstance(cmd, Glyph):
+            if not inside:
+                count += 1
+            inside = True
+        else:
+            inside = False
+    return count
+
+
+def glyphs_by_face(cmds: Sequence[DrawCmd]) -> dict[Face, int]:
+    """
+    How many glyphs of a command list are set in each face, most numerous first.
+    """
+    counts: dict[Face, int] = {}
+    for cmd in cmds:
+        if isinstance(cmd, Glyph):
+            face = parse_font_key(cmd.font).face
+            counts[face] = counts.get(face, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: item[1], reverse=True))
+
+
+def shipped_commands(
+    source: str, copies: int, width_pt: float, theme: Theme | None = None
+) -> tuple[DrawCmd, ...]:
     """
     Compose and ship `copies` concatenations of `source` at a measure.
 
     Composition is not timed and is not in any table: `scripts/bench_reflow.py`
     owns that number, and quoting it twice in two scripts is how two numbers
     start disagreeing.
+
+    `theme` defaults to `Theme.build()`, which is what every table but the last
+    is taken with; `mono_ragged_theme()` is the other one this script passes.
     """
-    theme = Theme.build()
+    if theme is None:
+        theme = Theme.build()
     measure = char_measure(fontlib_metrics)
     document = build_document("\n\n".join([source.strip()] * copies), theme, fontlib_metrics)
     box = compose(document, theme, sp_from_pt(width_pt), measure)
@@ -344,7 +555,7 @@ def _time_draw(
 @dataclass(frozen=True, slots=True)
 class _Call:
     """
-    One fully resolved `add_text` call: everything `_glyph` computes, precomputed.
+    One fully resolved `add_text` call: its font, size, position and character.
     """
 
     font: Any
@@ -360,11 +571,16 @@ def _resolved_calls(
     """
     Every `add_text` `draw` would issue, with its arguments worked out in advance.
 
-    This is the same arithmetic `advtext.backends.imgui_draw._glyph` performs,
-    repeated here rather than imported because the point is to move it *out* of
-    the timed region. If `_glyph` changes, this goes stale and the anatomy table
-    becomes wrong while the first two tables stay right -- which is why it is a
-    private helper of one table and not a general facility.
+    The font, the size and the character are the ones
+    `advtext.backends.imgui_draw.draw` arrives at, worked out here rather than
+    imported because the point is to move that work *out* of the timed region.
+    The positions are the shipped ones, unsnapped: `draw` moves each rigid span
+    by under a pixel before it issues the call, and this does not, which changes
+    where a glyph lands and not what an `add_text` costs. Rows 3 and 4 of the
+    anatomy table are timing probes and say so. If the backend changes which
+    font or size a glyph is drawn at, this goes stale and those two rows with
+    it, while every row that calls the real `draw` stays right -- which is why
+    it is a private helper of one table and not a general facility.
     """
     calls: list[_Call] = []
     for cmd in cmds:
@@ -412,6 +628,16 @@ class _Discarding:
     duck-typed stand-in would weaken a real type for a benchmark's convenience.
     """
 
+    flags: int = 0
+    """
+    Read, set and restored by `draw` around its loop, so it must exist.
+
+    `draw` sets `ImDrawListFlags_.text_no_pixel_snap` on the list it is handed
+    and puts the old value back. This stand-in predates that, and without the
+    attribute row 2 of the anatomy table raised `AttributeError` and the script
+    died after printing two tables -- found 2026-10-06 by running it.
+    """
+
     def add_text(self, *_args: Any) -> None:
         return None
 
@@ -456,33 +682,29 @@ def _anatomy(
     px_per_inch: float,
 ) -> list[tuple[str, int, float]]:
     r"""
-    `draw`, peeled one layer at a time, to say where a frame's milliseconds are.
+    `draw` against ImGui's share of it, to say whose milliseconds a frame's are.
 
     The question this exists to answer is the one the `bench-draw` task asked: is
-    the 21ms ImGui's per-call work, in which case batching runs of glyphs into one
-    `add_text` is worth pursuing, or is it our own Python, in which case it is
-    not.
+    the cost ImGui's per-call work, in which case batching runs of glyphs into
+    one `add_text` is worth pursuing, or is it our own Python, in which case it
+    is not.
 
-    **Rows 1 to 4 settle that, and they are exact.** Row 2 is the *real* `draw`,
-    over the *real* command list, handed a `_Discarding` draw list instead of
-    ImGui's -- so `1 - 2` is everything ImGui does with a glyph once it has been
-    asked for it, and no part of `draw` has been reconstructed to get the number.
-    Row 3 measures the same quantity from the other end and must agree with
-    `1 - 2`; two independent estimates of one number are worth more than one.
-    Row 4 is the floor a batched path could aim at.
+    **Four rows, and every one is a timing of real calls.** Row 2 is the *real*
+    `draw`, over the *real* command list, handed a `_Discarding` draw list
+    instead of ImGui's -- so `1 - 2` is everything ImGui does with a glyph once
+    it has been asked for it, and no part of `draw` has been reconstructed to
+    get the number. Row 3 measures the same quantity from the other end and must
+    roughly agree with `1 - 2`; two independent estimates of one number are
+    worth more than one. Row 4 is the floor a batched path could aim at. Rows 3
+    and 4 do not draw the document correctly (unsnapped positions; ImGui's own
+    advances inside a run) and are not meant to.
 
-    **Rows 5 to 7 attribute what is left, and they are a reconstruction rather
-    than a measurement of `draw` itself.** They are hand-written copies of
-    `advtext.backends.imgui_draw._glyph`'s body with one layer dropped at each
-    step, because there is no way to remove a statement from a function from the
-    outside. Row 5 is the full reconstruction: **the gap between row 5 and row 2
-    is the reconstruction's own error**, and it is printed rather than hidden,
-    because it is the per-command `match`, the `_glyph` call and the `at` closure
-    that row 5 does not have. Subtract rows 6 and 7 from row 5, not from row 2.
-
-    That reconstruction goes stale silently if `_glyph` changes. It is the part of
-    this script to distrust first after a backend edit; tables 1 and 2 call the
-    real `draw` and are unaffected.
+    **There were three more rows until 2026-10-07**, a hand-written copy of
+    `_glyph`'s body with one layer dropped at each step. `_glyph` was memoised
+    per font key on 2026-10-06 and the copy was not, so it timed work `draw` no
+    longer did and came out slower than the function it reconstructed. Retired;
+    the module docstring keeps their last honest figures and says what they
+    found.
     """
     calls = _resolved_calls(imgui, cmds, fonts, px_per_inch)
     runs = _runs(calls)
@@ -524,59 +746,6 @@ def _anatomy(
 
     ms, _ = _best_frame(imgui, repeat, batched)
     rows.append((f"4. batched `add_text` over {len(runs)} runs (WRONG geometry)", len(calls), ms))
-
-    def reconstruction(_draw_list: Any) -> int:
-        stats = DrawStats()
-        for cmd in cmds:
-            if not isinstance(cmd, Glyph):
-                continue
-            spec = parse_font_key(cmd.font)
-            font = fonts(spec.face)
-            if not font.is_glyph_in_font(cmd.codepoint):
-                stats = DrawStats(stats.glyphs, stats.missing + 1, stats.rules)
-                continue
-            ours = fontlib_metrics(cmd.font)
-            size_px = baked_size_px(
-                px_from_sp(spec.size, px_per_inch), ours.ascent, ours.descent, ours.em
-            )
-            baseline = imgui.ImVec2(px_from_sp(cmd.x, px_per_inch), px_from_sp(cmd.y, px_per_inch))
-            ascent = font.get_font_baked(size_px).ascent
-            imgui.ImVec2(baseline.x, baseline.y - ascent)
-            chr(cmd.codepoint)
-            stats = DrawStats(stats.glyphs + 1, stats.missing, stats.rules)
-        return stats.glyphs
-
-    ms, _ = _best_frame(imgui, repeat, reconstruction)
-    rows.append(("5. a reconstruction of that loop, for 6 and 7 to subtract from", len(calls), ms))
-
-    def without_imgui_metrics(_draw_list: Any) -> int:
-        stats = DrawStats()
-        for cmd in cmds:
-            if not isinstance(cmd, Glyph):
-                continue
-            spec = parse_font_key(cmd.font)
-            fonts(spec.face)
-            ours = fontlib_metrics(cmd.font)
-            baked_size_px(px_from_sp(spec.size, px_per_inch), ours.ascent, ours.descent, ours.em)
-            baseline = imgui.ImVec2(px_from_sp(cmd.x, px_per_inch), px_from_sp(cmd.y, px_per_inch))
-            imgui.ImVec2(baseline.x, baseline.y)
-            chr(cmd.codepoint)
-            stats = DrawStats(stats.glyphs + 1, stats.missing, stats.rules)
-        return stats.glyphs
-
-    ms, _ = _best_frame(imgui, repeat, without_imgui_metrics)
-    rows.append(("6. ...minus `is_glyph_in_font` and `get_font_baked`", len(calls), ms))
-
-    def loop_only(_draw_list: Any) -> int:
-        stats = DrawStats()
-        for cmd in cmds:
-            if not isinstance(cmd, Glyph):
-                continue
-            stats = DrawStats(stats.glyphs + 1, stats.missing, stats.rules)
-        return stats.glyphs
-
-    ms, _ = _best_frame(imgui, repeat, loop_only)
-    rows.append(("7. ...minus our own arithmetic: the loop and `DrawStats`", len(calls), ms))
     return rows
 
 
@@ -692,11 +861,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"### Where a frame's time goes, {_copies(copies[0])}\n")
     print(
-        "Rows 1-4 are exact and settle whether batching runs of glyphs is worth\n"
-        "anything: row 1 minus row 2 is ImGui's own work, row 3 measures the same\n"
-        "quantity independently, and row 4 is the floor. Rows 5-7 attribute the\n"
-        "remainder and are a reconstruction of `draw`'s loop, so subtract them\n"
-        "from row 5 and read the 5-to-2 gap as the reconstruction's own error.\n"
+        "Whether batching runs of glyphs is worth anything: row 1 minus row 2 is\n"
+        "ImGui's own work, row 3 measures the same quantity independently, and\n"
+        "row 4 is the floor. Everything else in row 1 is this project's Python.\n"
         "Only row 1 draws the document correctly. See `_anatomy`.\n"
     )
     print("| what | glyphs | best |")
@@ -705,6 +872,37 @@ def main(argv: list[str] | None = None) -> int:
         imgui, indexes[copies[0]].cmds, fonts, args.repeat, args.px_per_inch
     ):
         print(f"| {what} | {glyphs} | {ms:.2f}ms |")
+    print()
+
+    print(f"### `Face.CODE` set ragged against the default theme, {_copies(copies[0])}\n")
+    print(
+        "The same source at the same measure through two themes. `spans` is the\n"
+        "rigid spans `draw` snaps as a unit and `runs` is consecutive glyphs sharing\n"
+        "a face and a size. Mathematics stays in its own face under either theme.\n"
+        "Compare the two rows with each other; see the module docstring.\n"
+    )
+    print(
+        "| theme | commands | glyphs | by face | spans | runs "
+        "| full draw | µs/glyph | visible | culled draw |"
+    )
+    print("|---|---|---|---|---|---|---|---|---|---|")
+    for name, theme in (("default", None), ("mono ragged", mono_ragged_theme())):
+        cmds = shipped_commands(source, copies[0], args.width, theme)
+        by_face = ", ".join(f"{face.value} {n}" for face, n in glyphs_by_face(cmds).items())
+        runs = len(_runs(_resolved_calls(imgui, cmds, fonts, args.px_per_inch)))
+        full = _time_draw(imgui, cmds, fonts, args.repeat, args.px_per_inch)
+        visible = CommandIndex.of(cmds).visible(
+            Viewport.of_pixels(0.0, args.window, args.px_per_inch)
+        )
+        culled = _time_draw(imgui, visible, fonts, args.repeat, args.px_per_inch)
+        per_glyph = full.draw_ms * 1000.0 / full.glyphs if full.glyphs else 0.0
+        print(
+            f"| {name} | {full.commands} | {full.glyphs} | {by_face} | {rigid_spans(cmds)} "
+            f"| {runs} | {full.draw_ms:.2f}ms | {per_glyph:.2f} | {culled.commands} "
+            f"| {culled.draw_ms:.2f}ms |"
+        )
+        if full.missing or culled.missing:
+            print(f"| | **{full.missing} / {culled.missing} glyphs missing** | | | | | | | | |")
     print()
     return 0
 

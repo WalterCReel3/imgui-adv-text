@@ -6,10 +6,26 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Walter Reel" }]
 dependencies = [
-    # The ImDrawList backend and the demo app. The floor is 1.92 because the
-    # backend targets Dear ImGui 1.92's font/glyph API; a lower floor would turn
+    # The ImDrawList backend and the demo app. The floor is the first release
+    # that has `ImDrawListFlags_.text_no_pixel_snap`, which
+    # `advtext.backends.imgui_draw.draw` sets on every call; a lower floor turns
     # an install-time failure into an AttributeError on the first frame drawn.
-    "imgui-bundle>=1.92",
+    #
+    # How 1.92.900 was arrived at, and how far to trust it:
+    #   read      Dear ImGui's CHANGELOG adds `ImDrawListFlags_TextNoPixelSnap`
+    #             under 1.92.9. imgui-bundle's CHANGELOG has 1.92.900 as the
+    #             release that moved to Dear ImGui 1.92.9b, and the release
+    #             before it on PyPI (1.92.801) is on 1.92.8.
+    #   measured  the flag exists in the installed 1.92.900, and
+    #             tests/test_makefile_env.py pins that.
+    #   not done  installing 1.92.801 to watch it fail -- no package index is
+    #             reachable where this was written. So this is the minimum by
+    #             the changelogs and the verified version by measurement.
+    # No upper bound is set, but one is coming due: imgui-bundle's unreleased
+    # notes move to Dear ImGui 1.93 WIP, where upstream is discussing folding
+    # this flag into `ImDrawFlags` (ocornut/imgui#9504). The same test goes red
+    # on the release that renames it.
+    "imgui-bundle>=1.92.900",
     # Block and inline parsing for the markdown litmus test. Only the parser is
     # used -- token stream in, our own box tree out. Nothing here renders HTML.
     "markdown-it-py>=3.0",
@@ -53,7 +69,7 @@ packages = ["advtext"]
 # is ignored.
 [tool.hatch.build.targets.sdist]
 include = [
-    "/advtext", "/scripts", "/tests", "/docs", "/README.md", "/Makefile",
+    "/advtext", "/scripts", "/examples", "/tests", "/docs", "/README.md", "/Makefile",
     "/pyproject.toml",
 ]
 exclude = ["**/__pycache__", "**/*.pyc"]
@@ -73,7 +89,7 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-# The floor from `requires-python`, not whatever the borrowed interpreter
+# The floor from `requires-python`, not whatever the interpreter in ./.venv
 # happens to be. Typechecking against the oldest supported version is what
 # catches a 3.12-only idiom before it reaches a Debian 12 box, whose system
 # Python is 3.11.

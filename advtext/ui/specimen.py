@@ -726,7 +726,11 @@ def build_specimen(
 
     metrics: dict[Face, FontMetrics] = {}
     absent: list[Face] = []
-    for face in Face:
+    # The roles this tab labels, not every `Face`: `Face.CODE_BOLD` has no file
+    # of its own in the bundle and is backed by the bold prose file, so a row
+    # for it would be a second "Bold" under another name -- the near-tie
+    # `test_the_six_faces_come_out_six_distinguishable_widths` exists to refuse.
+    for face in FACE_LABELS:
         try:
             metrics[face] = resolve(font_key(face, specimen_size))
         # Bare `Exception` and not `MissingFontError`: `resolve` is injected and a

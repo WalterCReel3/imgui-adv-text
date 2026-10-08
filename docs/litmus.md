@@ -43,9 +43,13 @@ the Document tab shows the markdown set on a page, and the Formula tab shows the
 display sigma large with stacked limits beside the text-style one with scripts
 at its side.
 
-**What that leaves:** no click has ever reached a real frame, so selection has
-been computed on real data and drawn on a screen and never *performed*; and this
-is one GPU, one driver and one X server. `docs/imgui-risks.md` is the ordered
+**What that leaves:** this sentence used to begin "no click has ever reached a
+real frame". Since 2026-10-06 one has, from a script: `scripts/mouse_probe.py`
+posts eight gestures into the real app in a real window on Xvfb and all
+eighteen of its checks on the selection and the clipboard pass. No person has
+dragged a selection, the events enter at ImGui's input queue rather than at the
+X server, and the photographs are still of one GPU, one driver and one X
+server. `docs/imgui-risks.md` is the ordered
 list, and its item 1 — compositing — is now marked settled rather than open.
 
 What the artifacts below demonstrate is the **layout engine**: the box-and-glue
@@ -161,6 +165,15 @@ paragraph wrapped into five lines is one paragraph, and freezing this column's
 width into the clipboard would show the wrap points as ragged hard breaks
 anywhere they were pasted.
 
+*(2026-10-07.)* That is still how a wrapped line copies. What changed is
+everything that is not a wrap: a view's copy now puts a blank line between
+blocks, a newline between code lines and between the items of a list, and a tab
+between table cells, read from the blocks rather than supplied by a caller.
+And a highlight no longer covers the blank fill at the ends of a line, so in a
+view "edge to edge" holds for full lines only. `selection.svg` is drawn by
+`advtext.selection` directly and its artifact was not re-examined.
+`docs/adoption-plan.md` section A has both changes with their measurements.
+
 ---
 
 ## Litmus test 2 — a display-size summation
@@ -268,6 +281,11 @@ measure, so the tolerance is not the only thing in question.
 
 ### 2. Links are not visually distinguished
 
+*(2026-10-07: still true of `markdown.svg` and of the demo page; no longer
+true of the library. A view constructed with an `on_link` callback underlines
+and colours its links and follows a click, through `advtext/spans.py`. The SVG
+backend does not consume it. Nobody has looked at the underline.)*
+
 `advtext.markdown.LinkSpan` records where every link is, in reading-order
 indices. **Nothing consumes it** — grep the tree and the only mentions outside
 `markdown.py` are two docstrings describing what a consumer would do.
@@ -295,6 +313,10 @@ with and the item would fit with room over. That is better typography and more
 work, and it is a live option rather than a closed question.
 
 ### 4. Cells do not wrap
+
+*(2026-10-07: they do now, where a table is wider than its measure. The sample
+table fits its measure in both artifacts and in the demo at its default width,
+so nothing here shows a wrapped cell. The entry below is as it stood.)*
 
 A table cell wider than its share overflows rather than wrapping, because
 breaking text inside a cell means running the line breaker per cell against a

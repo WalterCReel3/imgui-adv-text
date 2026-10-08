@@ -30,10 +30,46 @@ real window through `immapp.run`, runs it for N frames and grabs the framebuffer
 | `advtext.fontlib.imgui_font_file` | Executed, pinned by two tests, and the display sigma has been photographed |
 | `advtext.ui.app`, `advtext.ui.document_view` | Executed. `run`, `gui`, `load_fonts`, `apply_style` and `DocumentView.draw` all run in a real window |
 | `scripts/run_demo.py` | Executed, and **tested**: `tests/test_run_demo.py` covers `main` and the `DISPLAY` guard. It stubs out `app.run`, because `tests/conftest.py` forbids this suite from opening a window |
-| **A mouse click** | **Never happened.** Nothing here synthesises one into a real frame, so selection has been computed and drawn and never performed |
+| **A mouse click** | **Performed by a script, never by a hand.** This row read "Never happened" until 2026-10-06. `scripts/mouse_probe.py` posts eight gestures into the real app in a real GLFW window and its 18 checks pass. The events enter at `ImGuiIO`, not at the X server, and the window was on Xvfb with llvmpipe |
+| `BareView`, `StreamView`, `draw_runs`, live links, the four `examples/` | Executed in real frames with no display by their tests; each example's `main()` opened a real window on Xvfb and drew with nothing missing. **Never on a GPU, never looked at** |
 
 The boundary this file used to police was *compositing*. The boundary now is
 **input**, and one machine's worth of driver.
+
+**Third, 2026-10-07: "there is a display here" is true of the machine and was
+not true of every session on it.** The adoption session's sandbox had
+`DISPLAY=:1` set and unreachable. Everything it ran in a window, it ran on an
+Xvfb in a user namespace over TCP with Mesa's software rasteriser, which is
+exactly the configuration the paragraph above says behaves differently for
+texture formats and premultiplied alpha. So the work of that session
+(`docs/adoption-plan.md`) has been composited by llvmpipe only. Its per-role
+ink, per-run colour, link underlines and selection fills all go through the
+same `add_text`, `add_rect_filled` and `add_line` calls the photographed demo
+uses, which is an argument and not a photograph.
+
+Three risks that session added, in working order:
+
+- **`ImDrawListFlags_.text_no_pixel_snap` may be renamed in Dear ImGui 1.93.**
+  The backend sets it; the dependency floor is now `imgui-bundle>=1.92.900`,
+  the first release that has it. A search summary of ocornut/imgui#9504 said
+  the flag folds into `ImDrawFlags`; the issue was not read. **Symptom:**
+  `AttributeError` on the first `draw`. **Where to look:**
+  `advtext.backends.imgui_draw.draw`, `scripts/pen_rules.py`, and the floor
+  test in `tests/test_makefile_env.py`, which goes red first.
+- **`BareView` leans on two ImGui behaviours nothing documents.** It submits an
+  `invisible_button` only from the frame a press lands, and needs ImGui to make
+  a button first submitted on that frame the active item; and it asks
+  `imgui.internal.get_hovered_id()` because the public hover call is also true
+  for the previous frame's item. Both held in 1.92.900, headless and on Xvfb.
+  **Symptom if the first stops holding:** selection still works and the host
+  window drags with it.
+- **A fractional origin moves line gaps.** Each line's top is snapped on its
+  own and the body leading is 21.6 px: moving a view's origin by 0.25 / 0.5 /
+  0.75 px changed 21 / 43 / 44 of 54 gaps. ImGui 1.92.900 handed a view a
+  whole-pixel origin on all 417 frames measured, and `BareView` now rounds its
+  cursor regardless. `DocumentView` rounds the cursor and not the page's text
+  origin, which was always fractional. **Where to look:**
+  `BareView._cursor_origin`.
 
 Two things to know before running anything, both learned by hitting them:
 
@@ -47,7 +83,10 @@ Two things to know before running anything, both learned by hitting them:
 ## 1. Compositing — SETTLED, on one machine
 
 **This item used to read "Nothing has been composited to a screen."** It has
-been. All five tabs are photographed at 1400×900 by `make shot-all`, and the
+been. All five tabs are photographed at 1400×900 by `make shot-all` (*the
+five the app had then, on a GPU; since 2026-10-07 it has fourteen pages in a
+sidebar, photographed at 1300×800 on Xvfb only and looked at by nobody, see
+`docs/status.md` section 0b*), and the
 things a shader, a texture format, a premultiplied-alpha convention or a wrong
 `ImTextureID` would have broken are visibly not broken: the Document tab shows
 prose on a page, the Formula tab shows a sigma noticeably larger in the left
@@ -303,6 +342,11 @@ rather than unexecuted.
 ---
 
 ## 9. `_FACES` is a module global and `run` can be called twice
+
+*(2026-10-06: `load_fonts` now calls `_FACES.clear()` first, and loads through
+`advtext.ui.fonts.load_faces`. Still a module global; still nothing calls `run`
+twice, so the clearing is read and not exercised. A host does not use this
+module: it holds its own `LoadedFaces`.)*
 
 `advtext.ui.app._FACES` is populated by `load_fonts`, a hello_imgui callback.
 Nothing clears it. A second `run` in the same process repopulates it against a

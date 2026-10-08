@@ -19,7 +19,33 @@ Roughly 1000 lines, with the worst interaction in TeX: ligature reconstruction,
 it was refused. Nothing about the refusal was wrong at the time; the cost simply
 became visible.
 
-## 2. Memoise the per-glyph preamble in `imgui_draw._glyph`
+## 2. Memoise the per-glyph preamble in `imgui_draw._glyph` — BUILT
+
+**Built on 2026-10-06** (`advtext.backends.imgui_draw._Preambles`, phase 4 of
+`docs/adoption-plan.md`). It is a memo per font key that lives for one `draw`
+call, so nothing has to be invalidated when an atlas is rebuilt. What it
+memoises is more than the three functions named below: `fonts(face)`,
+`get_font_baked` and `is_glyph_in_font` were per-glyph too.
+
+Measured, `python scripts/bench_draw.py --copies 1,2,4 --repeat 7`, re-run on
+2026-10-07 on a quiet machine: a full draw of `demo/sample.md` was **15.9 ms**
+and a culled draw **5.9 ms**, at one, two and four copies alike for the culled
+figure. Its builder's before-and-after on a loaded machine was 38.0 to 16.2 ms
+full and 13.9 to 6.0 ms culled, and old `draw` against new recorded the same
+calls and the same vertices in 12 cases.
+
+What was left was per-glyph Python spread over several small things rather
+than one large one; `scripts/bench_draw.py`'s docstring lists them from one
+profile. The cheapest visible there has since been built too, later the same
+day: `_glyph` ran a function-local `from imgui_bundle import imgui` once per
+glyph, and `draw_runs` now hands it what it needs. One run after that, same
+command, quiet machine: a full draw **13.7 ms** and a culled draw **5.1 ms**
+(its builder's own run read 14.3 and 5.3). ImGui's own share is 0.7 to 1.3 ms
+of that, so batching is still worth about a millisecond and still costs the
+per-glyph positioning.
+
+The text below is the item as it stood, kept because it is the argument the
+change was made on. Its figures are of the unmemoised backend.
 
 The cheapest large win available, and it changes no geometry.
 
@@ -101,6 +127,17 @@ one change that would silently alter *which* breakpoints win rather than failing
 loudly. If it is ever taken, the brute-force optimality test is what must guard
 it. Only worth doing if performance still matters after item 2.
 
+Since 2026-10-06 there is a second reason to look at this function, and it is
+not about speed in the justified case. Set **ragged** through this breaker
+(`PROSE_BREAKING_TOTAL_FIT_RAGGED`), the 635-node paragraph costs 2.2 to 9.4 s
+against 27 to 42 ms justified, and every word ahead of a word wider than the
+measure is set on a line of its own (`tests/test_stream_stability.py` pins both,
+the second as a strict `xfail`). The reading is that `easy_line`, the merge of
+active nodes that differ only in line number, is the missing piece; nobody
+verified that. Ragged text no longer goes through this path by default: it is
+filled first-fit (`LineBreakParams.first_fit`). So this is open only for a
+caller who asks for total-fit ragged by name.
+
 ---
 
 ## A direction rather than a work item
@@ -111,6 +148,34 @@ capability — ImGui 1.92's pluggable font loader is reachable from C++ and not 
 the Python binding, and implementing one would delete the synthetic-codepoint
 machinery in `fontlib.py` entirely and open the seam where FreeType hinting
 attaches. Nothing is decided and nothing is implemented.
+
+## From the second build (2026-10-07): unowned, each one small
+
+`docs/adoption-plan.md`, "Second build", is the full account. What it leaves
+as work rather than as a choice for the user:
+
+- **Mark a find match inside a table cell.** It is found and located
+  (`FindIndex`, `BareView.span_rects(..., cell=)`); the decoration path keys
+  its cache on one spans tuple per block and has no cell address.
+- **Placeholders for invisible and bidirectional control characters in
+  markdown text**, as `DiffView` has. Blocked on a decision, not on code:
+  which characters, and where a document view says so.
+- **A forced style for a fraction** (`\dfrac`, `\tfrac`, `\displaystyle`):
+  a math list has no style item. **Accents**, and a degree on a radical.
+- **An incremental pairing for an open group of removes and adds** in a
+  streamed diff: still re-aligned for each line that arrives while the group
+  has no context after it.
+- **Cells wider than one column in `DiffView`**: CJK, emoji and combining
+  marks are one cell each, unmeasured.
+- **Probe, in a real window:** scroll compensation during a scrollbar drag;
+  the wheel over a height-capped diff at its limits; `scroll_to`; the
+  recovery from a page that raises.
+- **One page each asked for and nobody built:** units culled against drawn
+  (Stress), a count of formulas shipped and a glyph-coverage query (Math), a
+  palette role for a find mark (Find), a go-to-hunk and a notification that a
+  click expanded context (Diff).
+- **`from_texts` at 50,000 lines is seconds**, all of it `difflib`. A host
+  runs it off the UI thread today; a faster matcher is the work item.
 
 ## Open questions, not work items
 
@@ -126,3 +191,13 @@ attaches. Nothing is decided and nothing is implemented.
   than from pixels would.
 - **96 px/inch is an assumption.** The display has now been seen but not
   measured. `docs/imgui-risks.md` item 11.
+- **Everything `docs/adoption-plan.md` lists under "Open".** That plan was built
+  in one unattended session on 2026-10-06 and 07; its first section is the
+  current list of what is unmeasured, unowned or unreviewed, and it is longer
+  than this one. The largest item there used to be a long live table in a
+  stream, linear in its rows; the session's last task made a top-level one
+  about flat (its builder's figures: 0.8 to 1.2 ms a row from 10 to 200 rows
+  where it fits its pane), and no reviewer has read that work. What that list
+  now leads with is what is still not flat: a cell that widens a column, a
+  table wrapped to a narrow pane, and a table or a long paragraph inside a
+  list item or a quote.

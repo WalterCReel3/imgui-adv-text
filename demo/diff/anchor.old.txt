@@ -1,0 +1,2 @@
+    timeout = config.get("timeout", 30)
+    client = Client(host, timeout=timeout)

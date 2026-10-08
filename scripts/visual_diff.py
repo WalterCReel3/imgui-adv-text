@@ -397,10 +397,13 @@ def known_tabs() -> tuple[str, ...]:
     default tab is photographed under the wrong filename. A visual review of
     that file is a confident review of the wrong picture.
 
-    `advtext.ui.app.TAB_NAMES` is the single source, and `App.gui` iterates it
-    directly, so there is no second list here that could drift. That export
-    landed with T18-colmargin; before it, three separate files had independently
-    copied the tab list and two of them had gone stale.
+    `advtext.ui.app.TAB_NAMES` is the single source, so there is no second
+    list here that could drift. That export landed with T18-colmargin; before
+    it, three separate files had independently copied the tab list and two of
+    them had gone stale. Since the demo's tab bar became a sidebar of
+    discovered pages (2026-10-07) the name is no longer a literal: it is a
+    module `__getattr__` returning `advtext.ui.app.page_names()`, the scan of
+    `advtext/ui/pages/`, so "tab" throughout this file means a page.
     """
     from advtext.ui.app import TAB_NAMES
 

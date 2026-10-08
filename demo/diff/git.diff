@@ -1,0 +1,80 @@
+diff --git a/README.md b/README.md
+index 3f1c2aa..9d04e17 100644
+--- a/README.md
++++ b/README.md
+@@ -3,6 +3,9 @@
+ Call something that sometimes fails, a bounded number of times.
+ 
+     from retry import retry
+-    value = retry(fetch)
++    value = retry(fetch, attempts=5)
+ 
+-Waits double between attempts, starting at a quarter of a second.
++Waits double between attempts, starting at a quarter of a second, and each
++wait is moved by up to a tenth of itself so that clients do not retry in step.
++
++See `limits.py` for the token bucket that goes with it.
+diff --git a/limits.py b/limits.py
+new file mode 100644
+index 0000000..5b7a9c3
+--- /dev/null
++++ b/limits.py
+@@ -0,0 +1,30 @@
++"""A token bucket: a rate limit that allows short bursts."""
++
++from __future__ import annotations
++
++import time
++from dataclasses import dataclass, field
++
++
++@dataclass
++class Bucket:
++    """`rate` tokens a second, holding at most `burst` of them."""
++
++    rate: float
++    burst: float
++    tokens: float = field(init=False)
++    stamp: float = field(init=False)
++
++    def __post_init__(self) -> None:
++        self.tokens = self.burst
++        self.stamp = time.monotonic()
++
++    def take(self, cost: float = 1.0) -> bool:
++        """Spend `cost` tokens if they are there. Never waits."""
++        now = time.monotonic()
++        self.tokens = min(self.burst, self.tokens + (now - self.stamp) * self.rate)
++        self.stamp = now
++        if self.tokens < cost:
++            return False
++        self.tokens -= cost
++        return True
+diff --git a/retry.py b/retry.py
+index a41be02..c7730d9 100644
+--- a/retry.py
++++ b/retry.py
+@@ -31,7 +31,8 @@
+         except Exception as error:
+             if attempt == attempts - 1:
+                 raise GaveUp(f"gave up after {attempts} attempts") from error
+-            time.sleep(waits[attempt])
++            # Jitter, so that a fleet of clients does not retry in step.
++            time.sleep(jittered(waits[attempt]))
+     raise AssertionError("unreachable")
+ 
+ 
+diff --git a/setup.sh b/setup.sh
+deleted file mode 100755
+index 77e0f1d..0000000
+--- a/setup.sh
++++ /dev/null
+@@ -1,8 +0,0 @@
+-#!/bin/sh
+-# Superseded by `make bootstrap`; kept one release for anyone with it in a script.
+-set -eu
+-
+-here=$(cd "$(dirname "$0")" && pwd)
+-python3 -m venv "$here/.venv"
+-"$here/.venv/bin/pip" install --quiet --editable "$here[dev]"
+-echo "environment ready in $here/.venv"

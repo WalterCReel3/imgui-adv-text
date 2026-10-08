@@ -1,12 +1,28 @@
 r"""
 The interactive widget: a laid-out document, scrolled, and selectable with the mouse.
 
-**`draw` has now been executed and photographed.** `DISPLAY=:1` is live here,
-`scripts/shot.py` runs the real app and grabs the window, and the numbers quoted
-under "The page" below were read out of a running frame rather than reasoned
-about. What is still unexercised by anything is the mouse: nothing in this
-environment synthesises a click, so `_handle_mouse` and `_handle_copy` have run
-sixty times a second with `is_mouse_clicked` false and no further.
+**This is the demo's presentation, a page.** The layout caches, the selection
+and the mouse handling are `advtext.ui.bare_view.BareView`'s, which this
+module's `DocumentView` subclasses; a host embedding text in a pane of its own
+wants that class. What is here is the sheet, the measure and the margin.
+
+**`draw` has been executed and photographed.** `scripts/shot.py` runs the real
+app and grabs the window, and the numbers quoted under "The page" below were
+read out of a running frame, on this machine's `DISPLAY=:1`, rather than
+reasoned about.
+
+**And the mouse has been exercised, up to a line worth drawing exactly.** This
+paragraph used to say that nothing in this environment synthesises a click and
+that `_handle_mouse` and `_handle_copy` had only ever run with
+`is_mouse_clicked` false. `scripts/mouse_probe.py` (2026-10-06) runs the real
+app in a real GLFW window and posts mouse, wheel and key events over glyph
+positions read back from this view: a drag each way, a drag across three lines,
+double and triple clicks, Ctrl+C read back from the clipboard, a drag after a
+scroll and a drag that ends below the window. Eighteen checks, all passing, and
+re-run after every later change to this class. What that does not cover: the
+events enter at `ImGuiIO` and not at the X server, the window was on Xvfb with
+a software rasteriser and no window manager (`DISPLAY=:1` was not reachable
+from that session), and no person has dragged a selection here.
 
 This is where the project's whole argument cashes out. pptmstr records that ImGui
 text is not selectable and calls that "a real gap in ImGui, not a workaround
@@ -25,6 +41,18 @@ paragraph-level optimisation with an active-node list behind it, and it is far
 too expensive to run sixty times a second: on a page of prose it is milliseconds,
 not microseconds. So the composed box, the shipped command list and the
 selection index are cached and rebuilt **only when the width changes**.
+
+**And when they are rebuilt, it is a unit at a time.** `advtext.ui.units` ships
+each independent run of blocks on its own and stacks the results by offset, so
+`invalidate` after a change to one block re-breaks, re-ships and re-indexes that
+block and finds the rest. Measured on `demo/sample.md` at the 467 px page
+measure, for an edit to the first paragraph that changes its height (the worst
+case, because everything below it moves): ship plus both indexes for the whole
+document was 11.9 ms on top of a 4.4 ms re-compose; the per-unit layout is
+2.5 ms including the re-break, plus 2.4 ms the first time the moved units are
+drawn. An edit to the last paragraph, or one that keeps a block's height, pays
+only for the block. That module's docstring says what this does not buy -- a
+resize still misses on every unit.
 
 Two consequences worth stating because the next reader will otherwise guess:
 
@@ -46,6 +74,12 @@ both were found by looking at a screenshot and neither is visible from a test.
 1070 px, which is 5.15 alphabets of the body face and 145 to 156 characters a
 line -- more than twice the upper bound anyone recommends. It read as a debug
 view because 150-character lines are what a debug view has.
+
+*(2026-10-07: every "1100 px" and "1070 px" in this docstring is that window, as
+measured then. The demo's default window is 1300x800 since its tab bar became a
+sidebar, and the region right of the sidebar is 1068 px wide -- measured by the
+builder of the sidebar on Xvfb -- so the argument below is unchanged and its
+figures are 2 px out for the default window.)*
 
 *And the margin was zero.* With the measure set to the entire content region the
 last glyph of a justified line lands within a pixel of the child window's clip
@@ -87,24 +121,20 @@ from __future__ import annotations
 
 import string
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
-from advtext.backends.imgui_draw import DrawStats, FaceFont, Palette, draw
-from advtext.markdown import Document
-from advtext.nodes import Box, CharNode
+from advtext.backends.imgui_draw import DrawStats, FaceFont, Palette
+from advtext.nodes import CharNode
 from advtext.pack import CharMeasure
-from advtext.selection import Granularity, Selection, SelectionModel
-from advtext.shipout import DrawCmd, Point, ship
 from advtext.style import BlockKind, Theme
-from advtext.ui import CommandIndex, LayoutCache, Viewport, compose, visible_rects
-from advtext.units import DEFAULT_PX_PER_INCH, Scaled, px_from_sp, sp_from_px
-
-if TYPE_CHECKING:  # pragma: no cover - imported for types only
-    from imgui_bundle import imgui
+from advtext.ui.bare_view import MIN_WIDTH_PX, BareView
+from advtext.ui.bare_view import _granularity_for as _granularity_for
+from advtext.ui.units import UnitLayout
+from advtext.units import Scaled, px_from_sp, sp_from_px
 
 __all__ = [
     "MEASURE_ALPHABETS",
     "MIN_MARGIN_LEADINGS",
+    "MIN_WIDTH_PX",
     "TEXT_BLOCK_FRACTION",
     "DocumentView",
     "Layout",
@@ -113,10 +143,6 @@ __all__ = [
     "page_for",
     "text_margin",
 ]
-
-# Below this the line breaker has nothing to work with and every line is
-# overfull. A window narrower than this is a window being resized through zero.
-MIN_WIDTH_PX = 80.0
 
 MEASURE_ALPHABETS = 2.25
 """
@@ -153,12 +179,18 @@ measured lines centre on the 66 he names**. `tests/test_document_view.py`
 recomputes that table rather than quoting it, so a font change that moved these
 numbers would be a failure and not a stale comment.
 
-The choice costs something and it is not free to reverse. Neither a table nor a
-fenced code block is line-broken, so both are as wide as their content and a
-narrow measure is a measure they overflow: `demo/sample.md`'s table is 520 px
-against a 467 px measure. The margin absorbs it -- 117 px at the demo width, and
-`test_a_table_wider_than_the_measure_still_lands_inside_the_sheet` pins that --
-but a measure much narrower than this would push it off the paper.
+The choice costs something and it is not free to reverse. A fenced code block
+is not line-broken, so it is as wide as its content and a narrow measure is a
+measure it overflows: the widest in `demo/sample.md` runs 53 px past a 467 px
+measure (re-measured 2026-10-06). The margin absorbs it -- 117 px at the demo
+width, and `test_a_table_wider_than_the_measure_still_lands_inside_the_sheet`
+pins that -- but a measure much narrower than this would push it off the paper.
+
+*That paragraph used to name a table as well, and the test is still named for
+one.* Since table cells wrap (`advtext.ui._table_boxes`) a table is narrowed to
+the measure as far as its longest words allow, and the demo's own table, 462 px
+at its natural width, fits the 467 px measure without wrapping. The code block
+is the object that still overhangs.
 
 For scale, the content region of the 1100 px demo window is 1070 px: 5.15
 alphabets, and 145 to 156 characters a line, which is where the demo was.
@@ -192,16 +224,18 @@ MIN_MARGIN_LEADINGS = 3.0
 The narrowest side margin `text_margin` will set, in body leadings.
 
 **Measured, not chosen.** A margin has one hard duty beyond looking like a page:
-it has to absorb the material the line breaker cannot break, because a table or
-a fenced code block is as wide as its content and nothing narrows it. Shipping
-out `demo/sample.md` at this project's own 2.25-alphabet measure and taking the
-furthest ink past the right edge of the text block gives **61.0 px** of
-overhang -- the table `MEASURE_ALPHABETS` already names. Against the 21.6 px
-body leading that is **2.82 leadings**, and three is the next whole one above
-it. `tests/test_document_view.py::test_the_minimum_margin_covers_the_widest_
-unbreakable_object_the_demo_ships` recomputes the 61 px from the real document
-rather than quoting it, so a demo file that grew a wider table would be a
-failure here and not a stale comment.
+it has to absorb the material the line breaker cannot break, because a fenced
+code block is as wide as its content and nothing narrows it. Shipping out
+`demo/sample.md` at this project's own 2.25-alphabet measure and taking the
+furthest ink past the right edge of the text block gave **61.0 px** of overhang
+when this was chosen, **2.82 leadings** against the 21.6 px body leading, and
+three is the next whole one above it. Re-measured on 2026-10-06 the figure is
+**53.0 px, 2.45 leadings**, from the document's widest code block; three is
+still the next whole leading above it. `tests/test_document_view.py::
+test_the_minimum_margin_covers_the_widest_unbreakable_object_the_demo_ships`
+recomputes the overhang from the real document rather than quoting it, so a
+demo file that grew a wider code block would be a failure here and not a stale
+comment.
 
 In leadings rather than pixels for the reason `GUTTER_LEADINGS` is: the leading
 is measured from the theme, so a larger body size widens this by exactly as much
@@ -359,99 +393,42 @@ def page_for(available: Scaled, *, alphabet: Scaled, leading: Scaled) -> Page:
     return Page(offset=(available - sheet) // 2, width=sheet, margin=margin, head=leading)
 
 
-@dataclass(frozen=True, slots=True)
-class Layout:
-    """
-    Everything derived from one width, cached together because it all expires together.
+Layout = UnitLayout
+"""
+Everything derived from one width, cached together because it all expires together.
 
-    Three things that must agree: the box the breaker produced, the commands
-    ship-out flattened it to, and the index selection queries. Keeping them in one
-    frozen record makes "the layout is stale" a single reference swap rather than
-    three fields that can be half-updated.
-    """
+**This was a record of three whole-document things** -- the box the breaker
+produced, a `CommandIndex` over every shipped command and a `SelectionModel`
+over every fragment -- and `layout_for` rebuilt all three whenever anything
+changed. It is now `advtext.ui.units.UnitLayout`: the same questions (`cmds`,
+`visible`, `model`, `height`, `box`) answered from a stack of independently
+shipped units, so that a change to one block re-ships one block. The name is
+kept because "the layout is stale" is still a single reference swap, and
+because callers of `layout_for` should not have had to care.
 
-    width: Scaled
-    box: Box
-    index: CommandIndex
-    model: SelectionModel
-
-    @property
-    def cmds(self) -> tuple[DrawCmd, ...]:
-        """
-        Every command in the document, uncalled by any viewport.
-
-        The whole list and not a culled one: the selection model is built from
-        this, and reading-order indices have to be dense over the document or a
-        selection that runs off the bottom of the window copies the wrong text.
-        Culling happens at the draw call and nowhere earlier.
-        """
-        return self.index.cmds
-
-    @property
-    def height(self) -> Scaled:
-        """
-        The document's full extent, top of the first line to bottom of the last.
-        """
-        return self.box.height + self.box.depth
+What a caller could do before and cannot now: read `layout.index`. The
+whole-document `CommandIndex` no longer exists; `layout.visible(viewport)` is
+what it was for.
+"""
 
 
 @dataclass(slots=True)
-class DocumentView:
+class DocumentView(BareView):
     """
-    A scrollable, selectable view of one markdown document.
+    A scrollable, selectable view of one markdown document, set on a page.
 
-    Mutable, unlike almost everything else in this project, and for the reason
-    `advtext.pack` gives about `Store` in pptmstr's `STYLE.md`: this *is* the
-    imperative shell. It holds a cache and three pieces of interaction state, and
-    every decision it makes is delegated to a pure module.
+    The demo's presentation of `advtext.ui.bare_view.BareView`, which is where
+    the layout caches, the selection and the mouse handling live. What is added
+    here is the page -- a light sheet, narrower than the window and centred in
+    it, with the measure capped at `MEASURE_ALPHABETS` -- and an
+    `invisible_button` over the whole of it. A host embedding text in a pane
+    of its own wants `BareView`.
     """
 
-    document: Document
-    theme: Theme
-    measure: CharMeasure
-    px_per_inch: float = DEFAULT_PX_PER_INCH
-    debug: bool = False
-
-    _layout: Layout | None = field(default=None, init=False)
     # The theme's alphabet length, measured once. It depends on the theme and the
     # measure and on nothing that changes per frame, but measuring it costs
     # twenty-six `CharMeasure` calls and `draw` runs sixty times a second.
     _alphabet: Scaled | None = field(default=None, init=False)
-    # Survives `invalidate`, unlike `_layout`, and that is the point of it: a
-    # caller that changed one block of the document drops the whole layout and
-    # this re-breaks only the block that changed. `advtext.ui.LayoutCache` has
-    # the measurement and the honest account of what it does not buy.
-    _blocks: LayoutCache = field(default_factory=LayoutCache, init=False)
-    _selection: Selection = field(default=Selection(0, 0), init=False)
-    _anchor: Point = field(default=Point(0, 0), init=False)
-    _granularity: Granularity = field(default=Granularity.CHARACTER, init=False)
-    _dragging: bool = field(default=False, init=False)
-
-    # ------------------------------------------------------------------
-    # Layout
-    # ------------------------------------------------------------------
-
-    def layout_for(self, width: Scaled) -> Layout:
-        """
-        The cached layout for a width, recomputing only when the width changed.
-
-        The equality test is on the scaled-point width, not the pixel one: a
-        window dragged by a sub-pixel amount produces the same measure and must
-        not re-break the whole document.
-        """
-        cached = self._layout
-        if cached is not None and cached.width == width:
-            return cached
-        box = compose(self.document, self.theme, width, self.measure, cache=self._blocks)
-        cmds = tuple(ship(box, Point(0, box.height), measure=self.measure))
-        fresh = Layout(
-            width=width,
-            box=box,
-            index=CommandIndex.of(cmds),
-            model=SelectionModel.from_commands(cmds),
-        )
-        self._layout = fresh
-        return fresh
 
     def page(self, available: Scaled) -> Page:
         """
@@ -478,30 +455,20 @@ class DocumentView:
         swapping the theme is exactly the case that would otherwise keep setting
         the new type to the old page's measure.
         """
-        self._layout = None
+        BareView.invalidate(self)
         self._alphabet = None
-
-    @property
-    def selection(self) -> Selection:
-        """
-        What is currently selected, as reading-order boundaries.
-        """
-        return self._selection
-
-    def selected_text(self) -> str:
-        """
-        The current selection as text, or the empty string if nothing is selected.
-        """
-        layout = self._layout
-        if layout is None:
-            return ""
-        return layout.model.text(self._selection)
 
     # ------------------------------------------------------------------
     # Drawing
     # ------------------------------------------------------------------
 
-    def draw(self, *, fonts: FaceFont, palette: Palette | None = None) -> DrawStats:
+    def draw(
+        self,
+        *,
+        fonts: FaceFont,
+        palette: Palette | None = None,
+        width_px: float | None = None,
+    ) -> DrawStats:
         """
         Draw the document into the current window and handle the mouse over it.
 
@@ -530,12 +497,27 @@ class DocumentView:
         """
         from imgui_bundle import imgui
 
-        available = imgui.get_content_region_avail()
-        width_px = max(available.x, MIN_WIDTH_PX)
+        self._begin_frame()
+        # `width_px` stands in for the content region's width, as it does in
+        # `BareView.draw`; the page is still worked out inside it.
+        if width_px is None:
+            width_px = imgui.get_content_region_avail().x
+        width_px = max(width_px, MIN_WIDTH_PX)
         page = self.page(sp_from_px(width_px, self.px_per_inch))
+        if self._hosts and self._hosts_resized():
+            self.invalidate()  # a hosted widget changed height: `BareView.draw` has the same line
         layout = self.layout_for(page.measure)
 
-        region = imgui.get_cursor_screen_pos()
+        # ImGui's cursor snapped to whole pixels (`BareView._cursor_origin`
+        # has the measurement): a host that hands this view a fractional
+        # cursor gets the page it would have got from the whole one. **Only
+        # the cursor is snapped.** The text block's corner below is the
+        # cursor plus the page's offset, margin and head, which are not whole
+        # pixels (the head is one 21.6 px leading) and never were; they are
+        # the same fraction on every frame at one window width, so they move
+        # no line against another, and rounding them would move every glyph
+        # of the shipped demo by up to half a pixel for nothing.
+        region = self._cursor_origin()
         sheet_x = region.x + px_from_sp(page.offset, self.px_per_inch)
         sheet_width_px = px_from_sp(page.width, self.px_per_inch)
         sheet_height_px = px_from_sp(page.sheet_height(layout.height), self.px_per_inch)
@@ -550,8 +532,6 @@ class DocumentView:
             sheet_x + px_from_sp(page.margin, self.px_per_inch),
             region.y + px_from_sp(page.head, self.px_per_inch),
         )
-        viewport = self.viewport_in(origin.y, imgui.get_window_pos().y, imgui.get_window_size().y)
-
         colours = palette or Palette()
 
         # The sheet, before anything that sits on it. The ink is dark because the
@@ -571,16 +551,13 @@ class DocumentView:
             colours.page,
         )
 
-        stats = draw(
-            imgui.get_window_draw_list(),
-            layout.index.visible(viewport),
-            origin,
-            fonts=fonts,
-            palette=colours,
-            highlights=visible_rects(layout.model.rects(self._selection), viewport),
-            px_per_inch=self.px_per_inch,
-            debug=self.debug,
-        )
+        stats = self._paint(layout, origin, fonts=fonts, colours=colours)
+        # What `host_for` put in the place of a block, drawn in the room the
+        # layout kept for it, as `BareView.draw` does and before the sheet's
+        # button for the same reason: a widget's own items must exist first
+        # to keep their clicks. (Given `host_for`, this view used to reserve
+        # the rectangle and draw nothing in it: review 2, item 6.)
+        stats = self._draw_hosts(layout, origin, stats, fonts=fonts, colours=colours)
 
         # The draw list wrote pixels without advancing the cursor, so the space
         # has to be claimed or anything after this is drawn on top of it. A button
@@ -590,110 +567,34 @@ class DocumentView:
         # The whole content region and the whole sheet, not the text block: a
         # drag that starts in the margin is still a drag on the document, and a
         # button narrower than the sheet would let it drag the window instead.
-        imgui.invisible_button("##advtext-document", imgui.ImVec2(width_px, sheet_height_px))
+        # One ID per view object, as `BareView` has. A fixed label gave two
+        # page views in one window the same ID. Selection still went to the
+        # right one -- `tests/test_document_view.py` checked, because it was
+        # predicted not to -- but two visible items under one ID is a thing
+        # ImGui reports as an error in its own right.
+        #
+        # Except over a hosted widget while nothing is being dragged: there
+        # the space is claimed with no item, so that the widget sees "no item
+        # in front of me" and takes its own press (a `DiffView` judges a press
+        # that way, and under the sheet's button it never got one).
+        if self._over_host() and not self._dragging:
+            imgui.dummy(imgui.ImVec2(width_px, sheet_height_px))
+        else:
+            imgui.invisible_button(self._button_id(), imgui.ImVec2(width_px, sheet_height_px))
         self._handle_mouse(layout, origin)
         self._handle_copy(layout)
         return stats
 
-    def viewport_in(
-        self, origin_y_px: float, window_y_px: float, window_height_px: float
-    ) -> Viewport:
+    def _pressed(self) -> bool:
         """
-        The band of the document a window shows, from three screen coordinates.
+        Whether a selection press began this frame: the sheet's button was clicked.
 
-        `origin_y_px` is where the document's y = 0 sits on screen, which is the
-        cursor position `draw` anchors to; the other two are the window's own
-        rectangle. Subtracting gives a document-space offset that is **positive
-        once the view has scrolled past the top** and negative before it, which
-        is why this is subtraction and not `get_scroll_y`: a document drawn below
-        other widgets starts partway down its window and a raw scroll offset
-        would be wrong by exactly that much.
-
-        Separated out and taking plain floats because it is the one piece of the
-        draw path that is arithmetic rather than ImGui, and nothing in this
-        environment can execute the rest of `draw`. `tests/test_document_view.py`
-        exercises it directly.
-        """
-        return Viewport.of_pixels(
-            top_px=window_y_px - origin_y_px,
-            height_px=window_height_px,
-            px_per_inch=self.px_per_inch,
-        )
-
-    # ------------------------------------------------------------------
-    # Interaction
-    # ------------------------------------------------------------------
-
-    def _document_point(self, origin: imgui.ImVec2) -> Point:
-        """
-        The mouse, in the document's own scaled-point coordinates.
+        The page owns an item over the whole sheet, so it can ask ImGui. The
+        scalar accessor `_handle_mouse` then reads the click count through is
+        described there.
         """
         from imgui_bundle import imgui
 
-        mouse = imgui.get_mouse_pos()
-        return Point(
-            sp_from_px(mouse.x - origin.x, self.px_per_inch),
-            sp_from_px(mouse.y - origin.y, self.px_per_inch),
-        )
-
-    def _handle_mouse(self, layout: Layout, origin: imgui.ImVec2) -> None:
-        """
-        Press sets an anchor, drag extends, release finishes.
-
-        The drag branch deliberately does not test `is_item_hovered`: a drag that
-        leaves the document should keep extending the selection, which is what
-        `SelectionModel.fragment_at` snapping to the nearest line is for.
-        """
-        from imgui_bundle import imgui
-
-        point = self._document_point(origin)
-
-        if imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.left):
-            # The scalar accessor, not `get_io().mouse_clicked_count[0]`. The
-            # array-valued fields on `ImGuiIO` are nanobind ndarrays, and
-            # exporting one needs numpy, which is not a dependency of this
-            # project or of imgui-bundle. Indexing it raises `TypeError: could
-            # not export nanobind::ndarray` on the first click rather than at
-            # import, so nothing before the first frame can catch it.
-            self._granularity = _granularity_for(
-                imgui.get_mouse_clicked_count(imgui.MouseButton_.left)
-            )
-            self._anchor = point
-            self._dragging = True
-            self._selection = layout.model.select_at(point, point, self._granularity)
-            return
-
-        if self._dragging:
-            self._selection = layout.model.select_at(self._anchor, point, self._granularity)
-            if imgui.is_mouse_released(imgui.MouseButton_.left):
-                self._dragging = False
-
-    def _handle_copy(self, layout: Layout) -> None:
-        """
-        Ctrl+C puts the selection on the clipboard.
-
-        This is the payoff, and it is three lines because `advtext.selection`
-        already turned a range of reading-order indices into text -- including
-        deciding that a soft wrap serialises as a space rather than a newline.
-        """
-        from imgui_bundle import imgui
-
-        if self._selection.is_empty:
-            return
-        if imgui.get_io().key_ctrl and imgui.is_key_pressed(imgui.Key.c, False):
-            imgui.set_clipboard_text(layout.model.text(self._selection))
-
-
-def _granularity_for(clicks: int) -> Granularity:
-    """
-    One click selects characters, two words, three the whole visual line.
-
-    ImGui reports the running click count rather than firing a separate
-    triple-click event, so this is a lookup rather than three predicates. A count
-    past three wraps back to a line, which is what an editor does.
-    """
-    if clicks >= 3:
-        return Granularity.LINE
-    if clicks == 2:
-        return Granularity.WORD
-    return Granularity.CHARACTER
+        if self._over_host():
+            return False  # a press inside a hosted widget's rectangle is the widget's
+        return bool(imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.left))

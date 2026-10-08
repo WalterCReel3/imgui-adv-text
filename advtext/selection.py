@@ -40,7 +40,9 @@ a range ending at that boundary covers the last item of line `k` and none of lin
 `k+1`, so it draws one rect on line `k` and nothing below. Hit testing still
 chooses the line by `y` first and only then clamps `x` inside it, so a click past
 the right margin of line `k` lands at line `k`'s end -- which is the same integer
-as line `k+1`'s start, and means the same selection either way.
+as line `k+1`'s start, and means the same selection either way. (`x` does choose
+between lines that share a vertical band -- the lines of two wrapped table cells
+in one row -- and `fragment_nearest` says exactly when.)
 
 **Nested lines are handled rather than assumed away.** An hbox inside a vlist is
 a line, and a vbox inside an hbox -- a table cell, a `\vcenter` -- puts lines
@@ -63,11 +65,26 @@ and which a source newline did.
 
 Rather than guess -- a vertical-gap threshold or an indent heuristic would be a
 parallel scheme invented here and wrong somewhere -- `text()` takes the structural
-breaks as data. `hard_breaks` is the set of boundaries at which a newline is
-content; everything not in it is a wrap and joins with a space. The layer that
-built the document knows which is which, because it is the layer that put the
-source newlines there. The default is empty, which means "everything is a wrap",
-which is the right default for prose and the wrong one for code.
+breaks as data. `separators` maps a boundary to what belongs before the item
+there -- a newline, a blank line, a tab -- and everything not in it is a wrap and
+joins with a space. (`hard_breaks`, the first form of this, is the same with the
+separator fixed at one newline; a set could not say "a blank line here" or "a
+tab here", which is what a paragraph boundary and a table cell need.) The layer
+that built the document knows which is which, because it is the layer that put
+the source newlines there: `advtext.ui.units.UnitModel.copy_text` builds the
+mapping from the blocks. The default is empty, which means "everything is a
+wrap", which is the right default for prose and the wrong one for code.
+
+**An inline formula is one item.** `advtext.shipout` ships an atom box as one
+`Atom` followed by its ink, the glyphs carrying the atom's index. Here the
+`Atom` is the item and the glyphs after it that repeat its index are not: a
+caret cannot land inside a formula because there is no boundary there, a
+double click takes the formula alone, and its highlight is the atom's own
+rectangle at the line's height. What it copies as is data, like a structural
+break: `text()` takes `atoms`, a mapping from the item's index to its text
+(`$...$` source, from `advtext.ui.units`), and an atom nobody named copies as
+nothing -- the glyphs of a formula are math-italic and private-use codepoints,
+which are not what anybody typed.
 
 Deliberately out of scope, with reasons:
 
@@ -89,21 +106,23 @@ from __future__ import annotations
 
 import enum
 from bisect import bisect_left, bisect_right
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, TypeAlias
 
-from advtext.shipout import DrawCmd, Glyph, Line, Point, SetGlue
+from advtext.shipout import Atom, DrawCmd, Glyph, Line, Point, RuleRect, SetGlue
 from advtext.units import Scaled
 
 __all__ = [
     "Boundary",
     "Fragment",
+    "FragmentQueries",
     "Granularity",
     "Item",
     "Rect",
     "Selection",
     "SelectionModel",
+    "fragment_nearest",
 ]
 
 Boundary: TypeAlias = int
@@ -117,7 +136,8 @@ affinity.
 
 Item: TypeAlias = Glyph | SetGlue
 """
-The shipped commands a reader can point at: a glyph, and an interword space.
+The shipped commands a reader can point at: a glyph, an interword space, and an
+`advtext.shipout.Atom` -- an inline formula, which is a `SetGlue` by type.
 """
 
 
@@ -148,6 +168,7 @@ class _Class(enum.Enum):
     WORD = enum.auto()
     SPACE = enum.auto()
     OTHER = enum.auto()
+    ATOM = enum.auto()
 
 
 def _classify(item: Item) -> _Class:
@@ -160,6 +181,10 @@ def _classify(item: Item) -> _Class:
     makes `foo-bar` and `a--b` one word, and the rule has to be the same in code
     and in prose because this layer cannot tell them apart.
     """
+    if isinstance(item, Atom):
+        # A formula is its own kind of run: a double click takes it and not
+        # the spaces or the brackets beside it.
+        return _Class.ATOM
     if isinstance(item, SetGlue):
         return _Class.SPACE
     character = chr(item.codepoint)
@@ -242,6 +267,15 @@ class Fragment:
     items: tuple[Item, ...]
     edges: tuple[Scaled, ...]
     indices: tuple[Boundary, ...]
+    outer: Line | None = None
+    """
+    The outermost line this one is nested in, or `None` for a line that stands alone.
+
+    A table row whose cells wrapped is one line holding a stack of lines per
+    cell, so every line of every cell of that row has the row as its `outer`.
+    It is what tells hit testing that two lines at different heights are side
+    by side in one row rather than one above the other: see `fragment_nearest`.
+    """
 
     def offset_of(self, boundary: Boundary) -> int | None:
         """
@@ -277,6 +311,14 @@ class Fragment:
         The boundary just past the last item on this line.
         """
         return self.line.end
+
+    @property
+    def reach(self) -> tuple[Scaled, Scaled]:
+        """
+        The vertical band of the row this line is part of: its `outer` line's, or its own.
+        """
+        line = self.line if self.outer is None else self.outer
+        return line.y - line.height, line.y + line.depth
 
     @property
     def top(self) -> Scaled:
@@ -324,11 +366,23 @@ def _fragments(cmds: Sequence[DrawCmd]) -> tuple[Fragment, ...]:
     the innermost line containing it. A line that turned out to contain only
     other lines is a container -- a table row, a `\\vcenter` -- and is not a
     fragment: pointing at it means pointing at one of the lines inside it.
+
+    **Nor is a line that holds a rule and nothing else.** A thematic break and
+    the line under a table's header are each an hbox in the vertical list, so
+    ship-out gives each a `Line`, and with no item on it such a line used to
+    pass for a blank line of text: copying across one put a newline in the
+    clipboard that no source line stood for. A blank line of *text* -- the
+    empty line in a fenced code block -- has no rule in it, and stays.
     """
     stack: list[Line] = []
     owned: dict[int, list[Item]] = {}
     order: list[Line] = []
     has_child: set[int] = set()
+    ruled: set[int] = set()
+    outer: dict[int, Line] = {}
+    # The index of the atom whose ink is being passed over, if any: the glyphs
+    # of a formula repeat their atom's index and are not items themselves.
+    atom = -1
 
     for cmd in cmds:
         match cmd:
@@ -337,22 +391,31 @@ def _fragments(cmds: Sequence[DrawCmd]) -> tuple[Fragment, ...]:
                     stack.pop()
                 if stack:
                     has_child.add(id(stack[-1]))
+                    outer[id(cmd)] = stack[0]
                 stack.append(cmd)
                 owned.setdefault(id(cmd), [])
                 order.append(cmd)
             case Glyph() | SetGlue():
+                if cmd.index == atom and isinstance(cmd, Glyph):
+                    continue
+                if isinstance(cmd, Atom):
+                    atom = cmd.index
                 while stack and cmd.index >= stack[-1].end:
                     stack.pop()
                 if stack:
                     owned[id(stack[-1])].append(cmd)
-            case _:
-                # A RuleRect carries no index and cannot be pointed at.
-                pass
+            case RuleRect():
+                # A rule carries no index and cannot be pointed at; it marks
+                # the line it sits in as not being a line of text. A fraction
+                # bar is a rule too, but the line it is on holds the formula's
+                # atom, so that line has an item and stays a line of text.
+                if stack:
+                    ruled.add(id(stack[-1]))
 
     fragments: list[Fragment] = []
     for line in order:
         items = owned[id(line)]
-        if not items and id(line) in has_child:
+        if not items and (id(line) in has_child or id(line) in ruled):
             continue
         fragments.append(
             Fragment(
@@ -360,10 +423,87 @@ def _fragments(cmds: Sequence[DrawCmd]) -> tuple[Fragment, ...]:
                 items=tuple(items),
                 edges=_edges(line, items),
                 indices=tuple(item.index for item in items),
+                outer=outer.get(id(line)),
             ),
         )
     fragments.sort(key=lambda fragment: fragment.start)
     return tuple(fragments)
+
+
+def fragment_nearest(fragments: Iterable[Fragment], point: Point) -> Fragment | None:
+    """
+    The line a point belongs to, out of `fragments`: `y` decides first, then `x`.
+
+    Choosing the line by `y` *before* looking at `x` is what makes a click past
+    the right margin land at the end of that line rather than on whichever line
+    happens to have a glyph nearest in a straight line. A point above the first
+    line belongs to the first line and one below the last to the last, because
+    a drag that leaves the document should extend the selection rather than
+    stop.
+
+    **`x` is consulted only to choose between lines that `y` cannot separate**,
+    and until table cells could wrap there were none that mattered. A wrapped
+    cell is a stack of lines beside its neighbour's stack, and that makes two
+    things true that are false of a paragraph. Two lines can share a vertical
+    band; and a point can be level with one cell's fifth line while sitting
+    under another cell's only one. So the rule has three steps, and for lines
+    stacked in one column -- every paragraph -- the first two never fire:
+
+    1. **The point is inside a row, over a line of it.** Take the lines whose
+       *row* (`Fragment.reach`) contains `y` and whose own horizontal extent
+       contains `x`: those are the lines of the cell under the point. The one
+       whose band contains `y` wins, else the nearest of them in `y`. A click
+       below a short cell's last line, level with its neighbour's later lines,
+       is a click in the short cell.
+    2. **Some line's band contains `y`** but none has `x` in it -- the padding
+       between two cells, or the margin beside any line. The nearest of those
+       in `x` wins.
+    3. **No band contains `y`.** The nearest line in `y` wins, and `x` breaks a
+       tie.
+
+    Ties go to the earlier line in reading order, which is what the scan this
+    replaces did. A line that stands alone is its own row, so step 1 chooses
+    among lines whose band contains `y` and whose extent contains `x` -- at
+    most one in a column of text -- and the answer is the one it always was;
+    `tests/test_selection.py`'s older tests did not change.
+
+    `fragments` must be in reading order and must include every line whose row
+    contains `point.y`, or the nearest line if none does. Passing all of them
+    always satisfies that.
+    """
+
+    def beside(fragment: Fragment) -> Scaled:
+        left = fragment.line.x
+        return max(left - point.x, point.x - (left + fragment.line.width), 0)
+
+    def away(fragment: Fragment) -> Scaled:
+        return max(fragment.top - point.y, point.y - fragment.bottom, 0)
+
+    under: Fragment | None = None
+    under_by: Scaled = 0
+    inside: Fragment | None = None
+    inside_by: Scaled = 0
+    nearest: Fragment | None = None
+    nearest_by: tuple[Scaled, Scaled] = (0, 0)
+    for fragment in fragments:
+        aside = beside(fragment)
+        contains = fragment.top <= point.y < fragment.bottom
+        if aside == 0:
+            top, bottom = fragment.reach
+            if top <= point.y < bottom:
+                distance = 0 if contains else away(fragment)
+                if under is None or distance < under_by:
+                    under, under_by = fragment, distance
+        if contains:
+            if inside is None or aside < inside_by:
+                inside, inside_by = fragment, aside
+        elif inside is None and under is None:
+            far = (max(fragment.top - point.y, point.y - fragment.bottom), aside)
+            if nearest is None or far < nearest_by:
+                nearest, nearest_by = fragment, far
+    if under is not None:
+        return under
+    return inside if inside is not None else nearest
 
 
 def _edges(line: Line, items: Sequence[Item]) -> tuple[Scaled, ...]:
@@ -376,53 +516,56 @@ def _edges(line: Line, items: Sequence[Item]) -> tuple[Scaled, ...]:
     return (*(item.x for item in items), line.x + line.width)
 
 
-@dataclass(frozen=True, slots=True)
-class SelectionModel:
+class FragmentQueries:
     """
-    A shipped document, indexed once so hit testing is a lookup per frame.
+    Every selection query, written against two lookups a subclass supplies.
 
-    Built from the `DrawCmd` list `advtext.shipout.ship` returns and holding no
-    reference to the box tree, no font and no backend. A UI rebuilds it when the
-    layout changes and queries it on every mouse event; the indexing is linear in
-    the document and each query after that is linear in one line.
+    **Why this is a base class and `SelectionModel` is no longer the whole of
+    it.** `SelectionModel` holds one flat tuple of fragments and scans it on
+    every call: `fragment_at`, `rects` and `text` are each linear in the
+    *document*. That is right for one shipped command list and it is the wrong
+    shape for a document laid out as independent units, where a query should
+    touch the unit under the mouse or the units a selection covers and nothing
+    else. `advtext.ui.units.UnitModel` is that second shape. Rather than write
+    hit testing, word expansion, rect derivation and serialisation twice --
+    and have the two drift on exactly the cases this module's docstring spends
+    its length on -- everything that is a *rule* lives here once, and the two
+    models differ only in how they find fragments:
+
+    - `fragment_at(point)`: the line a point belongs to.
+    - `fragments_within(start, end)`: every fragment that could contribute to
+      the range `[start, end]`, in reading order. It may return more than that
+      (the flat model returns all of them); the rules below filter exactly.
+    - `length`: how many items the reading order has.
+
+    Nothing here was changed in the move. `tests/test_selection.py` passes
+    unedited, which is the evidence for that sentence rather than the sentence
+    itself.
     """
 
-    fragments: tuple[Fragment, ...]
+    __slots__ = ()
+
     length: int
-
-    @classmethod
-    def from_commands(cls, cmds: Sequence[DrawCmd]) -> SelectionModel:
-        """
-        Index a shipped command list for hit testing.
-        """
-        fragments = _fragments(cmds)
-        length = max((fragment.end for fragment in fragments), default=0)
-        return cls(fragments=fragments, length=length)
-
-    # ----------------------------------------------------------------
-    # Hit testing
-    # ----------------------------------------------------------------
 
     def fragment_at(self, point: Point) -> Fragment | None:
         """
         The line a point belongs to: the one whose band contains it, else the nearest.
-
-        Choosing the line by `y` *before* looking at `x` at all is what makes a
-        click past the right margin land at the end of that line rather than on
-        whichever line happens to have a glyph nearest in a straight line. A point
-        above the first line belongs to the first line and one below the last to
-        the last, because a drag that leaves the document should extend the
-        selection rather than stop.
         """
-        if not self.fragments:
-            return None
-        for fragment in self.fragments:
-            if fragment.top <= point.y < fragment.bottom:
-                return fragment
-        return min(
-            self.fragments,
-            key=lambda fragment: max(fragment.top - point.y, point.y - fragment.bottom),
-        )
+        raise NotImplementedError
+
+    def fragments_within(self, start: Boundary, end: Boundary) -> Iterable[Fragment]:
+        """
+        Fragments that may own or border an item in `[start, end]`, in reading order.
+
+        A superset is allowed and the bounds are *closed* at both ends: `text()`
+        asks about a blank line sitting exactly on a boundary, which owns no
+        item at all.
+        """
+        raise NotImplementedError
+
+    # ----------------------------------------------------------------
+    # Hit testing
+    # ----------------------------------------------------------------
 
     def hit(self, point: Point) -> Boundary:
         """
@@ -566,6 +709,17 @@ class SelectionModel:
         its own right edge. An empty selection produces no rects -- a caret is not
         this module's to draw, for the reason the module docstring gives.
 
+        **Fill at the ends of a line is not highlighted.** Glue with no natural
+        width is not a space anybody typed: it is the `\\rightskip` that makes
+        a line ragged, the `\\parfillskip` after a paragraph's last word, the
+        `\\hss` that centres a table cell. Each takes a reading-order index, so
+        a selection covers it, and highlighting it painted a bar from the last
+        word to the margin on a ragged line and a bar of blank column *before*
+        the text of a right-aligned cell. A rectangle now runs from the first
+        thing of the selection that is not fill to the last; fill between two
+        words -- there is none in what this tree sets -- would still be
+        covered.
+
         **A blank line inside the selection gets no rectangle, and that is a
         decision rather than an oversight.** An empty line owns no items, so it
         has no material to highlight, and its line box has zero width -- there is
@@ -580,16 +734,32 @@ class SelectionModel:
         if selection.is_empty:
             return []
         rects: list[Rect] = []
-        for fragment in self.fragments:
+        for fragment in self.fragments_within(selection.start, selection.end):
             span = fragment.owned_range(
                 max(selection.start, fragment.start), min(selection.end, fragment.end) - 1
             )
-            if span is not None:
-                low, high = span
+            if span is None:
+                continue
+            low, high = span
+            # Fill at either end of the selected stretch is not text and is
+            # not highlighted: see the docstring.
+            while low <= high and _is_fill(fragment.items[low]):
+                low += 1
+            while high >= low and _is_fill(fragment.items[high]):
+                high -= 1
+            if low <= high:
                 rects.append(fragment.rect_for(fragment.indices[low], fragment.indices[high]))
         return rects
 
-    def text(self, selection: Selection, *, hard_breaks: Collection[int] = ()) -> str:
+    def text(
+        self,
+        selection: Selection,
+        *,
+        hard_breaks: Collection[int] = (),
+        separators: Mapping[int, str] | None = None,
+        atoms: Mapping[int, str] | None = None,
+        originals: Mapping[int, str] | None = None,
+    ) -> str:
         """
         The selected text, for the clipboard.
 
@@ -599,42 +769,81 @@ class SelectionModel:
         shows the wrap points as ragged hard breaks. The module docstring argues
         this at length.
 
-        `hard_breaks` is the set of boundaries at which a newline is *content*
-        rather than wrapping -- the end of each source line in a fenced code
-        block, and the end of each paragraph. Nothing in the shipped command
-        stream distinguishes those from a wrap, so they arrive as data from the
-        layer that created them rather than being guessed at here. **Nothing in
-        this tree computes that set yet**, so every caller currently gets the
-        wrap behaviour for every break; a code block copied today comes back
-        space-joined. Saying so is better than a docstring describing a feature
-        with no producer.
+        **What is content arrives as data.** Nothing in the shipped command
+        stream distinguishes a wrap from the end of a paragraph, a code line
+        or a table cell, so the layer that built the document says where those
+        are. `separators` maps a boundary to the text that belongs *before the
+        item at that boundary*: `"\\n"` at the start of each code line,
+        `"\\n\\n"` at the start of each block, `"\\t"` at the start of
+        each cell after a row's first, `" "` between a list marker and its
+        text. It is consulted at every item, not only at the start of a line,
+        because a table row that did not wrap is one line holding all its
+        cells. `advtext.ui.units.UnitModel` builds the mapping from the
+        document's blocks and passes it for you; this flat model has no blocks
+        and so, given none, treats every break as a wrap. `hard_breaks` is the
+        older, narrower form -- a set of boundaries that each mean `"\\n"` --
+        and still works.
 
-        **A blank line does not need `hard_breaks` and is handled here.** An
+        A separator is written only *between* two pieces of selected text: one
+        that falls at the very start of the selection is not content of it,
+        and neither is one that no selected character follows -- a selection
+        that ends on the fill a list item or a table cell begins with.
+
+        **Glue with no natural width is not a space, but it can stand for
+        one.** The `\\rightskip` of a ragged line, a `\\parfillskip`, the
+        `\\hss` either side of a table cell and the fill before a hard break
+        each take a reading-order index and none of them is a space anybody
+        typed. At the start or the end of a line, or next to a separator, such
+        fill is written as nothing. *Between* two characters on one line -- the
+        `\\hss` between two cells of a row, when nobody has said the cells are
+        cells -- any amount of it is one space, so that text with no
+        separators at all still does not run two words together. Before this a
+        copied table came out with two and three spaces between cells and one
+        after the last.
+
+        **A blank line does not need a separator and is handled here.** An
         empty line is a `Line` whose `start` equals its `end`, so it is
         self-describing in the command stream in a way a wrap is not, and a
-        `Collection[int]` could not express it anyway -- all three boundaries
-        around it are the same integer, and a set cannot say "two newlines at
-        `k`". So an empty line strictly inside the selection contributes a break
-        of its own. That is the case `docs/decisions.md` names: a blank line
-        inside a fenced code block must survive a copy.
+        mapping keyed by boundary could not express it anyway -- all three
+        boundaries around it are the same integer. So an empty line strictly
+        inside the selection contributes a break of its own. That is the case
+        `docs/decisions.md` names: a blank line inside a fenced code block must
+        survive a copy. (A line holding only a rule is not a blank line and is
+        not a fragment at all; see `_fragments`.)
 
-        Joining is tidied rather than mechanical: a wrap adds a space only if the
-        text does not already end with one, and a hard break drops any spaces
-        that would have been left dangling before it. Both cases arise
-        constantly, because a paragraph's `\\parfillskip` is an interword space
-        sitting at the end of its last line.
+        **An atom copies as what `atoms` says it is.** An inline formula is one
+        item (`advtext.shipout.Atom`) and its text is its source, which the
+        commands do not carry: `atoms` maps the item's index to it, dollars
+        included. One that is not in the mapping is written as nothing.
+
+        **A glyph copies as what `originals` says was written, where it says
+        so.** A character no face has is drawn as U+FFFD
+        (`advtext.markdown.ReplacedChar`) and the command for it carries only
+        what was drawn: `originals` maps the glyph's index to the character
+        the source had. A glyph that is not in the mapping is its own
+        codepoint, which is every glyph of nearly every document.
+
+        Joining is tidied rather than mechanical: a wrap adds a space only if
+        the text does not already end with white space, and any other
+        separator drops the spaces that would have been left dangling before
+        it.
         """
         if selection.is_empty:
             return ""
         breaks = frozenset(hard_breaks)
+        given: Mapping[int, str] = separators if separators is not None else {}
+        named: Mapping[int, str] = atoms if atoms is not None else {}
+        written_as: Mapping[int, str] = originals if originals is not None else {}
         pieces: list[str] = []
+        # How many of `pieces` there were when the last character was written.
+        written = 0
 
-        for fragment in self.fragments:
+        for fragment in self.fragments_within(selection.start, selection.end):
             if not fragment.items:
                 # A blank line. Strictly inside, so a selection that merely ends
                 # on one does not pick up a trailing newline.
                 if pieces and selection.start < fragment.start < selection.end:
-                    _join(pieces, hard=True)
+                    _separate(pieces, "\n")
                 continue
             span = fragment.owned_range(
                 max(selection.start, fragment.start), min(selection.end, fragment.end) - 1
@@ -642,33 +851,131 @@ class SelectionModel:
             if span is None:
                 continue
             low, high = span
-            if pieces:
-                _join(pieces, hard=fragment.start in breaks)
-            pieces.append(_render(fragment.items[low : high + 1]))
+            opening = True
+            # Fill seen since the last character, not yet written: it becomes
+            # one space if a character follows it on this line, and nothing if
+            # a separator or the end of the line does.
+            filled = False
+            for offset in range(low, high + 1):
+                index = fragment.indices[offset]
+                item = fragment.items[offset]
+                separator = given.get(index)
+                if separator is None and index in breaks and index == fragment.start:
+                    separator = "\n"
+                if separator is None and opening:
+                    # The first item of this line's share and nothing said what
+                    # precedes it: a wrap.
+                    separator = " " if pieces else None
+                opening = False
+                if separator is not None:
+                    if pieces:
+                        _separate(pieces, separator)
+                    filled = False
+                if _is_fill(item):
+                    filled = separator is None
+                    continue
+                if filled:
+                    if pieces:
+                        _separate(pieces, " ")
+                    filled = False
+                if isinstance(item, Atom):
+                    rendered = named.get(index, "")
+                elif index in written_as and isinstance(item, Glyph):
+                    rendered = written_as[index]
+                else:
+                    rendered = _render_item(item)
+                if not rendered:
+                    # An atom nobody named: there is nothing to write for it.
+                    continue
+                pieces.append(rendered)
+                written = len(pieces)
 
-        return "".join(pieces)
+        # A separator with no character after it is not between two things.
+        return "".join(pieces[:written])
 
 
-def _render(items: Iterable[Item]) -> str:
+@dataclass(frozen=True, slots=True)
+class SelectionModel(FragmentQueries):
     """
-    One line's worth of selected items as characters, glue included as a space.
+    A shipped document, indexed once so hit testing is a lookup per frame.
+
+    Built from the `DrawCmd` list `advtext.shipout.ship` returns and holding no
+    reference to the box tree, no font and no backend. A UI rebuilds it when the
+    layout changes and queries it on every mouse event; the indexing is linear in
+    the document and each query after that is linear in one line.
     """
-    return "".join(" " if isinstance(item, SetGlue) else chr(item.codepoint) for item in items)
+
+    fragments: tuple[Fragment, ...]
+    length: int
+
+    @classmethod
+    def from_commands(cls, cmds: Sequence[DrawCmd]) -> SelectionModel:
+        """
+        Index a shipped command list for hit testing.
+        """
+        fragments = _fragments(cmds)
+        length = max((fragment.end for fragment in fragments), default=0)
+        return cls(fragments=fragments, length=length)
+
+    def fragment_at(self, point: Point) -> Fragment | None:
+        """
+        The line a point belongs to: the one whose band contains it, else the nearest.
+
+        `fragment_nearest` is the rule, shared with every other model so that
+        they cannot answer differently.
+        """
+        return fragment_nearest(self.fragments, point)
+
+    def fragments_within(self, start: Boundary, end: Boundary) -> Iterable[Fragment]:
+        """
+        Every fragment, whatever the range: the flat model has no index to narrow by.
+
+        Which is the cost `advtext.ui.units.UnitModel` exists to avoid, and is
+        exactly what this class did before the lookup had a name.
+        """
+        return self.fragments
+
+
+def _is_fill(item: Item) -> bool:
+    """
+    Whether an item is glue with no natural width: positioning, not a typed space.
+
+    An `Atom` is a `SetGlue` by subclass (so the backends draw nothing for it)
+    and is never fill, whatever its width: it is a formula, and one of no
+    width -- `${}$`, or `$\\!\\,$` -- is still something the author wrote. It
+    used to be taken for fill and dropped from the highlight and from a copy
+    (review 2, item 8).
+    """
+    return isinstance(item, SetGlue) and not isinstance(item, Atom) and item.natural == 0
+
+
+def _render_item(item: Item) -> str:
+    """
+    One selected item that is not fill, as text: its character, or a space for a space.
+    """
+    return " " if isinstance(item, SetGlue) else chr(item.codepoint)
 
 
 _TRAILING_SPACE: Final = " "
 
 
-def _join(pieces: list[str], *, hard: bool) -> None:
+def _separate(pieces: list[str], separator: str) -> None:
     """
-    Put the separator between two lines' worth of text, in place.
+    Put a separator after the text so far, in place.
 
-    A wrap after a newline adds nothing: the break is already there, and a space
-    between two newlines would put a stray one at the head of the line after a
-    blank one.
+    A single space is a wrap, and adds nothing after white space: the break is
+    already there, and a space after a newline would put a stray one at the
+    head of the next line. Anything else is content, and takes the place of
+    whatever spaces were left dangling before it.
     """
-    if hard:
-        pieces[-1] = pieces[-1].rstrip(_TRAILING_SPACE)
-        pieces.append("\n")
-    elif not pieces[-1].endswith((_TRAILING_SPACE, "\n")):
-        pieces.append(_TRAILING_SPACE)
+    if separator == _TRAILING_SPACE:
+        if not pieces[-1].endswith((_TRAILING_SPACE, "\n", "\t")):
+            pieces.append(_TRAILING_SPACE)
+        return
+    while pieces and not pieces[-1].rstrip(_TRAILING_SPACE):
+        pieces.pop()
+    if not pieces:
+        # Nothing but spaces came before it, so it is not between two things.
+        return
+    pieces[-1] = pieces[-1].rstrip(_TRAILING_SPACE)
+    pieces.append(separator)

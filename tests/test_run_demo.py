@@ -29,19 +29,17 @@ and make the suite depend on collection order.
 that run past the DISPLAY guard set `DISPLAY` to a value that is never dialled,
 because `advtext.ui.app.run` is replaced with a recorder first.
 
-A gap stated rather than hidden: nothing here proves the *tab names* this script
-accepts are the tabs the app actually draws.
-`test_the_tab_names_in_the_help_are_the_tabs_the_app_draws` couples them by
-reading `App.gui`'s source, which is a coupling of last resort -- `advtext.ui.app`
-exports no tab list, and the honest fix is for it to export one. Until it does,
-reading the source is the only thing in reach that goes red when a tab is
-renamed, which is the exact failure that produced this file.
+The *tab names* this file's cases use are coupled to the pages the app actually
+draws by `test_the_tab_names_in_the_help_are_the_tabs_the_app_draws`. That test
+used to read `App.gui`'s source, "a coupling of last resort" kept only until
+`advtext.ui.app` exported a list. It compares against `page_names()` now: the
+demo's pages are discovered from `advtext/ui/pages/` and that function is the
+list the sidebar is drawn from.
 """
 
 from __future__ import annotations
 
 import importlib.util
-import inspect
 import re
 from pathlib import Path
 from types import ModuleType
@@ -240,8 +238,13 @@ def test_the_vanished_xvfb_block_is_not_advertised_anywhere() -> None:
 def test_the_script_no_longer_claims_it_cannot_run_here() -> None:
     """
     The module docstring said "Never executed" and "this cannot run in the
-    development sandbox". A window opens here in about 0.4s, and this script was
-    run to a live window while this test was being written.
+    development sandbox". A window opened in about 0.4s in the session this
+    test was written in, and this script was run to a live window then.
+
+    The retraction's wording was "false in this environment" until 2026-10-07,
+    when the docstring was revised to say reachability is a fact about a
+    session (a later sandboxed session could not reach the same display); the
+    phrase pinned below followed it. The shape of the check is unchanged.
 
     Not a `not in` check, and the first draft of this test was one and was wrong:
     the docstring *quotes* both stale sentences, because a correction that does
@@ -255,7 +258,7 @@ def test_the_script_no_longer_claims_it_cannot_run_here() -> None:
     the reader nothing about the guard that is still the point of the file.
     """
     doc = run_demo.__doc__ or ""
-    correction = doc.find("false in this environment")
+    correction = doc.find("were false in it")
     assert correction > 0, "the docstring retracts nothing; the stale claim may simply be back"
     for stale in ("Never executed", "cannot run in the development sandbox"):
         where = doc.find(stale)
@@ -343,24 +346,26 @@ def test_the_tab_names_in_the_help_are_the_tabs_the_app_draws() -> None:
     """
     Couple the names this file tests to the names the app actually renders.
 
-    A coupling of last resort, stated as such in the module docstring:
-    `advtext.ui.app` exports `COLUMN_COUNTS` and `TabRequest` but no list of tab
-    names -- they are literals inside `App.gui`'s loop -- so the only thing in
-    reach that notices a renamed tab is the source of that method. If app.py
-    ever exports the names, delete this and compare against the export.
+    This used to scrape `App.gui`'s source for string literals, "a coupling of
+    last resort" whose own docstring said: if app.py ever exports the names,
+    delete this and compare against the export. It does now -- the pages are
+    discovered from `advtext/ui/pages/` and `advtext.ui.app.page_names()` is
+    the list the sidebar draws -- and `gui` no longer contains a name to
+    scrape, so this compares against that. (Changed by C-shell, 2026-10-07.)
 
     Without it, `_TAB_SPECS` is a list this file made up: renaming Specimen to
     Sample would leave every test above green while `make run ARGS="--tab
-    specimen"` silently opened the Document tab, which is the same class of
-    wrong-picture-under-a-confident-filename that `parse_tab_request` refuses
-    misspelt options to avoid.
+    specimen"` was refused, or before names were validated silently opened the
+    Document tab -- the same class of wrong-picture-under-a-confident-filename
+    that `parse_tab_request` refuses misspelt options to avoid.
     """
     app = pytest.importorskip("advtext.ui.app")
-    source = inspect.getsource(app.App.gui)
+    drawn = {name.lower() for name in app.page_names()}
+    assert drawn, "the app reports no pages; this comparison would pass against nothing"
     for spec in _TAB_SPECS:
-        name = spec.partition(":")[0].capitalize()
-        assert f'"{name}"' in source, (
-            f"{name!r} is not a tab advtext.ui.app.App.gui draws; "
+        name = spec.partition(":")[0].lower()
+        assert name in drawn, (
+            f"{name!r} is not a page advtext.ui.app.App.gui draws; "
             "this file's list of tab names has gone stale"
         )
 

@@ -3,11 +3,14 @@ The demo application's pure parts: the page arithmetic, the tab grammar, the cac
 
 **What this file can and cannot reach.** `advtext.ui.app` defers every
 `imgui_bundle` import into the function that needs it, so the module imports and
-most of it runs with no window anywhere. What needs one -- `gui`, the five `_*_tab`
-methods, `apply_style`, `load_fonts` -- is verified by photograph instead:
-`make shot --tab NAME` runs the real app and writes a PNG, and the tabs were
-checked by reading those. `docs/decisions.md` records that nothing in this suite
-may open a window, and that has not changed.
+most of it runs with no window anywhere. What needs one -- `gui`, the pages'
+`draw` methods (which were the five `_*_tab` methods of `App` until the tab bar
+became a sidebar and they moved to `advtext/ui/pages/`), `apply_style`,
+`load_fonts` -- is verified by photograph instead: `make shot --tab NAME` runs
+the real app and writes a PNG, and the pages were checked by reading those.
+`tests/test_pages.py` drives `gui` through frames of a context with no backend
+and once through a real window; this file stays with the parts that need
+neither.
 
 So the split here is deliberate rather than lazy. Everything in this file is a
 claim a picture cannot check -- that a sequence is conserved across a split, that
@@ -53,6 +56,7 @@ from advtext.ui.app import (
     column_page,
     demo_text,
     parse_tab_request,
+    sidebar_rows,
 )
 from advtext.ui.document_view import (
     MEASURE_ALPHABETS,
@@ -230,23 +234,32 @@ def test_every_name_in_tab_names_is_accepted_in_any_case() -> None:
         assert parse_tab_request(name.upper() + ":debug").debug is True
 
 
-def test_the_tab_bar_draws_exactly_the_tabs_tab_names_lists() -> None:
+def test_the_sidebar_lists_exactly_the_pages_tab_names_lists() -> None:
     """
-    `TAB_NAMES` is only worth exporting if it is what `gui` actually iterates.
+    `TAB_NAMES` is only worth exporting if it is what `gui` actually draws.
 
-    Read out of the source because `gui` needs a window and this suite may not
-    open one (`docs/decisions.md`). That is a coupling of last resort and it is
-    narrow on purpose: it checks the *body table*, which is the one place a tab
-    can still be added without touching `TAB_NAMES`. The `KeyError` in `gui` --
-    `bodies[name]` -- catches the opposite drift on the first frame.
+    This used to read the tab bar's body table out of `App.gui`'s source,
+    because the names were literals there and `gui` needs a frame. The tab bar
+    became a sidebar and the names are no longer written anywhere: `gui` draws
+    `sidebar_rows(self.discovery)`, the scan of `advtext.ui.pages`, and
+    `TAB_NAMES` is computed from the same scan. So the comparison is between
+    two values now, not a value and a regular expression, and the other half --
+    that `gui` draws those rows and nothing else -- is a real frame in
+    `tests/test_pages.py`.
 
-    This replaces nothing: `tests/test_shot_all.py` and `tests/test_run_demo.py`
-    both scrape `App.gui` for the same list and can now read `TAB_NAMES` instead.
+    The second assertion is the old test's structural half, kept: no page name
+    is a literal inside `gui`, which is the one place a page could be added
+    without being discovered.
     """
-    source = inspect.getsource(App.gui)
-    table = source.partition("bodies = {")[2].partition("}")[0]
-    drawn = re.findall(r'"([A-Za-z]+)":', table)
-    assert drawn == list(TAB_NAMES), f"gui draws {drawn}, TAB_NAMES says {list(TAB_NAMES)}"
+    app = App(source=TINY, columns_source=TINY)
+    listed = [row.page.name for row in sidebar_rows(app.discovery) if row.page is not None]
+    assert listed == list(
+        TAB_NAMES
+    ), f"the sidebar lists {listed}, TAB_NAMES says {list(TAB_NAMES)}"
+    assert list(TAB_NAMES[:5]) == ["Document", "Columns", "Specimen", "Formula", "Blocks"]
+    source = inspect.getsource(App.gui) + inspect.getsource(App._sidebar)
+    named = [name for name in TAB_NAMES if re.search(rf"\b{name}\b", source)]
+    assert not named, f"App.gui names {named} itself instead of drawing what was discovered"
 
 
 def test_the_app_applies_a_tab_request_on_construction() -> None:
@@ -420,7 +433,9 @@ def test_a_column_count_below_one_is_refused(alphabet: Scaled, leading: Scaled) 
 # to write a vacuous test here: the ideal sheet is 700 px at one column, 1433 at
 # two and 2166 at three, so 1600 px clamps three columns and does not clamp two.
 # `test_the_clamped_widths_really_are_clamped` checks every pair rather than
-# trusting this comment. 1070 is the demo window's content region; 1890 is the
+# trusting this comment. 1070 is the demo window's content region as it was at
+# 1100 px wide under the tab bar (it is 1068 right of the sidebar in today's
+# 1300 px window, which clamps the same counts); 1890 is the
 # widest this 1920 px display can give; 500 is a window dragged in far enough to
 # clamp even one column.
 CLAMPED_PAIRS = (

@@ -1,0 +1,9 @@
+def retry(call, attempts=3):
+-    for _ in range(attempts):
++    for attempt in range(attempts):
+        try:
+            return call()
+-        except Exception:
+-            pass
++        except Exception as error:
++            last = error

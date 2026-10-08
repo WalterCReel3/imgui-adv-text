@@ -1,0 +1,32 @@
+From 3f2a9c1d5e7b8a6f4c0d1e2f3a4b5c6d7e8f9a0b Mon Sep 17 00:00:00 2001
+From: A Developer <dev@example.org>
+Date: Wed, 7 Oct 2026 10:00:00 +0000
+Subject: [PATCH] retry: back off between attempts
+
+- sleep before the second and later attempts
+- cap the delay
+
+The message above has bullets, and the line below is three dashes: neither
+is part of the diff.
+---
+ retry.py | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/retry.py b/retry.py
+index 1a2b3c4..5d6e7f8 100644
+--- a/retry.py
++++ b/retry.py
+@@ -1,6 +1,7 @@
+ def retry(call, attempts=3):
+-    for _ in range(attempts):
++    for attempt in range(attempts):
+         try:
+             return call()
+-        except Exception:
+-            pass
++        except Exception as error:
++            last = error
++            sleep(min(2**attempt, 30))
+-- 
+2.39.0
+

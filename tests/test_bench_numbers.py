@@ -220,8 +220,8 @@ def test_the_glyph_and_run_counts_in_bench_draws_prose_are_what_the_grouper_prod
     `there are 71 such runs in 4,362 glyphs`, and the batched row's `over 71 runs`.
 
     Two numbers in two places, and the conclusion of the whole script -- that
-    batching is worth about 3% -- is computed from them. They were `49` and
-    `3,443`.
+    batching is worth about a millisecond of a draw -- is computed from them.
+    They were `49` and `3,443`.
 
     **The faces are stubs and that is load-bearing, not a shortcut.** This file
     may not touch the font atlas: it is process-global, and adding the six faces
@@ -396,3 +396,322 @@ def test_bench_reflow_no_longer_quotes_the_whole_document_total_it_outgrew() -> 
         f"the claim reads {heaviest}ms of {total}ms -- a block cannot cost more "
         "than the document that contains it, so one of the two is mistyped"
     )
+
+
+# --------------------------------------------------------------------------
+# bench_draw: the mono ragged run (docs/adoption-plan.md phase 0)
+# --------------------------------------------------------------------------
+
+# One row of the mono ragged table: a theme *name* where the first table has a
+# copy count, then commands, glyphs, spans, runs, a time, visible, a time. The
+# name is what keeps `_TABLE_ROW` from matching these rows and this from
+# matching those.
+_THEME_ROW = re.compile(
+    r"^\s*\|\s*(default|mono ragged)\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*"
+    r"\|\s*([\d,]+)\s*\|\s*[\d.]+ms\s*\|\s*([\d,]+)\s*\|\s*[\d.]+ms\s*\|\s*$",
+    re.MULTILINE,
+)
+
+
+def _int(text: str) -> int:
+    return int(text.replace(",", ""))
+
+
+def _parse_theme_table(text: str) -> dict[str, tuple[int, int, int, int, int]]:
+    """
+    `{theme: (commands, glyphs, spans, runs, visible)}` from the mono ragged table.
+    """
+    return {
+        name: (_int(commands), _int(glyphs), _int(spans), _int(runs), _int(visible))
+        for name, commands, glyphs, spans, runs, visible in _THEME_ROW.findall(text)
+    }
+
+
+_SHIPPED: dict[str, tuple[Any, ...]] = {}
+
+
+def _shipped_under(name: str) -> tuple[Any, ...]:
+    """
+    The sample shipped at 420pt under one of the table's two themes, composed once.
+
+    Memoised because the mono ragged composition **was slow**: about 11 seconds
+    for the 37-block sample on 2026-10-06, against 0.13 for the default theme.
+    That was the ragged-right cost of the total-fit breaker, which
+    `scripts/bench_reflow.py` table 7 records, and not anything about
+    monospace. This docstring used to end "if these tests become fast,
+    somebody fixed the breaker", and later that day they did: composition now
+    breaks a non-justified block first-fit (`advtext.ui._text_boxes`). The
+    memo stays because two tests still share the composition.
+    """
+    if name not in _SHIPPED:
+        theme = bench_draw.mono_ragged_theme() if name == "mono ragged" else Theme.build()
+        _SHIPPED[name] = bench_draw.shipped_commands(_sample(), 1, _WIDTH_PT, theme)
+    return _SHIPPED[name]
+
+
+def test_the_theme_table_parser_finds_both_rows_and_only_those() -> None:
+    """
+    The meta-test for the mono ragged table, for the reason the first one exists.
+
+    Two rows, by name. The first table's rows must not be read as theme rows and
+    the theme rows must not be read as the first table's, or a count from one
+    would be checked against the other's derivation and could pass by accident.
+    """
+    doc = _docstring(bench_draw)
+    assert sorted(_parse_theme_table(doc)) == ["default", "mono ragged"]
+    assert _parse_theme_table("    |      1 |    5,378 |   30.32ms |   1,952 |     10.46ms |") == {}
+    assert sorted(_parse_table(doc)) == [1, 2, 4], "a theme row leaked into the copies table"
+    no_units = "| default | 5,378 | 4,362 | 876 | 71 | 15.51 | 1,952 | 5.83 |"
+    assert _parse_theme_table(no_units) == {}
+
+
+def test_every_count_in_the_mono_ragged_table_is_what_the_engine_ships() -> None:
+    """
+    Commands, glyphs, rigid spans, runs and the visible count, for both themes.
+
+    The faces are `_StubFaces` for the reason given on the glyph-and-run test
+    above. The default row repeats figures the first table and the prose already
+    quote, on purpose: the table's claim is a comparison, and a comparison whose
+    baseline row was free to drift from the baseline quoted forty lines above it
+    would be two tables disagreeing in one docstring.
+    """
+    quoted = _parse_theme_table(_docstring(bench_draw))
+    assert quoted, "no theme rows parsed; see the meta-test"
+    for name, (commands, glyphs, spans, runs, visible) in sorted(quoted.items()):
+        cmds = _shipped_under(name)
+        calls = bench_draw._resolved_calls(None, cmds, _StubFaces(), 96.0)
+        window = bench_draw.Viewport.of_pixels(0.0, bench_draw.DEFAULT_WINDOW_PX, 96.0)
+        derived = (
+            len(cmds),
+            sum(1 for cmd in cmds if isinstance(cmd, Glyph)),
+            bench_draw.rigid_spans(cmds),
+            len(bench_draw._runs(calls)),
+            len(bench_draw.CommandIndex.of(cmds).visible(window)),
+        )
+        assert derived == (commands, glyphs, spans, runs, visible), (
+            f"bench_draw's mono ragged table quotes {name!r} as (commands, glyphs, "
+            f"spans, runs, visible) = {(commands, glyphs, spans, runs, visible)}; "
+            f"the engine gives {derived}. Re-run `python scripts/bench_draw.py "
+            "--copies 1` and update the table."
+        )
+
+    prose = re.search(r"`runs` falls from ([\d,]+) to ([\d,]+)", _docstring(bench_draw))
+    assert prose is not None, "the mono ragged prose no longer states the run counts"
+    assert (_int(prose.group(1)), _int(prose.group(2))) == (
+        quoted["default"][3],
+        quoted["mono ragged"][3],
+    ), "the prose under the mono ragged table quotes different run counts from the table"
+
+
+def test_the_mono_ragged_theme_sets_every_glyph_in_code_and_no_block_justified() -> None:
+    """
+    The run is only "Face.CODE set ragged" if that is what the theme produces.
+
+    Checked on the shipped glyphs and not on the theme's fields, because the
+    fields were never the problem: `Theme.face_for` used to ignore a block's
+    face when choosing a run's, so a theme whose every `BlockStyle` said
+    `Face.CODE` still set Roboto, and the script carried a `_MonoTheme` subclass
+    overriding `face_for` to get round it. `Theme.build(faces=...)` now says it
+    in one call and the subclass is gone (2026-10-07), but the reason to read
+    the glyphs stands: the plain `Faces.mono()` leaves bold on `Face.CODE_BOLD`,
+    whose unregistered stand-in is Roboto Bold, and a test that read
+    `theme.blocks` would not see the headings come out proportional.
+
+    The by-face breakdown of the default theme is quoted in the docstring beside
+    it and re-derived here, since it is the other half of the comparison.
+    """
+    mono = bench_draw.mono_ragged_theme()
+    default = Theme.build()
+    cmds = _shipped_under("mono ragged")
+    by_face = bench_draw.glyphs_by_face(cmds)
+    assert list(by_face) == [bench_draw.Face.CODE], f"mono ragged shipped {by_face!r}"
+
+    assert all(style.align is bench_draw.Align.LEFT for style in mono.blocks.values())
+    assert any(
+        style.align is bench_draw.Align.JUSTIFY for style in default.blocks.values()
+    ), "the default theme justifies nothing, so 'ragged' no longer distinguishes the two rows"
+    assert {kind: style.font.size for kind, style in mono.blocks.items()} == {
+        kind: style.font.size for kind, style in default.blocks.items()
+    }, "the mono ragged theme changed a size, so the two rows differ by more than face and align"
+
+    quoted = re.search(
+        r"\(([\d,]+) prose, ([\d,]+) code, ([\d,]+) bold, ([\d,]+) italic, ([\d,]+) bold italic\)",
+        _docstring(bench_draw),
+    )
+    assert quoted is not None, "bench_draw no longer quotes the default theme's glyphs by face"
+    face = bench_draw.Face
+    counts = bench_draw.glyphs_by_face(_shipped_under("default"))
+    assert [_int(part) for part in quoted.groups()] == [
+        counts.get(face.PROSE, 0),
+        counts.get(face.CODE, 0),
+        counts.get(face.PROSE_BOLD, 0),
+        counts.get(face.PROSE_ITALIC, 0),
+        counts.get(face.PROSE_BOLD_ITALIC, 0),
+    ]
+    assert sum(counts.values()) == sum(
+        _int(part) for part in quoted.groups()
+    ), "the default theme ships a face the docstring's breakdown does not list"
+
+
+# --------------------------------------------------------------------------
+# bench_reflow: the streaming row (docs/adoption-plan.md phase 0)
+# --------------------------------------------------------------------------
+
+# One row of the streaming table as the docstring writes it: `words/total`,
+# blocks, the tail block's node count, then five times.
+_STREAM_ROW = re.compile(
+    r"^\s*\|\s*(\d+)/(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|" + r"\s*[\d.]+ms\s*\|" * 5 + r"\s*$",
+    re.MULTILINE,
+)
+
+
+def test_the_streaming_tables_counts_are_what_the_sample_parses_to() -> None:
+    """
+    Words, blocks and the tail block's size at each sampled point of the stream.
+
+    These three are what make a row mean something: the parse, ship and index
+    columns follow `words`, and the compose column follows the tail block. They
+    are derived here straight from `word_ends` and `build_document` rather than
+    through `time_stream_append`, so the check costs four parses and not four
+    benchmarks.
+
+    The row count is pinned (the vacuity guard), the sampled words must be the
+    ones `DEFAULT_STREAM_AT` names, and the last row must be the whole source --
+    which is what lets it be read against `_after_an_edit`.
+    """
+    doc = _docstring(bench_reflow)
+    rows = _STREAM_ROW.findall(doc)
+    assert len(rows) == 4, f"expected four streaming rows in bench_reflow's docstring, got {rows!r}"
+
+    source = _sample()
+    ends = bench_reflow.word_ends(source)
+    assert ends[-1] == len(source), "the last word prefix is not the whole source"
+
+    stated = re.search(r"`demo/sample.md` is ([\d,]+) words by that rule", doc)
+    assert stated is not None, "bench_reflow no longer states the sample's word count"
+    assert _int(stated.group(1)) == len(ends)
+
+    fractions = [float(part) for part in bench_reflow.DEFAULT_STREAM_AT.split(",")]
+    assert [int(row[0]) for row in rows] == bench_reflow._stream_words(len(ends), fractions)
+
+    theme = Theme.build()
+    for words, total, blocks, tail_nodes in rows:
+        assert int(total) == len(ends)
+        document = build_document(source[: ends[int(words) - 1]], theme, fontlib_metrics)
+        tail = document.blocks[-1]
+        derived = (len(document.blocks), len(tail.material) if isinstance(tail, TextBlock) else 0)
+        assert derived == (int(blocks), int(tail_nodes)), (
+            f"bench_reflow's streaming table says the first {words} words are "
+            f"{blocks} blocks ending in one of {tail_nodes} nodes; they are {derived}."
+        )
+
+
+def test_every_word_prefix_of_the_sample_builds() -> None:
+    """
+    `word_ends`'s docstring says a prefix cut anywhere still parses. All 963 do.
+
+    A stream stops mid-fence, mid-emphasis and mid-table, and a converter that
+    raised on any of those would make the streaming row a benchmark of the
+    prefixes that happen to be well formed. Prefixes strictly grow and each ends
+    where a word does. Nothing is assumed about block counts: an open fence
+    swallowing later paragraphs is allowed to make the count fall.
+    """
+    source = _sample()
+    ends = bench_reflow.word_ends(source)
+    assert ends == sorted(set(ends)) and ends[0] > 0
+    theme = Theme.build()
+    for end in ends:
+        assert source[end - 1 : end].isspace() or end == len(source)
+        build_document(source[:end], theme, fontlib_metrics)
+
+
+def test_a_streamed_append_re_breaks_one_block_and_times_all_four_phases() -> None:
+    """
+    The streaming row's structural claims, on a document small enough to be fast.
+
+    No millisecond is asserted. What is: the timed compose missed the cache for
+    exactly the block the word landed in and hit for every other, which is the
+    difference between "compose after an append" and "compose from cold"; all
+    four phases were actually timed; and the total is their sum, parse included
+    -- the plan's complaint about `_after_an_edit` was that it leaves three of
+    the four out.
+
+    **The hit count is the fixture check.** If `time_stream_append` warmed its
+    cache with a different `measure` object, or timed a second compose after the
+    first had already filled the cache, the counts would read 0/3 or 3/0 here
+    rather than 2/1.
+    """
+    source = "# Title\n\nFirst paragraph of several words.\n\nSecond paragraph grows by one word\n"
+    measure = bench_reflow.char_measure(fontlib_metrics)
+    width = bench_reflow.sp_from_pt(300.0)
+    words = len(bench_reflow.word_ends(source))
+    row = bench_reflow.time_stream_append(source, Theme.build(), width, 2, measure, words)
+
+    assert (row.words, row.blocks, row.tail) == (words, 3, "TextBlock")
+    assert (row.hits, row.misses) == (2, 1)
+    assert min(row.parse_ms, row.compose_ms, row.ship_ms, row.index_ms) > 0.0
+    assert row.total_ms == pytest.approx(row.parse_ms + row.compose_ms + row.ship_ms + row.index_ms)
+
+    first = bench_reflow.time_stream_append(source, Theme.build(), width, 1, measure, 1)
+    assert (first.words, first.blocks, first.hits) == (
+        1,
+        1,
+        0,
+    ), "the first word is appended to an empty document, so nothing can be a cache hit"
+    with pytest.raises(ValueError):
+        bench_reflow.time_stream_append(source, Theme.build(), width, 1, measure, words + 1)
+
+
+def test_stream_fractions_name_distinct_words_inside_the_source() -> None:
+    """
+    `0.0` is the first word, `1.0` the last, and a short source is not timed twice.
+    """
+    assert bench_reflow._stream_words(963, [0.25, 0.5, 0.75, 1.0]) == [241, 482, 722, 963]
+    assert bench_reflow._stream_words(963, [0.0, 2.0]) == [1, 963]
+    assert bench_reflow._stream_words(2, [0.25, 0.5, 0.75, 1.0]) == [1, 2]
+
+
+def test_the_edit_benchmark_times_compose_only_which_is_why_the_streaming_row_exists() -> None:
+    """
+    The plan's claim about `_after_an_edit`, checked against its source.
+
+    `docs/adoption-plan.md` phase 0 says the edit benchmark "starts its timer
+    after `build_document` and excludes ship and index". That was read-derived,
+    and it is true: between the `perf_counter()` that starts the clock and the
+    one that stops it there is a `compose` and nothing else. If someone widens
+    that timed region, table 5 and table 6 start measuring overlapping things
+    and the module docstring's account of how they differ goes stale.
+    """
+    import inspect
+
+    body = inspect.getsource(bench_reflow._after_an_edit)
+    timed = body.split("start = time.perf_counter()")[1].split("time.perf_counter() - start")[0]
+    assert "compose(" in timed
+    for excluded in ("build_document(", "ship(", "from_commands(", "CommandIndex"):
+        assert excluded not in timed, f"`_after_an_edit` now times {excluded}"
+
+
+def test_the_ragged_theme_changes_alignment_and_nothing_else() -> None:
+    """
+    Table 7 compares justified with ragged, so that must be the only difference.
+
+    And the comparison itself is run once on a short paragraph, where it is
+    fast: same node count both ways, two positive times. No ratio is asserted --
+    the ratio is the finding, it is a timing, and on a paragraph this short it
+    is not the one the docstring quotes.
+    """
+    theme = Theme.build()
+    loose = bench_reflow.ragged(theme)
+    assert all(style.align is bench_reflow.Align.LEFT for style in loose.blocks.values())
+    for kind, style in theme.blocks.items():
+        assert bench_reflow.replace(loose.blocks[kind], align=style.align) == style
+    assert bench_reflow.replace(loose, blocks=theme.blocks) == theme
+
+    source = "# Heading\n\nA paragraph long enough to break onto a second line at this measure.\n"
+    measure = bench_reflow.char_measure(fontlib_metrics)
+    nodes, justified_ms, ragged_ms = bench_reflow.time_ragged_block(
+        source, theme, bench_reflow.sp_from_pt(200.0), 1, measure
+    )
+    paragraph = build_document(source, theme, fontlib_metrics).blocks[1]
+    assert isinstance(paragraph, TextBlock) and nodes == len(paragraph.material)
+    assert justified_ms > 0.0 and ragged_ms > 0.0

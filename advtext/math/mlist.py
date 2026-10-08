@@ -39,16 +39,53 @@ defaults and are **not in `tex.web`** at all -- the source only provides the
 mechanism, `fam_fnt(f+size)`. Taking them from the font is strictly better than
 taking them from a convention.
 
+**Delimiters are chosen, never built.** `var_delimiter` (`tex.web:13906`) does
+two things: it walks a character's chain of ever-larger variants for the first
+one tall enough, and failing that it *assembles* one from a top, a bottom and
+as many repeats of a middle piece as it takes. Only the first half is here.
+`_delimiter_box` walks the font's vertical variant chain -- for Latin Modern
+Math, eight parentheses up to 2.99 em and five surds up to 3 em. When the last
+entry is still too short TeX returns the largest it found ("if no variant is
+large enough, it returns the largest available", `tex.web:13895`). Here a
+`\left`/`\right` delimiter does the same while the largest covers three
+quarters of the content (`LARGEST_VARIANT_MUST_COVER`, which is this project's
+number and not TeX's), and below that -- and for a radical always -- it raises
+`DelimiterTooSmallError`. That refusal is the one place this module departs
+from the source on purpose, because a caller can turn a refusal into something
+honest and cannot do anything with a formula that is quietly wrong. Glyph
+assembly stays out of scope, as `docs/decisions.md` has it.
+
+That one function serves `make_radical` (`tex.web:14476`) and
+`make_left_right` (`tex.web:15017`).
+
+**A surd is hung from its ink, not from its baseline.** `make_radical` assumes
+a TFM convention: the surd's *height* is the thickness of the rule that joins
+it and everything else is depth, so `shift_amount := -(height(x)+clr)` puts the
+glyph's top stroke level with the rule. An OpenType surd is an ordinary outline
+and four of Latin Modern Math's five straddle the axis instead. So the rule
+thickness comes from the font's `RadicalRuleThickness`, and the glyph is
+shifted by whatever puts the top of its ink where TeX's arithmetic puts the top
+of the rule -- which is the same position, reached without the convention.
+XeTeX does the equivalent by rewriting the box's height and depth.
+
+**Three numbers here are plain.tex's and are scaled to the em.**
+`\delimiterfactor` (901) is a ratio. `\delimitershortfall` (5pt) and
+`\nulldelimiterspace` (1.2pt) are lengths chosen for ten-point type, and are
+kept as that *proportion* -- half a quad and 0.12 of one -- rather than as
+absolute lengths, so that whether a delimiter is big enough does not depend on
+the pixel size a host happens to set the formula at. That is a choice, and it
+is a different one from `SCRIPT_SPACE` below, which predates it and is absolute.
+
 Deliberately out of scope, each because it needs machinery this project does not
 have and `docs/decisions.md` rules out:
 
-- **Delimiters.** No `var_delimiter`, so no `\left`/`\right`, no radical, and no
-  `\atopwithdelims`. §748 wraps a fraction in delimiters and we stop before it;
-  with TeX's own null delimiter that step contributes two empty boxes of
-  `\nulldelimiterspace`, so the omission is a missing space and not a missing
-  structure.
+- **Extensible delimiters**, as above, and with them `\atopwithdelims`. §748
+  wraps a fraction in delimiters and we stop before it; with TeX's own null
+  delimiter that step contributes two empty boxes of `\nulldelimiterspace`, so
+  the omission is a missing space and not a missing structure.
+- **A radical's degree.** `\root 3 \of x` is a plain.tex macro over boxes.
 - **Accents**, which walk a width-fitting chain (§740).
-- **`\mathchoice`**, and the `left_noad`/`right_noad` pair.
+- **`\mathchoice`**, `\middle`, and `\nonscript`.
 - **Penalties after Bin and Rel atoms** (§766's `bin_op_penalty`,
   `rel_penalty`). They exist so a *line breaker* can cut an inline formula, and
   nothing in this project produces inline math -- `advtext.markdown` emits no
@@ -61,8 +98,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import TypeAlias
 
-from advtext.fontmetrics import Face, MathFontMetrics, MathParams
+from advtext.fontmetrics import Face, FontMetrics, MathFontMetrics, MathParams
 from advtext.math.atoms import (
+    MED_MU,
+    THICK_MU,
+    THIN_MU,
     Atom,
     AtomType,
     Field,
@@ -71,6 +111,8 @@ from advtext.math.atoms import (
     MathChar,
     MathItem,
     MathSize,
+    MathText,
+    MuGlue,
     Style,
     SubBox,
     SubList,
@@ -85,13 +127,18 @@ from advtext.math.atoms import (
 )
 from advtext.nodes import Box, BoxKind, CharNode, FontKey, Glue, GlueSpec, Kern, Node, Rule
 from advtext.pack import CharMeasure, PackMode, hpack, vpack
-from advtext.style import char_measure, font_key
+from advtext.style import MetricsResolver, char_measure, font_key, interword_glue
 from advtext.units import RUNNING, UNITY, GlueOrder, Scaled, sp_from_pt
 
 __all__ = [
+    "DELIMITER_FACTOR",
     "MATH_SPACING",
+    "SURD",
+    "DelimiterTooSmallError",
     "MathFonts",
+    "MathLayoutError",
     "MathResolver",
+    "TextFaceUnavailableError",
     "math_fonts",
     "mlist_to_hlist",
 ]
@@ -115,24 +162,12 @@ so reaching one is a bug in that conversion rather than in the formula.
 """
 
 
-@dataclass(frozen=True, slots=True)
-class _MuGlue:
-    """
-    A glue spec in math units, before it is scaled by `cur_mu`.
-    """
-
-    width: int
-    stretch: int = 0
-    shrink: int = 0
-
-
 # plain.tex's \thinmuskip, \medmuskip and \thickmuskip. They are macro-package
-# values and not in tex.web, which defines only the three glue parameters and
-# leaves them zero; these are the ones every LaTeX document has been set with
-# since 1984, so they are the ones a reader will recognise the output of.
-THIN_MU_SKIP = _MuGlue(3)
-MED_MU_SKIP = _MuGlue(4, stretch=2, shrink=4)
-THICK_MU_SKIP = _MuGlue(5, stretch=5)
+# values and not in tex.web; `advtext.math.atoms` holds them, because an explicit
+# `\,` and the table's thin space must be the same three math units.
+THIN_MU_SKIP = THIN_MU
+MED_MU_SKIP = MED_MU
+THICK_MU_SKIP = THICK_MU
 
 # \scriptspace, plain.tex's 0.5pt. §756 adds it to the width of every script box
 # so a following glyph does not touch the script that precedes it.
@@ -151,10 +186,126 @@ _BIN_BECOMES_ORD_AFTER = frozenset(
 _DEMOTES_A_PRECEDING_BIN = frozenset({AtomType.REL, AtomType.CLOSE, AtomType.PUNCT})
 
 _NOT_IMPLEMENTED = {
-    AtomType.RADICAL: "a radical needs var_delimiter (§708), which this project has not",
     AtomType.ACCENT: "an accent walks a width-fitting chain (§740), which this project has not",
 }
 
+SURD = 0x221A
+r"""
+U+221A SQUARE ROOT, the one delimiter a radical is built from.
+
+TeX's `radical_noad` carries its delimiter in a field (`left_delimiter`,
+`tex.web:13483`) because `\radical` takes it as an argument; every radical
+anybody writes passes the same one, so it is a constant here.
+"""
+
+DELIMITER_FACTOR = 901
+r"""
+plain.tex's `\delimiterfactor`: a delimiter must cover this many thousandths of
+twice the content's greater reach from the axis (`tex.web:15025`).
+"""
+
+DELIMITER_SHORTFALL = sp_from_pt(5.0)
+r"""
+plain.tex's `\delimitershortfall`: 5pt, **absolute**, as TeX has it
+(`tex.web:15026`, `delta2:=delta1+delta1-delimiter_shortfall`; the parameter is
+a dimension, `tex.web:5312`). However tall the content, the delimiter may fall
+short of it by at most this.
+
+It was half a math quad here until review 2 (item 9) measured that an
+em-relative shortfall never decides: at half a quad, `2*delta1 - shortfall`
+exceeds 90.1% of `2*delta1` only once `delta1` passes 2.5 quads, and the
+largest ready-made parenthesis is 1.5 quads from the axis. As a length it does
+what the source means it to: at a small size it is generous, at a large one it
+is strict. The value is plain.tex's and is not in `tex.web`.
+"""
+
+LARGEST_VARIANT_MUST_COVER = (3, 4)
+r"""
+How much of the content the largest variant of a `\left`/`\right` delimiter
+must cover to be used when no variant satisfies TeX's rule: three quarters.
+
+**This number is the lead's, not TeX's** (`.concerns/lead--demo-review2-findings.md`,
+item 9, amending D1). TeX with no extensible recipe returns the largest variant
+however short it falls (`tex.web:13895`); the first version of this module
+refused anything the rule did not accept, and C-mathtext2 measured ordinary
+formulas -- a fraction with stacked limits between `\left(` and `\right)` --
+refused for being 3 to 5 percent too tall. So the largest variant is used, as
+TeX would, while it reaches three quarters of twice the content's greater reach
+from the axis, and below that the formula is refused. A numerator and a
+denominator so that integer arithmetic states the boundary exactly.
+
+A radical does not get this: see `_make_radical`.
+"""
+
+_NULL_DELIMITER_SPACE_QUADS = 0.12
+r"""
+plain.tex's `\nulldelimiterspace` of 1.2pt, likewise: the width of `\left.`.
+"""
+
+
+class MathLayoutError(ValueError):
+    """
+    A formula this module will not set, as opposed to one it set wrongly.
+
+    The base of everything `mlist_to_hlist` raises about its *input* when the
+    input is well formed and merely beyond what the fonts in hand can do. A
+    caller with somewhere else to put the source -- inline code, say -- catches
+    this one type. `NotImplementedError` (an accent) and `AssertionError` (a
+    broken invariant) are not under it and are not that kind of news.
+    """
+
+
+class DelimiterTooSmallError(MathLayoutError):
+    """
+    No variant of a delimiter is tall enough for what it has to cover.
+
+    `needed` and `largest` are height plus depth in scaled points, `codepoint`
+    is the delimiter as the formula named it. Raised instead of returning the
+    largest variant, which is what TeX does when it has no extensible recipe
+    to fall back on and which sets a delimiter that visibly does not reach.
+    """
+
+    def __init__(self, codepoint: int, needed: Scaled, largest: Scaled) -> None:
+        super().__init__(
+            f"U+{codepoint:04X} has no variant {needed} sp tall (the largest is {largest} sp), "
+            "and delimiters are not assembled from pieces here"
+        )
+        self.codepoint = codepoint
+        self.needed = needed
+        self.largest = largest
+
+
+class TextFaceUnavailableError(MathLayoutError):
+    """
+    A formula holds prose and the fonts it was given cannot measure prose.
+
+    `math_fonts` was called without `text`, or `text` did not know the face.
+    """
+
+
+class MissingGlyphError(MathLayoutError):
+    r"""
+    Prose in a formula holds a character the face it is to be set in does not have.
+
+    `character` is the first such character and `face` the prose face asked.
+    Raised rather than set: a `CharNode` for a glyph the face lacks measures as
+    nothing and draws as nothing, so `v = \text{...}` came out as a formula
+    with a hole after the equals sign (review 2, item 5). A formula is one
+    face's work at one size and is not patched from another face the way a
+    paragraph's characters are (`advtext.markdown`); the caller's fallback --
+    the source, as code -- is.
+    """
+
+    def __init__(self, character: str, face: Face) -> None:
+        super().__init__(
+            f"{face.value} has no glyph for {character!r} (U+{ord(character):04X}), "
+            "and a formula is not patched from another face"
+        )
+        self.character = character
+        self.face = face
+
+
+_HANDLED_BY_THE_FIRST_PASS = frozenset({AtomType.LEFT, AtomType.RIGHT, AtomType.SPACE})
 
 MathResolver: TypeAlias = Callable[[Scaled], MathFontMetrics]
 """
@@ -180,6 +331,14 @@ class MathFonts:
     faces: dict[MathSize, MathFontMetrics]
     keys: dict[MathSize, FontKey]
     measure: CharMeasure
+    text: MetricsResolver | None = None
+    """
+    How a prose face is resolved for a `MathText`, or `None` if it cannot be.
+
+    `measure` consults it for every font key that is not one of the three math
+    keys, so a box holding prose packs through the same `measure` as the rest
+    of the formula and nobody has to know which characters were which.
+    """
 
     def face(self, style: Style) -> MathFontMetrics:
         """
@@ -206,9 +365,19 @@ class MathFonts:
         return round(self.params(style).math_quad / 18)
 
 
-def math_fonts(base_size: Scaled, resolve: MathResolver) -> MathFonts:
+def math_fonts(
+    base_size: Scaled, resolve: MathResolver, *, text: MetricsResolver | None = None
+) -> MathFonts:
     """
     Build the three sizes from one, using the font's own script percentages.
+
+    `text` resolves every font key that is not a math key -- which is to say
+    the prose faces a `MathText` is set in. Without it a formula holding prose
+    raises `TextFaceUnavailableError` rather than the `KeyError` from inside
+    `hpack` that used to be the only symptom, and a formula holding none is
+    unaffected. `advtext.style.fontlib_metrics` is the production value; it is
+    not the default because this module is driven by fakes in the tests and a
+    default that opens font files would be a default nobody asked for.
     """
     text_face = resolve(base_size)
     scales = text_face.math
@@ -219,12 +388,24 @@ def math_fonts(base_size: Scaled, resolve: MathResolver) -> MathFonts:
     }
     faces = {size: (text_face if size is MathSize.TEXT else resolve(sizes[size])) for size in sizes}
     keys = {size: font_key(Face.MATH, sizes[size]) for size in sizes}
-    by_key = {keys[size]: faces[size] for size in sizes}
+    by_key: dict[FontKey, FontMetrics] = {keys[size]: faces[size] for size in sizes}
+
+    def metrics_for(key: FontKey) -> FontMetrics:
+        found = by_key.get(key)
+        if found is not None:
+            return found
+        if text is None:
+            raise TextFaceUnavailableError(
+                f"{key!r} is not a math font and these MathFonts were built without `text`"
+            )
+        return text(key)
+
     return MathFonts(
         sizes=sizes,
         faces=faces,
         keys=keys,
-        measure=char_measure(lambda key: by_key[key]),
+        measure=char_measure(metrics_for),
+        text=text,
     )
 
 
@@ -239,9 +420,12 @@ def _half(value: Scaled) -> Scaled:
 class _Translated:
     """
     One atom after the first pass: what it spaces as, and what it became.
+
+    `kind` is `None` for a node that is not a noad -- an explicit space -- which
+    the second pass links in without consulting the table (`tex.web:15000`).
     """
 
-    kind: AtomType
+    kind: AtomType | None
     nodes: tuple[Node, ...]
 
 
@@ -263,31 +447,104 @@ def mlist_to_hlist(
 # --------------------------------------------------------------------------------
 
 
+_BOUNDARY_SPACES_AS = {AtomType.LEFT: AtomType.OPEN, AtomType.RIGHT: AtomType.CLOSE}
+
+
 def _spacing_type(item: MathItem) -> AtomType:
     """
     What this item spaces as before §727's conversions are applied.
+
+    A boundary is `Open` or `Close` from the start. TeX keeps `left_noad` and
+    `right_noad` apart until the second pass, but lists them beside `open_noad`
+    and `close_noad` in both of §727's tests (`tex.web:14335`, 14339), so
+    nothing in the first pass can tell the difference.
     """
-    return item.kind if isinstance(item, Atom) else AtomType.INNER
+    if not isinstance(item, Atom):
+        return AtomType.INNER
+    return _BOUNDARY_SPACES_AS.get(item.kind, item.kind)
 
 
 def _first_pass(items: Sequence[MathItem], style: Style, fonts: MathFonts) -> list[_Translated]:
     """
     Translate each atom, settling whether each `Bin` is really binary (§727).
+
+    `last` is TeX's `r`, "the most recent noad preceding `q`" (`tex.web:14287`):
+    an explicit space is a node and not a noad, so it neither becomes `r` nor
+    changes `r_type`, and a `Bin` binds straight through it.
     """
     out: list[_Translated] = []
     previous = _FIRST_PASS_INITIAL
+    last: int | None = None
+    boundaries: list[tuple[int, Atom]] = []
     for item in items:
+        if isinstance(item, Atom) and item.kind is AtomType.SPACE:
+            out.append(_Translated(None, (_math_space(item, style, fonts),)))
+            continue
         kind = _spacing_type(item)
         if kind is AtomType.BIN and previous in _BIN_BECOMES_ORD_AFTER:
             kind = AtomType.ORD
-        elif kind in _DEMOTES_A_PRECEDING_BIN and out and out[-1].kind is AtomType.BIN:
-            out[-1] = replace(out[-1], kind=AtomType.ORD)
-        out.append(_Translated(kind, tuple(_translate(item, style, fonts))))
+        elif (
+            kind in _DEMOTES_A_PRECEDING_BIN and last is not None and out[last].kind is AtomType.BIN
+        ):
+            out[last] = replace(out[last], kind=AtomType.ORD)
+        last = len(out)
+        if isinstance(item, Atom) and item.kind in _BOUNDARY_SPACES_AS:
+            # Sized below, once the height and depth of the whole list are known.
+            boundaries.append((last, item))
+            out.append(_Translated(kind, ()))
+        else:
+            out.append(_Translated(kind, tuple(_translate(item, style, fonts))))
         previous = kind
     # §727 again, at the end: a list ending in a Bin has nothing for it to bind.
-    if out and out[-1].kind is AtomType.BIN:
-        out[-1] = replace(out[-1], kind=AtomType.ORD)
+    if last is not None and out[last].kind is AtomType.BIN:
+        out[last] = replace(out[last], kind=AtomType.ORD)
+    if boundaries:
+        _size_boundaries(out, boundaries, style, fonts)
     return out
+
+
+def _size_boundaries(
+    out: list[_Translated], boundaries: Sequence[tuple[int, Atom]], style: Style, fonts: MathFonts
+) -> None:
+    """
+    Give each `LEFT` and `RIGHT` its delimiter, sized to the list it stands in.
+
+    TeX does this in the second pass, "since `max_h` and `max_d` are now known"
+    (`tex.web:14965`); every atom has been translated by the time this runs, so
+    it is the same moment. `max_h` and `max_d` are §727's `check_dimensions`
+    (`tex.web:14315`): each *noad's* hlist, packed, and nothing else -- an
+    explicit space contributes no height, and the boundaries themselves have no
+    hlist yet. Both delimiters are sized from the same two numbers at the same
+    style, "so they will have consistent sizes" (`tex.web:15012`).
+
+    The extra `hpack` per atom is paid only by a list that holds a boundary.
+    """
+    skip = {index for index, _ in boundaries}
+    max_h: Scaled = 0
+    max_d: Scaled = 0
+    for index, translated in enumerate(out):
+        if translated.kind is None or index in skip:
+            continue
+        packed = hpack(list(translated.nodes), measure=fonts.measure).box
+        max_h = max(max_h, packed.height)
+        max_d = max(max_d, packed.depth)
+    for index, atom in boundaries:
+        box = _make_left_right(atom, style, max_d, max_h, fonts)
+        out[index] = replace(out[index], nodes=(box,))
+
+
+def _math_space(atom: Atom, style: Style, fonts: MathFonts) -> Glue:
+    """
+    An explicit space as glue, its math units scaled by `cur_mu` (§716).
+
+    `tex.web:14363`: "Convert math glue to ordinary glue", through `math_glue`
+    at 14098. TeX has a kern form as well (`math_kern`, 14120) for `\\mkern`;
+    one form is enough here, since a spec with no stretch or shrink sets
+    exactly as a kern would in a box that is packed to its natural width.
+    """
+    if not isinstance(atom.nucleus, MuGlue):
+        raise TypeError(f"a SPACE atom carries a MuGlue, not {atom.nucleus!r}")
+    return Glue(_from_mu(atom.nucleus, fonts.mu(style)))
 
 
 def _translate(item: MathItem, style: Style, fonts: MathFonts) -> list[Node]:
@@ -301,10 +558,15 @@ def _translate(item: MathItem, style: Style, fonts: MathFonts) -> list[Node]:
     if reason is not None:
         raise NotImplementedError(f"{item.kind.name} atoms are not supported: {reason}")
 
+    if item.kind in _HANDLED_BY_THE_FIRST_PASS:
+        raise AssertionError(f"{item.kind.name} is placed by the first pass, not translated")
+
     if item.kind is AtomType.OP:
         nodes, delta, finished = _make_op(item, style, fonts)
         if finished:
             return nodes
+    elif item.kind is AtomType.RADICAL:
+        nodes, delta = _make_radical(item, style, fonts), 0
     elif item.kind is AtomType.OVER:
         nodes, delta = _make_over(item, style, fonts), 0
     elif item.kind is AtomType.UNDER:
@@ -340,6 +602,10 @@ def _translate_nucleus(field: Field, style: Style, fonts: MathFonts) -> tuple[li
             return [box], 0
         case SubList(items):
             return mlist_to_hlist(items, style, fonts), 0
+        case MathText():
+            return [_text_box(field, style, fonts)], 0
+        case MuGlue():
+            raise TypeError("a MuGlue is the nucleus of a SPACE atom and of nothing else")
 
 
 def _clean_box(field: Field, style: Style, fonts: MathFonts) -> Box:
@@ -364,6 +630,10 @@ def _clean_box(field: Field, style: Style, fonts: MathFonts) -> Box:
             nodes = [box]
         case SubList(items):
             nodes = mlist_to_hlist(items, style, fonts)
+        case MathText():
+            already = _text_box(field, style, fonts)
+        case MuGlue():
+            raise TypeError("a MuGlue is the nucleus of a SPACE atom and of nothing else")
     if already is not None:
         return already
 
@@ -372,6 +642,219 @@ def _clean_box(field: Field, style: Style, fonts: MathFonts) -> Box:
     if len(contents) == 2 and isinstance(contents[0], CharNode) and isinstance(contents[1], Kern):
         packed = replace(packed, contents=(contents[0],))
     return packed
+
+
+def _text_box(field: MathText, style: Style, fonts: MathFonts) -> Box:
+    r"""
+    Prose inside a formula, packed at the size of the style it landed in.
+
+    What `\text{...}` gives (amsmath's, which follows the style; plain TeX's
+    `\hbox` would stay at text size in a subscript). Set the way
+    `advtext.markdown` sets a run of prose -- the face's own pair kerning, and
+    an interword glue for each space -- except that every space is kept,
+    leading and trailing ones too, because here they are the request.
+
+    The glue keeps its stretch and shrink, which do nothing: the box is packed
+    to its natural width and so is everything it is ever put in.
+
+    Raises `MissingGlyphError` for a character the face has no glyph for.
+    """
+    if fonts.text is None:
+        raise TextFaceUnavailableError(
+            f"{field.text!r} is prose, and these MathFonts were built without `text`"
+        )
+    key = font_key(field.face, fonts.sizes[size_for(style)])
+    try:
+        metrics = fonts.text(key)
+    except MathLayoutError:
+        raise
+    except Exception as error:
+        raise TextFaceUnavailableError(f"{field.face.value} did not resolve: {error}") from error
+    space = round(metrics.space_width)
+    nodes: list[Node] = []
+    characters = field.text
+    for index, character in enumerate(characters):
+        if character.isspace():
+            nodes.append(Glue(interword_glue(space)))
+            continue
+        if not metrics.has(ord(character)):
+            raise MissingGlyphError(character, field.face)
+        nodes.append(CharNode(key, ord(character)))
+        following = characters[index + 1 : index + 2]
+        if following and not following.isspace():
+            kern = round(metrics.kern(ord(character), ord(following)))
+            if kern:
+                nodes.append(Kern(width=kern))
+    return hpack(nodes, measure=fonts.measure).box
+
+
+# --------------------------------------------------------------------------------
+# var_delimiter, and the two things that call it
+# --------------------------------------------------------------------------------
+
+
+def _delimiter_box(
+    codepoint: int,
+    style: Style,
+    needed: Scaled,
+    fonts: MathFonts,
+    *,
+    at_least: Scaled | None = None,
+) -> tuple[Box, MathSize]:
+    """
+    The smallest variant of a delimiter whose height plus depth is `needed` or more.
+
+    Returned with the size of the font it was found in, which is not always
+    the style's: see the outer loop below. A caller that draws something to
+    meet the glyph -- a radical's rule -- needs that font's numbers.
+
+    `at_least` is what the largest variant must reach to be used when none
+    reaches `needed`. Left out, it is `needed`: nothing short is ever returned.
+
+    `var_delimiter`'s search (`tex.web:13941-13968`) without its extensible
+    half. Two loops, as there: the outer one runs from the font of the current
+    size up to the text font (`z:=z+s+16; repeat z:=z-16 ... until z<16`), so a
+    delimiter in a subscript is tried at script size first and borrows a larger
+    font only if it must; the inner one follows the variant chain
+    (`list_tag`). The first character tall enough wins.
+
+    The box is `char_box`'s (`tex.web:13980`): the one character, with its
+    italic correction in the width. Unshifted -- the two callers shift it by
+    different rules.
+
+    Raises `DelimiterTooSmallError` when the largest it saw is under
+    `at_least`, where TeX would settle for it; the module docstring says why.
+    """
+    floor = needed if at_least is None else min(at_least, needed)
+    largest: Scaled = 0
+    fallback: tuple[Box, MathSize] | None = None
+    size = size_for(style)
+    while True:
+        face = fonts.faces[size]
+        key = fonts.keys[size]
+        chain = face.vertical_variants(codepoint)
+        for candidate in [variant.codepoint for variant in chain] or [codepoint]:
+            node = CharNode(key, candidate)
+            dimens = fonts.measure(node)
+            extent = dimens.height + dimens.depth
+            if extent < needed and extent <= largest:
+                continue
+            box = Box(
+                kind=BoxKind.HLIST,
+                contents=(node,),
+                width=dimens.width + round(face.italic_correction(candidate)),
+                height=dimens.height,
+                depth=dimens.depth,
+            )
+            if extent >= needed:
+                return box, size
+            # `tex.web:13954`: "if hd>w then begin f:=g; c:=y; w:=hd" -- the
+            # largest so far is remembered in case nothing is large enough.
+            largest = extent
+            fallback = (box, size)
+        if size is MathSize.TEXT:
+            if fallback is not None and largest >= floor:
+                return fallback
+            raise DelimiterTooSmallError(codepoint, needed, largest)
+        size = MathSize(size - 16)
+
+
+def _make_left_right(
+    atom: Atom, style: Style, max_d: Scaled, max_h: Scaled, fonts: MathFonts
+) -> Box:
+    r"""
+    `make_left_right` (`tex.web:15017-15030`): one delimiter of a `\left`/`\right`.
+
+    `delta1` is the content's greater reach from the *axis*, up or down, so the
+    delimiter is symmetric about the axis even when the content is not. It must
+    then cover `delimiter_factor` thousandths of twice that, and may not fall
+    short of twice that by more than `delimiter_shortfall` (`tex.web:15025`
+    and 15026, both as written: 901 and an absolute 5pt). The division by 500
+    before the multiplication is the source's, kept: it is how TeX avoids
+    overflow and it costs under a hundredth of a point.
+
+    The smallest variant satisfying both is taken. When none does, the largest
+    is -- TeX's own answer for a font with no extensible recipe
+    (`tex.web:13895`) -- provided it covers `LARGEST_VARIANT_MUST_COVER` of
+    twice `delta1`, and the formula is refused only below that. That fraction
+    is not TeX's; the constant's docstring says whose it is and why.
+
+    The box comes back centred on the axis, which is `var_delimiter`'s last act
+    (`tex.web:13932`) and is applied to the null delimiter too.
+    """
+    params = fonts.params(style)
+    axis = round(params.axis_height)
+    delta2 = max_d + axis
+    delta1 = max_h + max_d - delta2
+    if delta2 > delta1:
+        delta1 = delta2
+    delta = (delta1 // 500) * DELIMITER_FACTOR
+    delta2 = delta1 + delta1 - DELIMITER_SHORTFALL
+    if delta < delta2:
+        delta = delta2
+    # Not TeX's: what the largest variant must reach when none reaches `delta`.
+    numerator, denominator = LARGEST_VARIANT_MUST_COVER
+    covering = -((-2 * delta1 * numerator) // denominator)
+
+    match atom.nucleus:
+        case None:
+            box = Box(
+                kind=BoxKind.HLIST,
+                width=round(params.math_quad * _NULL_DELIMITER_SPACE_QUADS),
+            )
+        case MathChar(codepoint):
+            box, _ = _delimiter_box(codepoint, style, delta, fonts, at_least=covering)
+        case _:
+            raise TypeError(f"a delimiter is one math character or None, not {atom.nucleus!r}")
+    return replace(box, shift_amount=_half(box.height - box.depth) - axis)
+
+
+def _make_radical(atom: Atom, style: Style, fonts: MathFonts) -> list[Node]:
+    """
+    `make_radical` (`tex.web:14476-14490`): a surd, a rule, and the radicand under it.
+
+    The radicand is set **cramped**, so a superscript inside does not rise into
+    the rule. The clearance between it and the rule is larger in display style
+    -- TeX computes `default_rule_thickness + |math_x_height|/4` there and
+    `default_rule_thickness * 5/4` elsewhere, and the font states both results.
+    The surd is then the smallest variant covering radicand, clearance and
+    rule, and whatever it has to spare is split: "the symbol will be placed so
+    that the actual clearance is `clr` plus half the excess" (`tex.web:14472`).
+
+    The glyph hangs from the top of its ink; see the module docstring. In TeX's
+    terms `depth(y)` is the surd's height plus depth less the rule thickness.
+
+    The result is one box, as it is in the source (`hpack(y,natural)`), so
+    scripts hang off the whole radical.
+
+    **A radical is refused when no surd covers it**, and does not take the
+    largest-variant allowance a `\\left` pair has: a parenthesis that stops
+    short still reads as a parenthesis, and a surd that does not reach its
+    rule is a broken sign (the lead's decision, review 2 item 9).
+    """
+    params = fonts.params(style)
+    radicand = _clean_box(atom.nucleus, cramped_style(style), fonts)
+    thickness = round(params.radical_rule_thickness)
+    if is_display(style):
+        clearance = round(params.radical_display_style_vertical_gap)
+    else:
+        clearance = round(params.radical_vertical_gap)
+
+    covered = radicand.height + radicand.depth + clearance
+    surd, found_at = _delimiter_box(SURD, style, covered + thickness, fonts)
+    # `tex.web:14489`: `overbar(x,clr,height(y))` -- the rule is as thick as the
+    # surd *that was found* says, not as the current size's rule. They differ
+    # when a radical in a script outgrows the script font's chain and borrows a
+    # text-size surd, whose stroke is the text font's: review 2 suspected the
+    # rule then kept the script face's thickness and stepped at the join, and
+    # it did (measured in `tests/test_mathlist.py`).
+    thickness = round(fonts.faces[found_at].math.radical_rule_thickness)
+    excess = (surd.height + surd.depth - thickness) - covered
+    if excess > 0:
+        clearance += _half(excess)
+    top = radicand.height + clearance + thickness
+    surd = replace(surd, shift_amount=surd.height - top)
+    return [hpack([surd, _overbar(radicand, clearance, thickness)], measure=fonts.measure).box]
 
 
 # \hss: no natural width, infinitely stretchable and infinitely shrinkable, so
@@ -524,9 +1007,17 @@ def _make_scripts(
     smaller = Style.SCRIPT if style < Style.SCRIPT else Style.SCRIPT_SCRIPT
     smaller_params = fonts.params(smaller)
 
-    if nodes and isinstance(nodes[0], CharNode):
+    if isinstance(atom.nucleus, MathChar) and nodes and isinstance(nodes[0], CharNode):
         # §756: a bare character has no box to measure, so the shifts start at
-        # zero and the clamps below do all the work.
+        # zero and the clamps below do all the work. `tex.web:14889` asks
+        # `is_char_node(p)` of the nucleus's *translation*, and a nucleus that
+        # is a list has been packed into a box by then (`sub_mlist`,
+        # `tex.web:14848-14851`), so only a nucleus that is one character can
+        # take this branch. This used to ask whether the first node was a
+        # character, which a group beginning with a letter also is: `{x^2}^3`
+        # hung its 3 where a bare `x^3` would and set as x-superscript-23
+        # (review 2, item 1). A group's nodes are not packed here as the source
+        # packs them; the box measured below is the same box either way.
         shift_up: Scaled = 0
         shift_down: Scaled = 0
     else:
@@ -724,6 +1215,11 @@ def _second_pass(translated: Sequence[_Translated], style: Style, fonts: MathFon
     out: list[Node] = []
     previous: AtomType | None = None
     for item in translated:
+        if item.kind is None:
+            # A node, not a noad: linked in as it stands, and `r_type` is left
+            # alone, so the atoms either side still space against each other.
+            out.extend(item.nodes)
+            continue
         if previous is not None:
             spec = _inter_atom_glue(previous, item.kind, style, fonts)
             if spec is not None:
@@ -756,7 +1252,7 @@ def _inter_atom_glue(
     return _from_mu(mu_glue, fonts.mu(style))
 
 
-def _from_mu(mu_glue: _MuGlue, mu: Scaled) -> GlueSpec:
+def _from_mu(mu_glue: MuGlue, mu: Scaled) -> GlueSpec:
     """
     §716's `math_glue`: scale a spec expressed in math units into real lengths.
     """

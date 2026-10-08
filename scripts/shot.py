@@ -14,16 +14,19 @@ then delegates to the real one. Every font, callback and draw call is the same
 as `make run`. A screenshot script that rebuilt the params itself would
 photograph a second app that merely resembles the first.
 
-Two things were believed here for most of this project's life and are false in
-this environment; both are load-bearing for this script:
+Two things were believed here for most of this project's life and were false in
+the session this script was written in; both are load-bearing for it:
 
-  * *"No display is reachable."*  `DISPLAY=:1` is live, `AF_UNIX` connects to
-    `/tmp/.X11-unix/X1`, and a real window opens in well under a second with no
-    Xvfb. `scripts/shot.sh` is the fallback for a machine where that is not
-    true -- it starts an Xvfb inside a user namespace -- and `make
-    shot-headless` runs it. It is slower by two orders of magnitude (it sleeps
-    22s per tab and photographs the X root window with `xwd`), so it is the
-    fallback rather than the path.
+  * *"No display is reachable."*  In that session `DISPLAY=:1` was live,
+    `AF_UNIX` connected to `/tmp/.X11-unix/X1`, and a real window opened in well
+    under a second with no Xvfb. That is a fact about a session: in the
+    sandboxed session of 2026-10-06 `DISPLAY=:1` was set and unreachable
+    (`socket(AF_UNIX)` raised `PermissionError`) and this script died in GLFW
+    until it was run on an Xvfb in a user namespace over TCP -- the shell
+    `scripts/mouse_probe.py::xvfb_command` builds, with which one shot took
+    about 6s. `scripts/shot.sh` (`make shot-headless`) is the older fallback of
+    the same kind; it sleeps 22s per tab and photographs the X root window with
+    `xwd`, and was not run in that session.
   * *"`hello_imgui.final_app_window_screenshot()` needs numpy and cv2, neither
     of which is installed."*  It needs numpy only, numpy is a dev dependency in
     `pyproject.toml`, and cv2 is not involved. Without numpy the call raises
@@ -51,8 +54,17 @@ Usage:
 
     python scripts/shot.py --tab document --width 1400 --out artifacts/doc.png
 
-`make shot` wraps it, `make shot-all` loops it over the tabs, and both pass
+`make shot` wraps it, `make shot-all` loops it over the pages, and both pass
 `ARGS` through.
+
+**`--list` is where `make shot-all` gets its list.** It prints one `--tab`
+request per line -- every state every discovered page asks to be photographed
+in (`advtext.ui.pages.PageSpec.shots`) -- and opens no window. The Makefile used
+to carry that list and it went stale; this script used to refuse to carry one for
+that reason. Neither carries one now: the pages are found by scanning
+`advtext/ui/pages/`, and a module there that cannot be loaded makes `--list`
+exit 1 naming it, so `make shot-all` stops instead of photographing what is
+left and reporting nothing missing.
 """
 
 from __future__ import annotations
@@ -266,6 +278,36 @@ def _grab(out: Path) -> tuple[int, int]:
     return width, height
 
 
+def list_shots() -> int:
+    """
+    Print every `--tab` request `make shot-all` photographs; 1 if a page is broken.
+
+    The requests come from `advtext.ui.pages.discover`, which is what the app's
+    sidebar is drawn from, so the list cannot name a page the app lacks or lack
+    one it has. Imports no ImGui and opens nothing.
+
+    **A module that fails to load is an error here and not a shorter list.**
+    Nothing is printed to stdout in that case, so a caller that captures the
+    output and ignores the status gets an empty list rather than a plausible
+    partial one.
+    """
+    from advtext.ui.pages import discover
+
+    found = discover()
+    if found.failures:
+        print(
+            "not every module under advtext/ui/pages/ could be loaded as a page, so the "
+            "list would be short:",
+            file=sys.stderr,
+        )
+        for failure in found.failures:
+            print(f"  {failure.module}: {failure.reason}", file=sys.stderr)
+        return 1
+    for spec in found.shot_specs():
+        print(spec)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """
     Parse the arguments, run the real app for N frames, write the PNG.
@@ -276,15 +318,30 @@ def main(argv: list[str] | None = None) -> int:
         "--tab",
         default=None,
         help=(
-            "tab to select on the first frame, by name, case-insensitively. "
-            "Passed straight through to advtext.ui.app.run, with no list of "
-            "names here -- a copy of the tab list would go stale the first "
-            "time a tab was added."
+            "page to select on the first frame, by name, case-insensitively, "
+            "with options after a colon (columns:3,debug). Passed straight "
+            "through to advtext.ui.app.run, with no list of names here -- a "
+            "copy of the list would go stale the first time a page was added. "
+            "--list prints the requests make shot-all uses."
+        ),
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help=(
+            "print every --tab request `make shot-all` photographs, one per "
+            "line, and exit without opening a window. Exits 1 if a module "
+            "under advtext/ui/pages/ could not be loaded as a page."
         ),
     )
     parser.add_argument("--source", type=Path, default=None, help="a markdown file to display")
-    parser.add_argument("--width", type=int, default=1100)
-    parser.add_argument("--height", type=int, default=800)
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=None,
+        help="window width in pixels; the app's own (advtext.ui.app.WINDOW_SIZE) if omitted",
+    )
+    parser.add_argument("--height", type=int, default=None, help="window height, likewise")
     parser.add_argument(
         "--frames",
         type=int,
@@ -300,6 +357,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.frames < 1:
         parser.error("--frames must be at least 1")
+    if args.list:
+        return list_shots()
     if not os.environ.get("DISPLAY") and not args.force:
         print(NO_DISPLAY, file=sys.stderr)
         return 2
@@ -308,10 +367,16 @@ def main(argv: list[str] | None = None) -> int:
 
     from advtext.ui import app as advtext_app
 
+    # The app's own size when none is asked for, so an unadorned shot is a
+    # photograph of what `make run` opens. That size is 1300 wide since the
+    # sidebar replaced the tab bar; the body of a page is as wide as it was.
+    width = args.width if args.width is not None else advtext_app.WINDOW_SIZE[0]
+    height = args.height if args.height is not None else advtext_app.WINDOW_SIZE[1]
+
     real_run = immapp.run
 
     def patched_run(runner: Any, *rest: Any) -> Any:
-        apply_window_size(runner, args.width, args.height)
+        apply_window_size(runner, width, height)
         install_frame_limit(
             runner,
             args.frames,
@@ -329,15 +394,15 @@ def main(argv: list[str] | None = None) -> int:
         # here even though it is required on the assignment above.
         immapp.run = real_run
 
-    width, height = _grab(args.out)
+    captured = _grab(args.out)
     warning = size_warning(
-        (args.width, args.height),
         (width, height),
+        captured,
         hello_imgui.final_app_window_screenshot_framebuffer_scale(),
     )
     if warning is not None:
         print(warning, file=sys.stderr)
-    print(f"wrote {args.out} ({width}x{height})")
+    print(f"wrote {args.out} ({captured[0]}x{captured[1]})")
     return 0
 
 

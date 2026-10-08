@@ -1,0 +1,13 @@
+diff --cc retry.py
+index 1a2b3c4,5d6e7f8..9a8b7c6
+--- a/retry.py
++++ b/retry.py
+@@@ -1,5 -1,5 +1,6 @@@
+  def retry(call, attempts=3):
+-     for _ in range(attempts):
+ -    for n in range(attempts):
+++    for attempt in range(attempts):
+          try:
+              return call()
+ +        except TimeoutError:
+++            sleep(attempt)

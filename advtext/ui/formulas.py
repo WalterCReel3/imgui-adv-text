@@ -9,7 +9,10 @@ over font metrics and the result is a packed `advtext.nodes.Box` that
 **Every formula is written out by hand from the atom vocabulary.** There is no
 LaTeX parser in this project and there should not be -- `advtext.math.atoms` says
 why, and it is the right call: a parser would become the thing being demonstrated
-instead of the typesetting. The cost is that `ENTRIES` below is verbose. The
+instead of the typesetting. (The engine still has none; `advtext.mathtext` is an
+extension above it that reads a `$...$` subset into these same atoms, and
+`tests/test_mathtext.py` writes every entry here as such a source and holds it to the
+box the hand-built entry sets.) The cost is that `ENTRIES` below is verbose. The
 benefit is that each entry names the atom *classes* explicitly, which is precisely
 the input the spacing rules consume, so a reader of this file can see what is being
 claimed.
@@ -92,17 +95,41 @@ it for every caption in `ENTRIES` at once, which is the check that scales.
 
 ## What is not here, and why
 
-**No radicals, no accents, no stretching delimiters.** `advtext.math` declares
-Radical and Accent atoms so the spacing map is total and raises on them rather than
-pretending, and every one of the three needs the delimiter chain walk that
-`var_delimiter` serves. So: no `√`, no `x̄`, no vector arrows, and no paren grown
-to fit a tall fraction.
+**No accents and nothing assembled from pieces.** `advtext.math` declares an Accent
+atom so the spacing map is total and raises on it rather than pretending. So: no
+`x̄` and no vector arrows.
 
-Fixed-size parentheses **do** work and are used -- `open_("(")` and `close_(")")`
-are ordinary atoms carrying the Open and Close spacing classes, and they set at the
-size of the style they are in. `cauchy` and `euler` both rely on that. What they
-cannot do is grow, so no entry here puts a paren around a fraction taller than one
-line; `cauchy`'s parens sit around `z` and around `a`, never around the quotient.
+Fixed-size parentheses work and the nine entries use only those -- `open_("(")` and
+`close_(")")` are ordinary atoms carrying the Open and Close spacing classes, and
+they set at the size of the style they are in. `cauchy` and `euler` both rely on
+that, and `cauchy`'s parens sit around `z` and around `a`, never around the
+quotient.
+
+## Two more plates, after the nine
+
+`SIZED_ENTRIES` holds a radical and a `\left`...`\right` pair, which the engine
+has set since the second build. Each is the only witness to its rule, by the
+standard of the table above:
+
+| entry | the rule it is the only witness to | `tex.web` |
+|---|---|---|
+| `radical` | the surd is *chosen* from the font's chain to cover its radicand | 14476, §737 |
+| `sized-delimiters` | a left-right pair is sized to the list between it | 15017, §762 |
+
+Both are a choice among the outlines the font carries -- five surds, eight
+parentheses -- and never a stretch. A radicand taller than the last surd is refused
+(`advtext.math.DelimiterTooSmallError`). A `\left`...`\right` pair is refused the same
+way only when the largest outline covers less than three quarters of what TeX's rule
+asks of it (`advtext.math.mlist.LARGEST_VARIANT_MUST_COVER`, the lead's number and not
+TeX's, review 2 item 9); between that and the rule the largest is set and falls short.
+Neither entry asks for either.
+
+**They are the tenth and eleventh of `ENTRIES`**, which is `CLASSIC_ENTRIES` (the
+nine) followed by these two. They were held apart for a morning, because
+`tests/test_mathtext.py` writes every entry as a `$...$` source and its parser
+did not yet read `\sqrt` or `\left`; it does now, and the two are folded in.
+`tests/test_formulas.py` holds them to every standard the nine are held to, and
+holds the nine to the boxes they set before the engine grew.
 
 Also absent: colour (the node model carries none), and any notion of which faces
 ImGui loaded. This module takes `advtext.ui.app.load_fonts`'s posture one layer up.
@@ -128,7 +155,8 @@ letter survives into any panel.
 ## Cost
 
 **45 ms at a 468 px measure, warm, best of three**, against a 16.7 ms frame budget,
-of which the great majority is the nine captions going through `break_paragraph`.
+of which the great majority is the captions going through `break_paragraph` (measured
+when there were nine entries; not re-taken for eleven).
 The mlist conversions are a few milliseconds -- nothing in a formula is line-broken.
 The first call in a process additionally pays the font open, which dominates
 everything else. Build once per measure and keep it; `advtext.ui.app.App.gallery`
@@ -144,6 +172,8 @@ from advtext.fontmetrics import Face, FontMetrics, MathFontMetrics
 from advtext.markdown import build_document
 from advtext.math import (
     Atom,
+    AtomType,
+    Field,
     Fraction,
     Limits,
     MathChar,
@@ -151,10 +181,10 @@ from advtext.math import (
     MathItem,
     MathResolver,
     Style,
-    SubBox,
     SubList,
     bin_,
     close_,
+    delimited,
     frac,
     group,
     inner,
@@ -163,9 +193,11 @@ from advtext.math import (
     op,
     open_,
     ord_,
+    radical,
     rel,
 )
 from advtext.math.atoms import Buildable
+from advtext.math.mlist import SURD
 from advtext.nodes import Box, CharNode, FontKey, Glue, GlueSpec, Kern, Node
 from advtext.pack import (
     IGNORE_DEPTH,
@@ -188,9 +220,11 @@ from advtext.ui import HSS, compose_blocks
 from advtext.units import Scaled, sp_from_px
 
 __all__ = [
+    "CLASSIC_ENTRIES",
     "ENTRIES",
     "FORMULA_PX",
     "LABEL_PX",
+    "SIZED_ENTRIES",
     "SUMMATION",
     "Entry",
     "EntryDef",
@@ -422,7 +456,7 @@ def _continued_fraction(depth: int = 4) -> Fraction:
     return inner_field
 
 
-ENTRIES: tuple[EntryDef, ...] = (
+CLASSIC_ENTRIES: tuple[EntryDef, ...] = (
     EntryDef(
         key="operator-style",
         title="A big operator, twice",
@@ -620,11 +654,84 @@ ENTRIES: tuple[EntryDef, ...] = (
     ),
 )
 """
-The gallery, in the order it is set.
+The first nine plates of the gallery, in the order they are set.
 
-Nine plates. The module docstring has the table of what each one is the only
-witness to; if an entry is ever added that duplicates a row of it, that entry is
-decoration and should be cut instead.
+The module docstring has the table of what each one is the only witness to; if
+an entry is ever added that duplicates a row of it, that entry is decoration and
+should be cut instead. Kept under a name of its own because
+`tests/test_formulas.py` holds these nine to a digest taken before the engine
+grew, and `ENTRIES` below is longer.
+"""
+
+
+_QUOTIENT = frac(
+    group(var("a", sup="2"), bin_("+"), var("b", sup="2")),
+    group(var("c", sup="2")),
+)
+"""
+The tall thing both of `SIZED_ENTRIES` are built around: one display fraction.
+
+Shared so the radical and the parentheses are measured against the same content.
+Measured at the gallery's size, in display style: it reaches 1.26 em above the
+axis and 0.95 em below, so `make_left_right` asks for 2.26 em and gets
+`parenleft.v6`, 2.39 em and the seventh of the eight parentheses Latin Modern Math
+carries; set cramped under a rule it takes `radical.v3`, 2.4 em and the fourth of
+five surds. The one-line radicand beside it takes `radical.v1`. Neither is at the
+end of its chain, so neither plate is one font tweak away from a refusal.
+"""
+
+SIZED_ENTRIES: tuple[EntryDef, ...] = (
+    EntryDef(
+        key="radical",
+        title="A radical, sized to its radicand",
+        caption=(
+            "**A radical, twice.** The root sign is chosen, never stretched: the font "
+            "carries five of them, and the smallest that covers the radicand, the "
+            "clearance above it and the rule is the one set. So the two signs here are "
+            "*different outlines*, and the rule meets each at the top of its stroke."
+        ),
+        panels=(
+            PanelDef(
+                (radical(group(var("a", sup="2"), bin_("+"), var("b", sup="2"))),),
+                Style.DISPLAY,
+                "one line",
+            ),
+            PanelDef((radical(_QUOTIENT),), Style.DISPLAY, "a fraction"),
+        ),
+    ),
+    EntryDef(
+        key="sized-delimiters",
+        title="Parentheses, fixed and fitted",
+        caption=(
+            "**Parentheses, fixed and fitted.** The same fraction between the same two "
+            "characters. On the left they are ordinary Open and Close atoms and stay "
+            "the size of the type. On the right they are a left-right pair: §762 "
+            "measures what stands between them and takes the smallest parenthesis in "
+            "the font that covers it, centred on the axis."
+        ),
+        panels=(
+            PanelDef(
+                (open_("("), inner(_QUOTIENT), close_(")")),
+                Style.DISPLAY,
+                "fixed",
+            ),
+            PanelDef((delimited("(", _QUOTIENT, ")"),), Style.DISPLAY, "fitted"),
+        ),
+    ),
+)
+"""
+The two plates the second build added: a radical, and a sized delimiter pair.
+
+The module docstring has the rule each is the only witness to.
+"""
+
+ENTRIES: tuple[EntryDef, ...] = (*CLASSIC_ENTRIES, *SIZED_ENTRIES)
+"""
+The gallery, in the order it is set: the nine, then the two.
+
+What `build_gallery` sets by default and so what the Formula page shows.
+`tests/test_mathtext.py` writes every panel of every entry as a `$...$` source
+and holds it to the box the hand-built entry sets.
 """
 
 
@@ -642,6 +749,13 @@ def codepoints(items: Iterable[MathItem]) -> tuple[int, ...]:
     that happens to pack -- has no other route to the characters. Duplicates are
     kept: a list that names `ψ` twice reports it twice, and collapsing them here
     would make "how many glyphs is this" unanswerable from the outside.
+
+    **These are the math face's characters, as the formula names them.** A radical
+    names its surd, though no field holds it. A sized delimiter is reported as the
+    character that was asked for, not as whichever variant was set -- the count
+    still agrees with the glyphs shipped, and the variant's codepoint is minted
+    and means nothing outside the face. Prose in a `MathText` is not reported at
+    all: it is set in another face, and every caller of this asks about this one.
     """
     out: list[int] = []
     for item in items:
@@ -649,15 +763,18 @@ def codepoints(items: Iterable[MathItem]) -> tuple[int, ...]:
             _field_codepoints(item.numerator, out)
             _field_codepoints(item.denominator, out)
             continue
+        if item.kind is AtomType.RADICAL:
+            out.append(SURD)
         _field_codepoints(item.nucleus, out)
         _field_codepoints(item.sup, out)
         _field_codepoints(item.sub, out)
     return tuple(out)
 
 
-def _field_codepoints(field_value: MathChar | SubBox | SubList | None, out: list[int]) -> None:
+def _field_codepoints(field_value: Field, out: list[int]) -> None:
     """
-    Accumulate one field's codepoints. A `SubBox` carries none -- it is already set.
+    Accumulate one field's codepoints. A `SubBox` carries none -- it is already set
+    -- and neither does a space or a run of prose.
     """
     match field_value:
         case MathChar(codepoint):
@@ -998,7 +1115,14 @@ def build_gallery(
     """
     math_size = sp_from_px(formula_px, theme.px_per_inch)
     label_size = sp_from_px(LABEL_PX, theme.px_per_inch)
-    fonts = math_fonts(math_size, fontlib_math_metrics if math_resolve is None else math_resolve)
+    fonts = math_fonts(
+        math_size,
+        fontlib_math_metrics if math_resolve is None else math_resolve,
+        # So a formula holding prose packs: the prose keys go where the captions'
+        # do. Nothing in `ENTRIES` holds any, and `fonts.measure` is otherwise the
+        # function it was.
+        text=resolve,
+    )
     resolved = char_measure(resolve) if measure is None else measure
 
     try:

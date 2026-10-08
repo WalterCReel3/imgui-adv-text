@@ -59,6 +59,15 @@ from typing import Protocol
 class Face(enum.Enum):
     """
     The typographic roles this project renders, named by role rather than by family.
+
+    `CODE_BOLD` is the one role with no file behind it in the fonts imgui-bundle
+    ships: the bundle has a single Inconsolata weight. It exists so that a host
+    with a bold monospace of its own has a role to register it under
+    (`advtext.fontlib.register_font`); until one is registered `advtext.fontlib`
+    backs it with `PROSE_BOLD`'s file, which is what bold inside code was set in
+    before this member existed. So iterating `Face` now visits a role that may
+    share a file with another -- a caller that wants one entry per *file* asks
+    `advtext.fontlib.backing_face`.
     """
 
     PROSE = "prose"
@@ -66,6 +75,7 @@ class Face(enum.Enum):
     PROSE_ITALIC = "prose-italic"
     PROSE_BOLD_ITALIC = "prose-bold-italic"
     CODE = "code"
+    CODE_BOLD = "code-bold"
     MATH = "math"
 
 
@@ -193,6 +203,14 @@ class MathParams:
     big_op_spacing3: float
     big_op_spacing4: float
     big_op_spacing5: float
+    # No TeX parameter, because TeX reads all three off other things: the rule
+    # over a radicand is as thick as the surd glyph is *tall* (a TFM convention,
+    # make_radical at tex.web:14476), and the clearance under it is computed from
+    # ξ8 and σ5. OpenType states the three outright. For Latin Modern Math they
+    # are TeX's formula evaluated, which tests/test_fontmetrics.py pins.
+    radical_rule_thickness: float
+    radical_vertical_gap: float
+    radical_display_style_vertical_gap: float
     # Dimensionless. TeX takes the script sizes from \scriptfont and \scriptscriptfont
     # and has no parameter for the ratio; OpenType states it, so we use it.
     script_scale: float

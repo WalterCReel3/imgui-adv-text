@@ -1,0 +1,3 @@
+    timeout = config.get("timeout", 30)
+    retries = config.get("retries", 3)
+    client = Client(host, timeout=timeout, retries=retries)

@@ -69,6 +69,14 @@ way, with geometry that was provably correct in scaled points and wrong on scree
         imgui_draw.py   the ImDrawList renderer, and all the pixel-grid decisions
       ui/               the demo app: tabs, document view, specimen, formulas
 
+That map is the engine and was drawn before two builds added to it. Since
+2026-10-07, beside what it shows: `stream.py` (a document that arrives in
+pieces), `spans.py` (links, colour, find), `diff.py` (a diff as a pure model),
+`mathtext.py` (a `$...$` subset read into `math/`'s atoms); and under `ui/`,
+`bare_view.py`, `stream_view.py` and `diff_view.py` (the views a host embeds),
+`units.py` (per-block layout), and `pages/`, one module per page of the demo's
+sidebar, which is what "tabs" became.
+
 The direction of dependency is strictly downward. `fontlib` is the only module
 permitted to import fontTools, so a font question has one place to be answered.
 

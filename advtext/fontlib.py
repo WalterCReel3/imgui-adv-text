@@ -2,6 +2,35 @@ r"""
 The only module in this project that imports fontTools, and the only one that names
 a font file.
 
+**fontTools is imported when a font is first opened, not when this module is.**
+The three functions that need it -- `_face_data`, `_FaceData.glyph_bounds` and
+`imgui_font_file` -- import it themselves. A host that imports `advtext` to find
+out what is in it, or that only ever lays out with its own `MetricsResolver`,
+therefore pays for no fontTools at all, and `tests/test_fonts_setup.py` runs a
+fresh interpreter to hold that. What cannot be deferred is fontTools for a face
+that *is* measured: every face is a `TTFont`, prose as much as math. The math
+face's own cost -- reading its `MATH` table, minting codepoints, and
+`imgui_font_file` writing a patched copy -- is paid only when `Face.MATH` is
+asked for, which nothing does until mathematics is set.
+
+## The files are a registry a host can write to
+
+`_FONT_FILES` names what imgui-bundle ships and is the default for every role it
+lists. `register_font` puts a host's own file in front of it for one role, and
+that is how a role the bundle has no file for gets one: `Face.CODE_BOLD` has no
+bundled file (the bundle ships one Inconsolata weight), so it is backed by
+`Face.PROSE_BOLD`'s file -- which is exactly what bold inside code has always
+been set in -- until a host registers a bold monospace. `backing_face` says
+which of the two a role currently is.
+
+**Registration must precede building.** `register_font` clears every cache this
+module holds, so the next measurement reads the new file. It cannot reach what
+was already made from the old one: a document's kerns are baked into its
+material, `advtext.style.char_measure` memoises widths in a closure this module
+never sees, and a layout cache is keyed by content and not by font file. A host
+registers its fonts once, at start-up, before the first `Theme` measures
+anything; one that re-registers later rebuilds its documents and its measure.
+
 `docs/decisions.md` records why metrics come from here rather than from ImGui: ImGui's
 baked advances are already pixel-rounded, so measuring through it rounds twice and the
 error accumulates along a line; its `GPOS` kerning is not exposed at all; and its
@@ -90,6 +119,22 @@ doing work.
 | ξ11 `big_op_spacing3` | `UpperLimitBaselineRiseMin` | |
 | ξ12 `big_op_spacing4` | `LowerLimitBaselineDropMin` | |
 | ξ13 `big_op_spacing5` | **synthesised** 0.1 em | no counterpart; cmex10's value |
+| -- `radical_rule_thickness` | `RadicalRuleThickness` | TeX: the surd's TFM height |
+| -- `radical_vertical_gap` | `RadicalVerticalGap` | TeX: ξ8 + ξ8/4 |
+| -- `radical_display_style_vertical_gap` | `RadicalDisplayStyleVerticalGap` | TeX: ξ8 + σ5/4 |
+
+**The three radical rows have no TeX parameter because TeX computes them.**
+`make_radical` (`docs/tex.web` line 14476) takes the rule's thickness from the
+*height of the surd glyph* -- a TFM convention under which the glyph's baseline is
+the underside of its own top stroke -- and the clearance from `default_rule_thickness`
+and the x-height. An OpenType surd is an ordinary outline with no such convention
+(Latin Modern Math's base `radical` happens to keep it, at height 40; its four
+larger variants do not, and sit astride the axis instead), so the font states the
+three numbers and `advtext.math.mlist` uses them and hangs the glyph from its ink
+top. For this font they are exactly TeX's formulas evaluated -- 40, 40 + 40/4 = 50
+and 40 + 431/4 = 148 -- which `tests/test_fontmetrics.py` pins, so following the
+font here is following TeX. `RadicalExtraAscender` (also 40) is not read: TeX's
+`overbar` puts one rule thickness of air above the rule, and that is what is done.
 
 **The rule applied, stated once:** prefer the font's own field wherever OpenType has
 one; synthesise only where it has none; and where OpenType folds two of TeX's
@@ -123,15 +168,15 @@ is the reading to revisit first if stacked limits ever look wrong.
 
 from __future__ import annotations
 
+import hashlib
+import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, TypeAlias, assert_never
-
-from fontTools.pens.boundsPen import BoundsPen
-from fontTools.ttLib import TTFont
 
 from advtext.fontmetrics import (
     Face,
@@ -147,6 +192,8 @@ __all__ = [
     "SYNTHETIC_LAST",
     "GlyphSet",
     "MissingFontError",
+    "backing_face",
+    "em_size_for_pixel_height",
     "font_directory",
     "font_file",
     "glyph_name",
@@ -154,7 +201,11 @@ __all__ = [
     "imgui_font_file",
     "math_metrics",
     "metrics",
+    "on_registry_change",
+    "register_font",
+    "registered_fonts",
     "synthetic_codepoints",
+    "unregister_font",
 ]
 
 GlyphSet: TypeAlias = Mapping[str, Any]
@@ -177,6 +228,24 @@ _FONT_FILES: dict[Face, str] = {
     Face.CODE: "Inconsolata-Medium.ttf",
     Face.MATH: "latex/latinmodern-math.otf",
 }
+
+# A role the bundle ships no file for, and the role whose file stands in for it
+# until a host registers one. `Face.CODE_BOLD` -> `Face.PROSE_BOLD` is not a
+# guess at what looks nearest: it is what `advtext.style.Theme.face_for` already
+# returned for bold on a monospace base before the role existed, so a tree with
+# nothing registered sets the same glyphs at the same widths it always did.
+_STAND_INS: dict[Face, Face] = {
+    Face.CODE_BOLD: Face.PROSE_BOLD,
+}
+
+# What a host has registered, by role. Absolute paths, checked when registered.
+_REGISTERED: dict[Face, Path] = {}
+
+# Caches outside this module that are keyed by face and must go when a file
+# changes. A dict used as an ordered set, so registering the same callable twice
+# -- which `advtext.backends.svg` does on every cache miss rather than keep a
+# flag -- is one entry.
+_LISTENERS: dict[Callable[[], None], None] = {}
 
 # Substituted for any codepoint the font does not map. Returning a zero advance
 # instead would make missing text vanish silently, which reads as a layout bug
@@ -211,14 +280,120 @@ def font_directory() -> Path:
     return directory
 
 
+def backing_face(face: Face) -> Face:
+    """
+    The role whose file this role is currently read from: usually itself.
+
+    Different only for a role with neither a registered file nor a bundled one,
+    which today is `Face.CODE_BOLD` and answers `Face.PROSE_BOLD`. Two things
+    read this. `advtext.ui.fonts.load_faces` uses it to hand ImGui each file
+    once rather than loading Roboto Bold a second time under another name. And a
+    caller deciding whether a bold monospace really exists -- a theme choosing
+    whether bold inside code keeps its columns -- asks
+    `backing_face(Face.CODE_BOLD) is Face.CODE_BOLD`.
+    """
+    if face in _REGISTERED or face in _FONT_FILES:
+        return face
+    return _STAND_INS.get(face, face)
+
+
 def font_file(face: Face) -> Path:
     """
     The file backing one role. The single place a font family is named.
+
+    A registered file wins; then the bundle's; then the stand-in role's. A role
+    with none of the three is a `MissingFontError` like any other missing file,
+    not a `KeyError` -- `Face` is an enum a later change may add to, and the
+    callers that degrade on a missing face catch this type.
     """
-    path = font_directory() / _FONT_FILES[face]
+    registered = _REGISTERED.get(face)
+    if registered is not None:
+        return registered
+    bundled = _FONT_FILES.get(face)
+    if bundled is None:
+        stand_in = _STAND_INS.get(face)
+        if stand_in is None:
+            raise MissingFontError(f"{face.value} has no bundled file and none is registered")
+        return font_file(stand_in)
+    path = font_directory() / bundled
     if not path.is_file():
         raise MissingFontError(f"{face.value} maps to {path}, which does not exist")
     return path
+
+
+def register_font(face: Face, path: str | os.PathLike[str]) -> None:
+    """
+    Back a role with a host's own font file, replacing the bundled one if any.
+
+    For a role the bundle has no file for -- `Face.CODE_BOLD` -- this is what
+    gives it one; for the others it swaps the family. The file must exist now:
+    a path that is wrong is a `MissingFontError` here, at the one call a host
+    makes on purpose, rather than at the first glyph of the first frame.
+
+    **Call it before anything is built.** Every cache in this module is cleared,
+    so metrics asked for afterwards come from the new file, and so does
+    `imgui_font_file`. What was built before is not repaired and cannot be: the
+    module docstring lists what holds numbers from the old file. In particular
+    an `ImFont` already loaded from the old file stays loaded -- reload through
+    `advtext.ui.fonts.load_faces` -- and a `char_measure` made earlier must be
+    made again.
+
+    The math role is registrable like any other, and a file with no `MATH`
+    table is refused later, by `math_metrics`, with the file's name in the
+    message.
+    """
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise MissingFontError(f"{face.value} was registered as {resolved}, which does not exist")
+    _REGISTERED[face] = resolved
+    _registry_changed()
+
+
+def unregister_font(face: Face) -> None:
+    """
+    Withdraw a host's file for a role, restoring the bundled file or the stand-in.
+
+    A role with nothing registered is left alone and no cache is touched, so a
+    teardown may call this unconditionally.
+    """
+    if _REGISTERED.pop(face, None) is not None:
+        _registry_changed()
+
+
+def registered_fonts() -> Mapping[Face, Path]:
+    """
+    The files a host has registered, by role. A read-only view, not a copy.
+    """
+    return MappingProxyType(_REGISTERED)
+
+
+def on_registry_change(clear: Callable[[], None]) -> None:
+    """
+    Have `clear` called whenever a role's file changes. Idempotent per callable.
+
+    For a cache outside this module that is keyed by face, which would otherwise
+    go on answering from the old file: `advtext.backends.svg.glyph_outline` is
+    the one in this tree. Not a general event system -- there is no way to
+    remove a listener because nothing has needed one, and the callables are
+    module-level cache clears that live as long as the process.
+    """
+    _LISTENERS[clear] = None
+
+
+def _registry_changed() -> None:
+    """
+    Drop everything derived from a font file, here and in whoever asked to be told.
+
+    All of it and not just the changed role's: `functools.cache` cannot evict by
+    argument, a stand-in role shares another role's file so the dependency is
+    not one-to-one, and this runs a handful of times in the life of a process.
+    """
+    _face_data.cache_clear()
+    _prose_metrics.cache_clear()
+    math_metrics.cache_clear()
+    imgui_font_file.cache_clear()
+    for clear in tuple(_LISTENERS):
+        clear()
 
 
 # --------------------------------------------------------------------------------
@@ -518,6 +693,8 @@ class _FaceData:
         cached = self.bounds.get(name)
         if cached is not None:
             return cached
+        from fontTools.pens.boundsPen import BoundsPen
+
         pen = BoundsPen(self.glyph_set)
         if name in self.glyph_set:
             self.glyph_set[name].draw(pen)
@@ -557,6 +734,8 @@ def _face_data(face: Face) -> _FaceData:
     afterwards. The module docstring says why the close is not negotiable and why it
     does not conflict with `lazy=True`.
     """
+    from fontTools.ttLib import TTFont
+
     path = font_file(face)
     # lazy=True defers decompiling a table, not reading it. See the module docstring:
     # that is what lets this stay cheap for a metrics-only workload and still close.
@@ -711,6 +890,9 @@ class MathFaceMetrics(FaceMetrics):
             big_op_spacing3=dimen("UpperLimitBaselineRiseMin"),
             big_op_spacing4=dimen("LowerLimitBaselineDropMin"),
             big_op_spacing5=0.1 * em,
+            radical_rule_thickness=dimen("RadicalRuleThickness"),
+            radical_vertical_gap=dimen("RadicalVerticalGap"),
+            radical_display_style_vertical_gap=dimen("RadicalDisplayStyleVerticalGap"),
             script_scale=c["ScriptPercentScaleDown"] / 100.0,
             script_script_scale=c["ScriptScriptPercentScaleDown"] / 100.0,
             display_operator_min_height=dimen("DisplayOperatorMinHeight"),
@@ -764,6 +946,39 @@ def metrics(face: Face, size: float) -> FontMetrics:
     if face is Face.MATH:
         return math_metrics(size)
     return _prose_metrics(face, size)
+
+
+def em_size_for_pixel_height(face: Face, pixel_height: float) -> float:
+    """
+    The em size at which this face comes out `pixel_height` tall, as ImGui means it.
+
+    **"Size" names two lengths and a host has the other one.** ImGui sizes a
+    font by pixel *height* -- stb_truetype scales by `hhea` ascender minus
+    descender -- while this project sizes a face by its *em*, which is what
+    `metrics` takes and what a `Theme` is built from. `advtext.backends.
+    imgui_draw.baked_size_px` converts em to height on the way out, as
+    `size * (ascent + descent) / em`; this is its inverse on the way in. A host
+    whose UI font is "16" passes 16 here, builds its theme at the answer, and
+    the text is drawn at ImGui's 16 -- the same raster, not one resampled from a
+    neighbouring size.
+
+    It needs the face because the ratio is the face's: measured on the bundled
+    files, a 16 px height is an em of 13.653 px in Roboto and 15.253 px in
+    Inconsolata. One number for both would be wrong for one of them.
+
+    The answer is in the unit `pixel_height` was given in and is not rounded.
+    Convert it to scaled points with `advtext.units.sp_from_px` on the way into
+    a `FontSpec`; that rounding is why the round trip through `baked_size_px`
+    lands within a few millionths of a pixel of the height asked for rather than
+    on it, and ImGui's own `floor(size + 0.5)` then selects the size meant.
+    """
+    data = _face_data(face)
+    extent = data.ascent + data.descent
+    if extent <= 0:
+        # A face whose hhea states no vertical extent. `baked_size_px` leaves the
+        # size alone in its own degenerate case and this is the same answer.
+        return pixel_height
+    return pixel_height * data.units_per_em / extent
 
 
 def glyph_name(face: Face, codepoint: int) -> str:
@@ -872,10 +1087,15 @@ def imgui_font_file(face: Face) -> Path:
     caller needs no conditional.
 
     For the math face, the font is read, our synthetic mappings are written into
-    every format-12 cmap subtable, and the result is saved beside a temporary
-    name. Nothing else about the font is touched: the outlines, the `MATH` table
-    and the horizontal metrics are the file's own, which is what makes the glyph
-    ImGui bakes the same glyph the SVG backend draws.
+    every format-12 cmap subtable, and the result is saved under a temporary
+    directory, in a file named for the role and for the source file's full path
+    (a digest of it), so re-registering the role to another file never writes
+    over the copy made for the first. The same source is still saved to the same
+    name each time the registry changes -- same bytes, unless the host replaced
+    the file in place, which nothing here detects. Nothing else about the font
+    is touched: the outlines, the `MATH` table and the horizontal metrics are the
+    file's own, which is what makes the glyph ImGui bakes the same glyph the SVG
+    backend draws.
 
     **Degrades rather than raises.** A font with no format-12 subtable cannot
     express a plane-15 codepoint at all, and the honest answer there is the
@@ -884,14 +1104,19 @@ def imgui_font_file(face: Face) -> Path:
     turn a font swap into a crash in the one layer that cannot be tested by
     opening it.
 
-    Verified by `tests/test_imgui_atlas.py`, which bakes the result and asserts
-    that the display-size summation is present and larger than U+2211. That test
-    needs no display; see that file for why.
+    Verified in `tests/test_imgui_draw.py`
+    (`test_the_display_summation_is_a_bigger_glyph_than_the_body_one` and the
+    test above it), which add the result to a real atlas and assert that the
+    display-size summation is present and larger than U+2211. Those tests need
+    no display; see that file for why. (This used to cite a
+    `tests/test_imgui_atlas.py`, which does not exist.)
     """
     path = font_file(face)
     minted = synthetic_codepoints(face)
     if not minted:
         return path
+
+    from fontTools.ttLib import TTFont
 
     font = TTFont(path)
     try:
@@ -900,7 +1125,12 @@ def imgui_font_file(face: Face) -> Path:
             return path
         for table in wide:
             table.cmap.update(minted)
-        destination = _patched_font_directory() / f"{face.value}-{path.name}"
+        # Named for the source's whole path, not just its file name: two
+        # registered files called the same thing in two directories would
+        # otherwise be saved over one another, and the first is the file an
+        # `ImFont` already in a host's atlas was loaded from.
+        digest = hashlib.sha256(os.fsencode(path)).hexdigest()[:12]
+        destination = _patched_font_directory() / f"{face.value}-{digest}-{path.name}"
         font.save(destination)
     finally:
         font.close()

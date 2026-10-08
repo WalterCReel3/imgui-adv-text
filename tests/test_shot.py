@@ -6,15 +6,21 @@ and `tests/test_verify_advances.py` give at length: `scripts/` must stay off
 `sys.path` so no test can import a script by accident and make the suite depend
 on collection order.
 
-**On the one skip in this file.** `docs/status.md` opens by boasting zero skips
-and that boast is worth keeping, so the gate here is narrow on purpose:
-`test_a_real_shot_of_the_real_app_is_a_valid_non_blank_png` skips only when
-`DISPLAY` is unset, and on this machine `DISPLAY=:1` is live, so it *runs* and
-the count stays at zero skipped. It is not gated on the display being
-*reachable*. A set-but-broken `DISPLAY` is an environment fault worth going red
-over, and pre-flighting it would mean guessing at unix sockets, abstract
-sockets, TCP displays and Wayland -- `scripts/run_demo.py::main` makes that
-argument against pre-flighting and it applies unchanged here.
+**On the one skip in this file.** `docs/status.md` values a suite with few
+skips, so the gate here is narrow on purpose:
+`test_a_real_shot_of_the_real_app_is_a_valid_non_blank_png` takes the `window`
+fixture from `tests/conftest.py`, which runs the shot on the session's own
+`DISPLAY` when that accepts a connection, on an Xvfb in a user namespace when
+it does not, and skips only when neither can be had -- saying which probe
+failed.
+
+This file used to argue the opposite: gate on `DISPLAY` being *set*, never on
+it being reachable, so that a set-but-broken display went red. That was written
+when `DISPLAY=:1` was live on the machine it was written on. In every sandboxed
+session since, `DISPLAY=:1` has been set and unreachable (`socket(AF_UNIX)` is
+refused), and the test was red for a reason that said nothing about the code.
+`tests/conftest.py` records the reversal and what the probe does and does not
+guess at.
 
 Everything else runs with no display at all, including the runner patch, which
 is driven against a **real `hello_imgui.RunnerParams`** rather than a stub.
@@ -34,15 +40,18 @@ here separates it from a correct one. It was checked by reading the image:
 from __future__ import annotations
 
 import importlib.util
-import os
+import socket
 import struct
-import subprocess
-import sys
 import zlib
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 import pytest
+from conftest import display_is_reachable
+
+if TYPE_CHECKING:
+    from conftest import Window
 
 _ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts" / "shot.py"
@@ -322,6 +331,31 @@ def test_a_clamped_window_is_reported_and_a_hidpi_one_is_not() -> None:
 # One real shot. See this file's docstring for why this skip is the exception.
 
 
+def test_the_display_probe_says_yes_to_a_listener_and_no_to_everything_else() -> None:
+    """
+    The probe that decides where the real shot runs, against sockets this test owns.
+
+    A wrong "no" only costs a slower window (the shot runs on Xvfb); a wrong
+    "yes" would send the shot to a display that is not there, so the "no"
+    cases are the ones that matter: a closed port, an unparseable name, and a
+    unix display number nothing listens on. The unix-socket "yes" is not
+    tested: in the sandbox this was written in `socket(AF_UNIX)` is refused
+    outright, so a listener cannot be made.
+    """
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        if port >= 6000:
+            assert display_is_reachable(f"127.0.0.1:{port - 6000}") is True
+            assert display_is_reachable(f"127.0.0.1:{port - 6000}.0") is True
+    if port >= 6000:
+        assert display_is_reachable(f"127.0.0.1:{port - 6000}", timeout=0.2) is False
+    assert display_is_reachable("127.0.0.1:nonsense") is False
+    assert display_is_reachable("") is False
+    assert display_is_reachable(":59999") is False
+
+
 def _numpy_is_installed() -> bool:
     """
     Whether this interpreter can receive the screenshot buffer at all.
@@ -334,33 +368,30 @@ def _numpy_is_installed() -> bool:
     return importlib.util.find_spec("numpy") is not None
 
 
-@pytest.mark.skipif(not os.environ.get("DISPLAY"), reason="no DISPLAY, so no window to shoot")
 @pytest.mark.skipif(
     not _numpy_is_installed(),
     reason="numpy is not installed, so hello_imgui cannot export the framebuffer",
 )
-def test_a_real_shot_of_the_real_app_is_a_valid_non_blank_png(tmp_path: Path) -> None:
+def test_a_real_shot_of_the_real_app_is_a_valid_non_blank_png(window: Window) -> None:
     """
     Open the real window, photograph it, and check something was drawn in it.
 
     Run as a subprocess because the script exits the process it runs in and
     because an ImGui context is global -- `tests/conftest.py` forbids this
-    suite from opening a window in-process and that rule is unchanged.
+    suite from opening a window in-process and that rule is unchanged. Where
+    the window opens (the session's display, or an Xvfb with a software
+    rasteriser) is the `window` fixture's decision; `window.where` says which.
 
-    **The numpy gate is not decoration; it fires today.** The `Makefile` can
-    select two interpreters, and the *borrowed* one has no numpy and is
-    documented read-only, so nothing may install it there. Under that
-    interpreter this test was red before the gate was added. Skipping rather
-    than failing follows `tests/conftest.py`'s `bundled_fonts` verbatim: a
+    **The numpy gate dates from the borrowed interpreter.** The `Makefile` used
+    to be able to select a second interpreter, borrowed from a sibling project,
+    which had no numpy; under it this test was red before the gate was added.
+    That fallback is gone and the project's own `.venv` has numpy as a declared
+    dev dependency, so the gate does not fire there. It is kept because a
     missing dependency is a statement about the environment rather than about
-    the code, and "a red suite that means 'wrong machine' trains people to
-    ignore red suites". `pyproject.toml` is where the dependency is declared,
-    the `Makefile` header says so in as many words, and the project's own
-    `.venv` has it -- so this runs there and the zero-skip count holds.
+    the code, which is `tests/conftest.py`'s reason for `bundled_fonts`.
 
-    The skip is also the reason the numpy branch of `_grab` is not dead code
-    nobody has run: the borrowed interpreter executes it for real, exits 1, and
-    prints the nanobind message. Worth noting that the message differs between
+    The numpy branch of `_grab` was run for real under that interpreter: it
+    exits 1 and prints the nanobind message. The message differs between
     builds -- one reads `could not export nanobind::ndarray: No module named
     'numpy'` and another `...: ModuleNotFoundError: No module named 'numpy'` --
     which is why `_grab` matches on the substring `numpy` and not on the
@@ -379,10 +410,9 @@ def test_a_real_shot_of_the_real_app_is_a_valid_non_blank_png(tmp_path: Path) ->
     Not asserted: orientation, which no cheap oracle here can see. See the
     module docstring.
     """
-    out = tmp_path / "shot.png"
-    done = subprocess.run(
+    out = window.out / "shot.png"
+    done = window.run(
         [
-            sys.executable,
             str(_SCRIPT),
             "--tab",
             "document",
@@ -394,14 +424,9 @@ def test_a_real_shot_of_the_real_app_is_a_valid_non_blank_png(tmp_path: Path) ->
             "10",
             "--out",
             str(out),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=180,
-        env={**os.environ, "PYTHONPATH": str(_ROOT)},
-        cwd=str(_ROOT),
+        ]
     )
-    assert done.returncode == 0, f"shot.py failed:\n{done.stdout}\n{done.stderr}"
+    assert done.returncode == 0, f"shot.py failed on {window.where}:\n{done.stdout}\n{done.stderr}"
 
     width, height, depth, colour_type, rows = _decode_png(out.read_bytes())
     assert (width, height) == (700, 500), "--width and --height were not honoured"

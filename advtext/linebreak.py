@@ -55,12 +55,36 @@ the packer emits cannot disagree -- a class of bug that otherwise shows up as
 do it, which is why the active state carries four stretch registers and only one
 for shrink. A paragraph containing `\hskip 0pt minus 1fil` would otherwise have
 a line that can shrink without limit, and no line would ever be overfull.
+
+**There is also a first-fit breaker here, and it is the opposite algorithm on
+purpose.** `LineBreakParams.first_fit` selects it; it is off by default and
+nothing above changes when it is off. It fills each line until the next legal
+breakpoint would overfull it and never looks back -- the "greedy filler" of the
+first paragraph. It exists for three callers that total-fit serves badly, all
+of them ragged: a paragraph that is still arriving (a line the reader has seen
+must not move when a word is appended, and first-fit decides a line from the
+material up to its end and nothing after), wrapped table cells, and ragged
+monospace body text. The reasons are measured, not argued (2026-10-06,
+`tests/test_firstfit.py` and `.concerns/A7-greedy--builder--result.md`):
+
+- Ragged-right is a `\rightskip` of `fil`, which makes every line that fits
+  cost the same. With `easy_line` absent, the active list then carries a node
+  for every line count a position can be reached in, and the 635-node paragraph
+  of `demo/sample.md` takes seconds where justified takes tens of milliseconds.
+- §854's last-resort break is taken from the active node with the highest line
+  number, which under those conditions is the chain that put every earlier word
+  on its own line: one over-wide word re-breaks the paragraph back to its start
+  (`tests/test_stream_stability.py` pins that).
+
+First-fit has neither problem by construction, and it shares `_breakpoints`,
+`_line_nodes` and `hpack` with the optimiser, so what is a legal break, what is
+discarded after one and whether a line fits are the same three answers in both.
 """
 
 from __future__ import annotations
 
 import enum
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Final
 
@@ -150,11 +174,18 @@ class BreakPass(enum.Enum):
     `emergency_stretch` had to be added to every line's stretchability to find
     any breaking at all; lines from that pass are genuinely underfull and a
     caller that cares should look at each `PackResult`.
+
+    `FIRST_FIT` is none of the three: `LineBreakParams.first_fit` was set and
+    the optimiser did not run at all. It is a member here rather than a second
+    field on `Paragraph` so that a caller asking "how was this broken" has one
+    place to look, and so that no first-fit paragraph can be mistaken for one
+    that passed at `pretolerance`.
     """
 
     FIRST = enum.auto()
     SECOND = enum.auto()
     EMERGENCY = enum.auto()
+    FIRST_FIT = enum.auto()
 
 
 class _BreakKind(enum.Enum):
@@ -257,6 +288,14 @@ class LineBreakParams:
     than transcribed, and a caller who wants IniTeX behaviour should say so.
 
     `pretolerance` negative skips the first pass entirely (§863).
+
+    **`first_fit` is not TeX's and switches the algorithm.** When it is set,
+    `break_paragraph` fills each line greedily (see `_first_fit`) and every
+    field above `left_skip` is unread: there are no demerits, so there is
+    nothing for a tolerance, a line penalty or an emergency stretch to act on.
+    The three skips are honoured exactly as before. It is off by default, and
+    with it off this class and the breaker behave as they did before the field
+    existed.
     """
 
     pretolerance: int = 100
@@ -273,6 +312,7 @@ class LineBreakParams:
     par_fill_skip: GlueSpec = field(
         default_factory=lambda: GlueSpec(stretch=1, stretch_order=GlueOrder.FIL)
     )
+    first_fit: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,7 +328,9 @@ class Paragraph:
 
     `total_demerits` is the score of the chosen breaking. It is the number the
     algorithm minimised, so it is also the only way to state the total-fit
-    property as an assertion rather than as an anecdote.
+    property as an assertion rather than as an anecdote. A first-fit paragraph
+    (`pass_used is BreakPass.FIRST_FIT`) minimised nothing and reports 0, which
+    is a statement that no score exists and not that the breaking is perfect.
 
     **`line.fitness` is a `PackFitness`, not the `Fitness` class the breaker
     used**, and the two are different questions that share a word. `PackFitness`
@@ -677,10 +719,8 @@ class _Breaker:
         so no chain of breakpoints within `threshold` reaches the paragraph's
         end and the caller should try a looser pass.
 
-        The legality rules are §866's, and the one that is easy to get wrong is
-        `auto_breaking`. It is switched **off** at a `MathOn` and back on at a
-        `MathOff`, so glue inside a formula is never a breakpoint -- a formula
-        is not allowed to be split across lines by the spaces inside it.
+        Which positions are legal is `_breakpoints`'s business, shared with
+        the first-fit breaker.
         """
         self.active = [
             _Active(
@@ -691,60 +731,156 @@ class _Breaker:
                 total_demerits=0,
             )
         ]
-        auto_breaking = True
-        # §863: `prev_p := cur_p` before the loop, so glue in the very first
-        # position sees itself as its predecessor and is not a breakpoint.
-        previous_index = 0
-        index = 0
-        while index < len(self.body) and self.active:
-            node = self.body[index]
-            match node:
-                case Glue():
-                    if auto_breaking and permits_break_at_following_glue(self.body[previous_index]):
-                        self._try_break(0, False, index, _BreakKind.GLUE)
-                case Kern():
-                    if (
-                        node.kind is KernKind.EXPLICIT
-                        and auto_breaking
-                        and self._followed_by_glue(index)
-                    ):
-                        self._try_break(0, False, index, _BreakKind.KERN)
-                case MathOn() | MathOff():
-                    auto_breaking = isinstance(node, MathOff)
-                    if auto_breaking and self._followed_by_glue(index):
-                        self._try_break(0, False, index, _BreakKind.MATH)
-                case Penalty():
-                    self._try_break(node.value, False, index, _BreakKind.PENALTY)
-                case Disc():
-                    charge = (
-                        self.params.hyphen_penalty
-                        if node.pre_break
-                        else self.params.ex_hyphen_penalty
-                    )
-                    self._try_break(charge, True, index, _BreakKind.DISC)
-                    previous_index = index
-                    index += 1 + node.replace_count
-                    continue
-                case CharNode() | Box() | Rule():
-                    pass
-            previous_index = index
-            index += 1
-
-        if index < len(self.body) or not self.active:
-            return None
-
-        # §873. The end of a paragraph is a forced break, and counts as
-        # hyphenated so that `final_hyphen_demerits` can be charged.
-        self._try_break(EJECT_PENALTY, True, len(self.body), _BreakKind.PARAGRAPH_END)
+        for penalty, hyphenated, position, kind in _breakpoints(self.body, self.params):
+            if not self.active:
+                return None
+            self._try_break(penalty, hyphenated, position, kind)
         if not self.active:
             return None
         return min(self.active, key=lambda a: a.total_demerits)
 
-    def _followed_by_glue(self, index: int) -> bool:
-        """
-        §866's `kern_break`: a kern or math node breaks only if glue comes next.
-        """
-        return index + 1 < len(self.body) and isinstance(self.body[index + 1], Glue)
+
+def _followed_by_glue(body: Sequence[Node], index: int) -> bool:
+    """
+    §866's `kern_break`: a kern or math node breaks only if glue comes next.
+    """
+    return index + 1 < len(body) and isinstance(body[index + 1], Glue)
+
+
+def _breakpoints(
+    body: Sequence[Node], params: LineBreakParams
+) -> Iterator[tuple[int, bool, int, _BreakKind]]:
+    """
+    Every legal breakpoint of a prepared paragraph, in order: §866, and then §873.
+
+    Yields `(penalty, hyphenated, position, kind)`, which are `_try_break`'s
+    arguments, and ends with the paragraph's own end at `len(body)`. One
+    function because there are two breakers and "where may a line end" must not
+    be a question they can answer differently.
+
+    The legality rules are §866's, and the one that is easy to get wrong is
+    `auto_breaking`. It is switched **off** at a `MathOn` and back on at a
+    `MathOff`, so glue inside a formula is never a breakpoint -- a formula
+    is not allowed to be split across lines by the spaces inside it.
+
+    A penalty is yielded whatever its value. §831's clamp -- `inf_penalty`
+    inhibits, `eject_penalty` or below forces -- belongs to whoever takes the
+    break, because the two breakers do different things with a value in between.
+    """
+    auto_breaking = True
+    # §863: `prev_p := cur_p` before the loop, so glue in the very first
+    # position sees itself as its predecessor and is not a breakpoint.
+    previous_index = 0
+    index = 0
+    while index < len(body):
+        node = body[index]
+        match node:
+            case Glue():
+                if auto_breaking and permits_break_at_following_glue(body[previous_index]):
+                    yield 0, False, index, _BreakKind.GLUE
+            case Kern():
+                if (
+                    node.kind is KernKind.EXPLICIT
+                    and auto_breaking
+                    and _followed_by_glue(body, index)
+                ):
+                    yield 0, False, index, _BreakKind.KERN
+            case MathOn() | MathOff():
+                auto_breaking = isinstance(node, MathOff)
+                if auto_breaking and _followed_by_glue(body, index):
+                    yield 0, False, index, _BreakKind.MATH
+            case Penalty():
+                yield node.value, False, index, _BreakKind.PENALTY
+            case Disc():
+                charge = params.hyphen_penalty if node.pre_break else params.ex_hyphen_penalty
+                yield charge, True, index, _BreakKind.DISC
+                previous_index = index
+                index += 1 + node.replace_count
+                continue
+            case CharNode() | Box() | Rule():
+                pass
+        previous_index = index
+        index += 1
+
+    # §873. The end of a paragraph is a forced break, and counts as
+    # hyphenated so that `final_hyphen_demerits` can be charged.
+    yield EJECT_PENALTY, True, len(body), _BreakKind.PARAGRAPH_END
+
+
+def _first_fit(
+    body: Sequence[Node],
+    shape: ParShape,
+    params: LineBreakParams,
+    measure: CharMeasure | None,
+) -> list[_Passive]:
+    """
+    Choose breaks greedily: fill each line until the next breakpoint would overfull it.
+
+    The rule, whole. Walk the legal breakpoints in order, remembering the latest
+    one at which the line so far **fits** (`fit`). At each breakpoint:
+
+    - the line from the current start to here fits: remember it, and if the
+      break is forced, take it;
+    - it does not fit and there is a remembered one: take the remembered one,
+      then look at this breakpoint again from the new start;
+    - it does not fit and nothing is remembered: take it anyway. That is a word
+      wider than its line, set alone and overfull -- the same "a paragraph
+      always produces lines" §854 is for, reached without an active list.
+
+    **"Fits" is `hpack`'s verdict, not a width comparison**: the line is packed
+    to its `LineSpec` width and fits unless the result is `OVERFULL`. So
+    whatever shrink the material carries is used, exactly as the optimiser
+    would use it, and a caller that wants no line squeezed gives its glue no
+    shrink. Nothing here knows which alignment is being set; with no
+    `right_skip` this is a word processor's justification.
+
+    **Why a finished line never changes when material is appended.** A line is
+    taken at the first breakpoint past it that does not fit (or at a forced
+    break), and both that test and the line itself read only the nodes up to
+    that breakpoint. The one case that looks like an exception is the
+    paragraph's end, which is not a breakpoint of the longer paragraph -- but
+    `_prepare` puts only an infinite penalty and a zero-width `\\parfillskip`
+    there, so a line that overflows at the end overflows by the same amount at
+    the interword glue that replaces it. The last line itself does change, and
+    must: it ends in `\\parfillskip` until it is no longer last.
+
+    **What is not honoured, because there is nothing to honour it with.** A
+    penalty strictly between the two infinities is a legal breakpoint and its
+    value is ignored: discouraging or rewarding a break needs a cost to add it
+    to. `inf_penalty` still inhibits and `eject_penalty` still forces (§831).
+    A discretionary's charge is read only for that same inhibition.
+
+    **Cost.** One `hpack` per breakpoint, plus one per line for the re-look, each
+    over one line's nodes: linear in the paragraph at a given measure, where the
+    optimiser is linear in the paragraph *times its active list*.
+    """
+    breaks: list[_Passive] = []
+    start: _Passive | None = None
+    fit: _Passive | None = None
+    line = 1
+
+    def fits(candidate: _Passive) -> bool:
+        nodes = _line_nodes(body, start, candidate, params)
+        packed = hpack(nodes, shape.for_line(line).width, PackMode.EXACTLY, measure=measure)
+        return packed.fitness is not PackFitness.OVERFULL
+
+    for penalty, _, position, kind in _breakpoints(body, params):
+        if penalty >= INF_PENALTY:
+            continue
+        forced = penalty <= EJECT_PENALTY
+        candidate = _Passive(position, kind, start)
+        room = fits(candidate)
+        if not room and fit is not None:
+            breaks.append(fit)
+            start, fit, line = fit, None, line + 1
+            candidate = _Passive(position, kind, start)
+            room = fits(candidate)
+        if forced or not room:
+            breaks.append(candidate)
+            start, fit, line = candidate, None, line + 1
+        else:
+            fit = candidate
+    return breaks
 
 
 def _chain(winner: _Active) -> list[_Passive]:
@@ -788,10 +924,19 @@ def break_paragraph(
        `PackResult` says so, and a caller that wants to complain has what it
        needs.
 
+    With `params.first_fit` none of the passes runs: the lines are filled
+    greedily by `_first_fit` and come back with `pass_used` of
+    `BreakPass.FIRST_FIT` and `total_demerits` of 0. Same preamble, same
+    per-line shape, same treatment of both ends of every line.
+
     `measure` is needed only if the list contains `CharNode`s.
     """
     params = params or LineBreakParams()
     body = _prepare(nodes, params)
+
+    if params.first_fit:
+        chosen = _first_fit(body, shape, params, measure)
+        return _assemble(body, chosen, shape, params, measure, 0, BreakPass.FIRST_FIT)
 
     attempts: list[tuple[int, Scaled, bool, BreakPass]] = []
     if params.pretolerance >= 0:
@@ -817,7 +962,7 @@ def break_paragraph(
         winner = breaker.run()
         if winner is None:
             continue
-        return _assemble(body, _chain(winner), shape, params, measure, winner, which)
+        return _assemble(body, _chain(winner), shape, params, measure, winner.total_demerits, which)
 
     raise AssertionError(
         "no pass produced a breaking, which §854's last-resort escape is supposed to prevent; "
@@ -831,7 +976,7 @@ def _assemble(
     shape: ParShape,
     params: LineBreakParams,
     measure: CharMeasure | None,
-    winner: _Active,
+    total_demerits: int,
     which: BreakPass,
 ) -> Paragraph:
     """
@@ -856,4 +1001,4 @@ def _assemble(
             packed = replace(packed, box=replace(packed.box, shift_amount=spec.indent))
         lines.append(packed)
         previous = current
-    return Paragraph(lines=tuple(lines), total_demerits=winner.total_demerits, pass_used=which)
+    return Paragraph(lines=tuple(lines), total_demerits=total_demerits, pass_used=which)

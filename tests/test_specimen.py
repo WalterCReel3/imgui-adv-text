@@ -119,7 +119,7 @@ def _widths(text: str, size: Scaled, measure: CharMeasure) -> dict[Face, Scaled]
     """
     return {
         face: _set(text, face, size, fontlib.metrics(face, float(size)), measure).width
-        for face in Face
+        for face in FACE_LABELS
     }
 
 
@@ -163,7 +163,7 @@ def test_the_six_faces_come_out_six_distinguishable_widths(specimen: Specimen) -
     """
     rows = _rows(specimen, "The six faces")
     assert len(rows) == len(FACE_LABELS) == 6
-    assert [row.face for row in rows] == list(Face)
+    assert [row.face for row in rows] == list(FACE_LABELS)
 
     widths = {row.face: row.set_width for row in rows}
     assert len(set(widths.values())) == 6
@@ -559,5 +559,5 @@ def test_a_specimen_with_no_fonts_at_all_is_empty_rather_than_a_traceback(
         raise fontlib.MissingFontError("no fonts at all")
 
     built = build_specimen(theme, MEASURE, resolve)
-    assert set(built.absent) == set(Face)
+    assert set(built.absent) == set(FACE_LABELS)
     assert all(section.rows == () for section in built.sections)

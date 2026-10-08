@@ -429,3 +429,69 @@ def test_reading_metrics_and_outlines_leaves_no_unclosed_file_at_interpreter_exi
     )
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
+
+
+# -- the radical constants and the delimiter chains (second build) ---------
+
+
+def test_the_radical_constants_are_texs_own_formulas_evaluated(bundled_fonts: Path) -> None:
+    # `make_radical` (docs/tex.web line 14476) computes its clearance from the rule
+    # thickness and the x-height; OpenType states the results. For this font they
+    # are the same numbers, which is what lets `advtext.math.mlist` read the font's
+    # fields and still be following TeX. If a font swap breaks this, the radical's
+    # clearance has silently stopped being TeX's.
+    math = math_metrics(DESIGN_SIZE)
+    params = math.math
+    thickness = int(params.default_rule_thickness)
+    assert params.radical_rule_thickness == 40.0 == params.default_rule_thickness
+    assert params.radical_vertical_gap == 50.0 == thickness + thickness // 4
+    assert params.radical_display_style_vertical_gap == 148.0
+    assert round(thickness + abs(params.math_x_height) / 4) == 148
+
+
+def test_the_surd_chain_holds_five_and_only_the_first_keeps_the_tfm_convention(
+    bundled_fonts: Path,
+) -> None:
+    # TeX assumes a surd's *height* is the thickness of its rule. The base glyph
+    # obliges; the four larger ones straddle the axis like any delimiter, which is
+    # why the radical is hung from the top of its ink and not from its baseline.
+    math = math_metrics(DESIGN_SIZE)
+    chain = math.vertical_variants(0x221A)
+    assert [variant.name for variant in chain] == [
+        "radical",
+        "radical.v1",
+        "radical.v2",
+        "radical.v3",
+        "radical.v4",
+    ]
+    boxes = [math.bbox(variant.codepoint) for variant in chain]
+    assert [round(box.height + box.depth) for box in boxes] == [1000, 1200, 1800, 2400, 3000]
+    assert boxes[0].height == math.math.radical_rule_thickness
+    assert all(box.height > 20 * math.math.radical_rule_thickness for box in boxes[1:])
+    # The stroke overhangs the advance, so the rule that starts there overlaps it.
+    assert all(
+        box.x_max > math.advance(variant.codepoint)
+        for box, variant in zip(boxes, chain, strict=True)
+    )
+
+
+@pytest.mark.parametrize("delimiter", ["(", ")", "[", "]", "{", "}", "|"])
+def test_a_delimiter_chain_ascends_from_the_body_glyph_and_stops_near_three_ems(
+    bundled_fonts: Path, delimiter: str
+) -> None:
+    # Eight sizes each and no ninth: past the last one TeX would assemble a
+    # delimiter from pieces, and this project refuses instead.
+    math = math_metrics(DESIGN_SIZE)
+    chain = math.vertical_variants(ord(delimiter))
+    assert len(chain) == 8
+    assert chain[0].codepoint == ord(delimiter)
+    extents = []
+    for variant in chain:
+        box = math.bbox(variant.codepoint)
+        extents.append(box.height + box.depth)
+    assert extents == sorted(extents) and len(set(extents)) == 8
+    assert 2900 < extents[-1] < 3700
+    # Each is drawn about the axis, so centring one moves it by a unit at most.
+    for variant in chain:
+        box = math.bbox(variant.codepoint)
+        assert abs((box.height - box.depth) / 2 - math.math.axis_height) <= 1.0

@@ -6,6 +6,167 @@ before `README.md` if you are deciding whether to trust anything here.
 It is written to be useful rather than flattering. Section 4 is the longest on
 purpose.
 
+## 0. Revision of 2026-10-07: the adoption plan was built, and this file was not rewritten
+
+**Read `docs/adoption-plan.md`'s first section before the rest of this file.**
+On 2026-10-06 and 07 an unattended team of agents implemented that plan: an
+import surface, an embeddable view, colour, links, wrapping tables, structured
+copy, and a streaming document and view. No person reviewed it or looked at it.
+What follows from section 1 on is the account of the layout engine and the demo
+as they stood before, with dated corrections where a sentence became false. It
+is still the account to read for the engine. It is not the account of the
+embedding or the streaming, which is the plan's.
+
+What this file said that is no longer true, each corrected in place below:
+
+| it said | now |
+|---|---|
+| the suite runs under two interpreters, one borrowed | there is one; the fallback to `../pptmstr/.venv` was removed |
+| no click has ever happened | `scripts/mouse_probe.py`: 18 of 18 checks in a real window on Xvfb |
+| copying joins lines with spaces; the caller supplies the hard-break set | a view's copy reads structure from the blocks; nobody supplies anything |
+| table cells do not wrap | they do, where the table is wider than its measure |
+| links render as ordinary prose, and nothing consumes `LinkSpan` | a view given `on_link` draws and follows them; the demo page, given none, draws them as before |
+| item 2 of "what to do next": memoise the per-glyph preamble | built; a culled draw is 5.1 ms where this file says 9.4 (5.9 ms from the memo, the rest from hoisting a per-glyph import) |
+| ragged-right goes through the optimiser | text that is not justified is filled first-fit at natural spacing |
+
+**The gate.** `make check` on the final tree, run by the agent that closed the
+session's gate: ruff, black and mypy clean, and `pytest` over the whole suite,
+nothing ignored: **2897 passed, 7 skipped, 4 xfailed in 150 s**. The three tests that photograph a real window
+(`tests/test_shot.py`, two in `tests/test_visual_diff.py`) were red at the
+session's baseline because `DISPLAY=:1` was not reachable from its sandbox and
+they were gated on `DISPLAY` being set. They now ask whether the display
+accepts a connection and otherwise run on an Xvfb in a user namespace
+(`tests/conftest.py`, `window`), which is where they ran and passed here. "No
+test is skipped or marked `xfail`" below is no longer true: the four `xfail`s
+are strict and assert a known defect of the total-fit breaker set ragged
+(`tests/test_stream_stability.py`), and the seven skips are an 88 s
+whole-paragraph run and six tests that compare two clock readings, all behind
+`ADVTEXT_SLOW=1`; each of the six has a count test beside it holding the same
+claim without a clock.
+
+What works that this file does not otherwise mention, each with its test file
+as the evidence and none of it looked at: `BareView` (`tests/test_bare_view.py`),
+per-unit layout (`tests/test_units_layout.py`), the material-to-shipped index
+map behind links and colour (`tests/test_spans.py`), wrapping tables
+(`tests/test_tables.py`), first-fit breaking (`tests/test_firstfit.py`), the
+streaming document compared with a whole parse after every piece
+(`tests/test_stream.py`), and `StreamView` (`tests/test_stream_view.py`).
+## 0b. Revision of 2026-10-07, later the same day: a second build
+
+**Read the first section of `docs/adoption-plan.md`, "Second build", before
+this.** After the adoption plan was built the user asked for more and a second
+unattended team built it: the demo is a sidebar of fourteen pages where it was
+five tabs; there is a diff model and a `DiffView`, unified and side by side;
+inline and display mathematics from a `$...$` subset; blocks of a document that
+a host widget draws; and more calls on a view. That section lists what changed
+without anybody seeing it, the choices left for a person, what ran in a window,
+what no reviewer read, what things cost, and the known limits. `docs/decisions.md`,
+"Second build", keeps the user's nine decisions, quoted, apart from the agents'.
+
+**No agent judged how any of it looks, and nothing in this file says.**
+
+What this file says below that is no longer true, each corrected in place or
+here:
+
+| it says | now |
+|---|---|
+| five tabs; `make shot-all` photographs eight shots | fourteen pages in a sidebar, found by scanning `advtext/ui/pages/`; 26 shots, listed by `scripts/shot.py --list` |
+| the demo window is 1100x800 and its content region 1070 px | 1300x800; the body right of the sidebar is 1068 x 776 px (builder-17, measured on Xvfb) |
+| radicals are absent; sized delimiters are absent | both are built, from the font's ready-made outlines only (section 3) |
+| "A LaTeX parser" is deliberately absent | still true of the engine. `advtext/mathtext.py` reads a subset above it, by the user's decision; matrices are left out for now, also the user's |
+| the Formula tab is one summation being widened | the Formula page holds eleven hand-built formulae; the first nine are set byte-identically to before the engine grew (pinned by a test) |
+| a glyph the bound face lacks is drawn as nothing | borrowed from another of the theme's faces, else U+FFFD and counted; copy and Find return what was written |
+| the facade is 58 names | 94 |
+
+**What works that this file does not otherwise mention**, each with its test
+file as the evidence and none of it looked at: the diff model and its parser
+(`tests/test_diff.py`), `DiffView` (`tests/test_diff_view.py`), a fenced diff
+hosted in a document or stream (`tests/test_hostdiff.py`), the math subset
+(`tests/test_mathtext.py`), formulas in documents and streams
+(`tests/test_mathinline.py`), the view API (`tests/test_viewapi.py`), the page
+scan and the shell (`tests/test_pages.py`), and one test file per new page
+(`tests/test_page_*.py`).
+
+**The gate.** `make check` on the final tree, from clean caches, run by the
+agent that closed this build's gate:
+
+ruff, black (131 files) and mypy (50 source files) clean, and `pytest` over
+the whole suite, nothing ignored: **4893 passed, 7 skipped, 4 xfailed**, in
+277 s on the run whose per-test times are below. Nothing was red at any point
+of the gate and nothing was skipped, xfailed or weakened by the gate closer.
+The seven skips and the four strict xfails are the first build's, described in
+section 0. The 4893 are the 4892 of the last builder's run and one test added
+at the gate (a NUL in a message copied from the Chat page's buttons). The
+verbatim tail of the final run is in `.concerns/CZ-gate--builder--result.md`
+(not version-controlled).
+
+**Suite time, and where it grew.** 150 s at the end of the first build, 277 s now
+(293 s on the last builder's run, on a busier machine). `--durations`, summed
+by file over every phase of 5 ms or more (269.7 s in 52 files): the nine page
+test files and `tests/test_pages.py` are 92.4 s between them
+(`test_page_stream.py` 19.8, `test_page_stress.py` 16.4, `test_page_chat.py`
+13.7, `test_page_math.py` 11.6, `test_page_inspector.py` 8.0, `test_pages.py`
+7.9, `test_page_find.py` 6.4, `test_page_tables.py` 4.6, the rest under 4),
+which is most of the growth; the math and diff test files are fast for their
+size (`test_mathtext.py` 4.1 s, `test_mathinline.py` 3.5, `test_diff.py`,
+`test_diff_view.py` and `test_hostdiff.py` under 3 each). The four files that
+led the first build's list are where they were: `test_stream.py` 29.0,
+`test_stream_view.py` 25.5, `test_units_layout.py` 19.1,
+`test_stream_stability.py` 13.7. No single file dominates. The slowest test
+is new: `tests/test_page_stress.py::test_the_page_reports_its_figures_at_1_4_and_16_panes_in_a_real_window`,
+12.0 s, which runs the real app for 90 frames at each of three pane counts on
+a software rasteriser; that is what the test is, and nothing was cut. The
+next nine are 3.8 to 6.2 s each, seven of them a page in a real window or a
+page's stream run to its end.
+
+**`make shot-all`, after the last code change**, on Xvfb in a user namespace
+(llvmpipe). Every PNG is 1300x800. "Body" is the region right of the sidebar
+(x 216 to 1284, y 12 to 788). "Background" is the single most frequent colour
+there, and the last column is the share of body pixels that are any other
+colour: it says a page is not blank, and it does not say how much ink there is
+(on a page with a light sheet on the dark surround, whichever of the two is
+smaller counts as not background). Nobody looked at a PNG.
+
+| request | file | bytes | size | most common body colour | body pixels not that colour |
+|---|---|---|---|---|---|
+| `document` | `demo-document.png` | 113345 | 1300x800 | (250,250,248) | 46.4% |
+| `document:debug` | `demo-document-debug.png` | 123918 | 1300x800 | (250,250,248) | 56.6% |
+| `columns:1` | `demo-columns-1.png` | 106801 | 1300x800 | (250,250,248) | 45.8% |
+| `columns:2` | `demo-columns-2.png` | 149760 | 1300x800 | (250,250,248) | 21.9% |
+| `columns:3` | `demo-columns-3.png` | 154445 | 1300x800 | (250,250,248) | 22.4% |
+| `specimen` | `demo-specimen.png` | 115151 | 1300x800 | (250,250,248) | 34.3% |
+| `formula` | `demo-formula.png` | 87494 | 1300x800 | (250,250,248) | 42.7% |
+| `blocks` | `demo-blocks.png` | 29672 | 1300x800 | (14,14,16) | 24.9% |
+| `math` | `demo-math.png` | 127487 | 1300x800 | (14,14,16) | 28.7% |
+| `math:done` | `demo-math-done.png` | 136023 | 1300x800 | (14,14,16) | 29.8% |
+| `themes` | `demo-themes.png` | 101815 | 1300x800 | (250,250,248) | 25.0% |
+| `themes:split` | `demo-themes-split.png` | 163910 | 1300x800 | (30,30,30) | 66.0% |
+| `tables` | `demo-tables.png` | 85525 | 1300x800 | (14,14,16) | 24.2% |
+| `tables:floors` | `demo-tables-floors.png` | 77610 | 1300x800 | (14,14,16) | 22.9% |
+| `find` | `demo-find.png` | 116471 | 1300x800 | (14,14,16) | 21.5% |
+| `inspector` | `demo-inspector.png` | 146368 | 1300x800 | (14,14,16) | 22.1% |
+| `stream:400` | `demo-stream-400.png` | 124981 | 1300x800 | (14,14,16) | 34.2% |
+| `stream:table,done` | `demo-stream-table-done.png` | 110307 | 1300x800 | (14,14,16) | 31.2% |
+| `chat:all` | `demo-chat-all.png` | 119684 | 1300x800 | (14,14,16) | 25.8% |
+| `chat:roboto,all` | `demo-chat-roboto-all.png` | 131369 | 1300x800 | (14,14,16) | 27.1% |
+| `diff` | `demo-diff.png` | 89615 | 1300x800 | (250,250,248) | 45.1% |
+| `diff:git,side` | `demo-diff-git-side.png` | 96629 | 1300x800 | (250,250,248) | 68.5% |
+| `diff:wide,unified,dark` | `demo-diff-wide-unified-dark.png` | 135794 | 1300x800 | (26,26,29) | 79.9% |
+| `diff:long,both` | `demo-diff-long-both.png` | 143685 | 1300x800 | (250,250,248) | 63.4% |
+| `stress:4` | `demo-stress-4.png` | 113001 | 1300x800 | (14,14,16) | 40.1% |
+| `stress:16,streaming` | `demo-stress-16-streaming.png` | 161473 | 1300x800 | (14,14,16) | 42.2% |
+
+26 PNGs for 14 pages, exit 0, 74 s. **No page is blank**: the lowest share is
+21.5% (Find). Against the builder's run of the morning, 11 of the 26 files
+differ in size: the four Diff shots (taken then before the palette change),
+and the Chat, Stream, Stress and Inspector shots, which photograph a clock or
+a timing readout; the other 15 are the same size to the byte. The Blocks
+shot is the outlier by size (29,672 bytes, 175 colours where the others have
+570 or more), as its builder also reported; it is a toolbar at three widths
+on the dark surround. Reported, not judged.
+
+---
+
 **The gate.** These figures were taken while this document was being written and
 the tree was **not** settled — other work was landing in `tests/` during the run,
 and a suite read mid-save fails for reasons that recover on a second run. The
@@ -40,6 +201,10 @@ that. Run twice, under **both** interpreters the `Makefile` can select — the
 project's own `.venv` and the borrowed one — because they carry different tool
 versions (ruff 0.16.8 against 0.16.2, mypy 2.3.1 against 2.3.0) and the
 `Makefile` warns in its own header that the two may disagree.
+
+*(2026-10-07: there is no borrowed interpreter any more. `make` uses `.venv`
+or stops and names `make bootstrap`. The comparison below is history, kept
+because it is why the fallback was a hazard: it hid a real difference.)*
 
 **They still agree on lint and types. They no longer agree on the suite**, and
 the reason is `make shot`:
@@ -192,6 +357,17 @@ Copying joins wrapped lines with **spaces, not newlines**: a paragraph wrapped
 into five lines is one paragraph. A newline inside a fenced code block survives,
 because the caller supplies the hard-break set.
 
+*(2026-10-07.)* That last clause described `selection.text(hard_breaks=...)`,
+and the only callers that passed the set were tests: Ctrl+C in the demo joined
+a code block's lines with spaces, which `docs/adoption-plan.md` inferred and a
+failing test then confirmed. A view's copy now goes through
+`UnitModel.copy_text`, which reads the separators off the blocks: a blank line
+between blocks, a newline between code lines and list items, a tab between
+table cells. A wrapped line is still a space. The highlight changed too: it no
+longer covers blank fill at a line's ends, so "edge to edge" above is true of
+full lines and not of a paragraph's last line or of ragged text. Both are in
+the plan's list of visible changes, with measurements.
+
 ### The performance numbers are all re-runnable
 
 Every performance claim in this tree came out of a script that is in this tree
@@ -310,12 +486,22 @@ believed.
 
 Shorter than it was, and it is not empty.
 
-- **No click has ever happened.** `_handle_mouse` and `_handle_copy` run sixty
-  times a second inside a real window with `is_mouse_clicked` false, and the
-  suite drives their geometry directly, but nothing in this environment
-  synthesises a mouse event into a real frame. So selection has been *computed*
-  on real data and *drawn* on a screen, and never *performed*. That is why
-  `App.open_tab` and the `--tab columns:3,debug` grammar exist at all.
+- **No person has clicked.** This bullet read "No click has ever happened"
+  until 2026-10-06. `scripts/mouse_probe.py` now runs the real app in a real
+  GLFW window and posts mouse, wheel and key events to ImGui's input queue over
+  glyph positions read back from the view: eight gestures, eighteen checks on
+  the selected range, the selected text and the clipboard, all passing
+  (`python scripts/mouse_probe.py --xvfb`, about 3.5 s, re-run 2026-10-07). So
+  selection has been *performed*, by a script. What is left: the events enter
+  at `ImGuiIO` and not at the X server, so GLFW's callbacks and a window
+  manager's focus and capture are untested; the window was on Xvfb with a
+  software rasteriser; and nobody has dragged a selection and said what it was
+  like. `App.open_tab` and the `--tab columns:3,debug` grammar were built when
+  nothing could click, and are still how a screenshot picks a tab.
+- **Everything the adoption plan built is unseen.** Four examples open real
+  windows inside their tests and draw every glyph they ship. No frame of a dark
+  palette, a link underline, a stream or a wrapped table has been judged by
+  anyone. `docs/adoption-plan.md` section B is the list.
 - **One machine.** One GPU vendor, one Mesa version, one X server, one 1920 px
   window-manager clamp.
 - **Font atlas limits.** Still nothing here has hit one; see
@@ -330,6 +516,8 @@ reachable now:
 |---|---|---|
 | `DISPLAY` unset | `run_demo.py` refuses, prints `make run` and `make shot` recipes; exit 2 | 0.04s |
 | `DISPLAY=:1`, this machine | a window opens and stays up | — |
+| `DISPLAY=:1` set but unreachable (an agent sandbox, 2026-10-06: `socket(AF_UNIX)` refused) | GLFW aborts on `IM_ASSERT( glfwInitSuccess )` | about 0.6s |
+| the same sandbox, Xvfb in a user namespace over TCP | a window opens; `scripts/mouse_probe.py --xvfb` and `scripts/shot.py` both ran this way | 3.5s and 6.4s whole command |
 | no display at all | `make shot-headless` — Xvfb in a user namespace, 22s per tab | — |
 
 The `XVFB_RUN` block this section used to tell you to uncomment **no longer
@@ -345,12 +533,19 @@ These are decisions with reasons recorded, not omissions. `docs/decisions.md`
 gives the reasoning for each; this list exists so nobody spends a day discovering
 one.
 
+*(2026-10-07.)* Two things this list never named, because they were assumed,
+are no longer absent: a document that arrives a piece at a time
+(`advtext/stream.py`), and a view that is not the demo's page
+(`advtext/ui/bare_view.py`). And the first sentence of the project, "a total-fit
+line breaker", is now true of justified text only.
+
 - **Hyphenation** — roughly 1000 lines with the worst interaction in TeX
   (ligature reconstruction, §915-916). The first and emergency passes run; the
   hyphenation pass does not. **This one has a measured price**; see section 4.
 - **`ext_tag` extensible glyph assembly** — not needed, because the summation
   variant chain gives a real display glyph, and TeX's own sanctioned fallback is
-  the largest available variant.
+  the largest available variant. *(2026-10-07: that fallback is now taken for
+  real, by sized delimiters; see the last item of this list.)*
 - **Delta nodes in `try_break`** — a 1982 performance optimisation where the
   subtle bugs live. **The correctness half of that argument still stands; the
   performance half turned out to be wrong**, and section 5 says what it costs.
@@ -378,6 +573,16 @@ one.
   is being widened to a gallery; whatever it holds when you read this, the
   claim it exists to prove is still the one in section 1 — the display operator
   is a different glyph, not a scaled one.
+  *(2026-10-07, second build.)* The engine now also sets radicals, `\left` ...
+  `\right` delimiters sized to their content, explicit spaces and words in a
+  formula; accents are still out. It still has no parser. Above it,
+  `advtext/mathtext.py` reads a fixed subset of `$...$` source into those
+  atoms and refuses the rest with a reason, and a document sets formulas only
+  when built with `math=markdown_math()`. **Matrices are left out for now, by
+  the user's decision.** Also out: accents, `\dfrac` / `\tfrac`, `\sqrt[n]`,
+  and anything taller than the largest ready-made outline (a `\left` pair
+  takes the largest when it covers 75% of what TeX's rule asks; the 75% is the
+  lead agent's number, not TeX's).
 
 ---
 
@@ -399,6 +604,14 @@ table below names the values it was measured at rather than saying "as
 shipped".** At the moment of measuring it was `\tolerance=1000` with
 `\emergencystretch=20pt`; it read `\tolerance=6000` with no emergency stretch an
 hour later. Read the constant, not this paragraph.
+
+**It settled back where the table was measured** (read 2026-10-06):
+`PROSE_BREAKING = LineBreakParams(tolerance=1000, emergency_stretch=20 * UNITY)`
+in `advtext/ui/__init__.py`. The 6000-with-no-emergency-stretch setting did not
+ship as the default; it survives as `PROSE_BREAKING_BOUNDED`, and
+`PROSE_BREAKING`'s docstring gives what each costs. So the sentence above
+describes an hour, not the tree, and the table's second row is the shipped
+value. Its counts were not re-run when this note was added.
 
 At plain TeX's defaults `demo/sample.md` produces **seven overfull lines, the
 worst by 180.9 pt** — text sitting in and past the margin. At 1000+20 there are
@@ -441,6 +654,16 @@ report:
   about four interword spaces to absorb whatever the line fell short by.
 
 ### Links render as ordinary prose
+
+*(2026-10-07: true of the demo page and of the SVG artifacts, no longer true of
+the library.)* `advtext/spans.py` maps a `LinkSpan`'s material indices to
+shipped indices, and a `BareView` or `StreamView` constructed with `on_link`
+underlines its links, colours them `Palette.link`, shows a hand cursor and
+calls back on a press and release over the same link. The demo's `DocumentView`
+is given no callback and draws links as it always did, which is deliberate: the
+shipped page was not to change. The underline's offset and thickness are a
+builder's choice that nobody has looked at. The paragraph below is the entry as
+it stood.
 
 `advtext.markdown.LinkSpan` records where every link is, in reading-order
 indices, and **nothing consumes it** — outside `markdown.py` the only mentions in
@@ -627,15 +850,24 @@ a docstring ages badly and nothing makes a liar of it.
   `fonts=lambda face: None` on purpose — and no test asserts on `missing` while
   it is taken, so it is exercised and unexamined rather than unreached.
 - **`advtext.ui.app._FACES` is a module global and `run` can be called twice.**
-  Nothing clears it; a second `run` in one process would hold `ImFont`s belonging
-  to a destroyed atlas.
+  This entry used to say nothing clears it, so a second `run` in one process
+  would hold `ImFont`s belonging to a destroyed atlas. **`load_fonts` now clears
+  it first** (`_FACES.clear()`, checked by reading 2026-10-06), so that hazard is
+  closed on the path `run` takes. What is left is smaller: it is still a module
+  global, nothing in the tree calls `run` twice, and no test does either, so the
+  clearing is read rather than exercised.
 - **Two unenforced contracts with silent failure modes.** `shipout.ship` and
   `imgui_draw.draw` must each be handed the *same* metrics the packing used.
   Nothing raises. The symptom is text at the wrong size, everywhere, with no
   error.
 - **Table cells do not wrap.** A cell wider than its share overflows. That is
   `\halign`'s real problem and out of scope; the sample table is narrow enough
-  that it does not bite.
+  that it does not bite. *(2026-10-07: they wrap now. A table wider than its
+  measure breaks each cell as a paragraph at its column's width, first-fit,
+  and a column keeps at least its longest word. It is not `\halign`: widths
+  are apportioned from natural widths, then cells are broken, once. The sample
+  table is 461.7 px naturally and fits the 467 px page measure, so the demo
+  shows no wrapped cell until the window is narrowed. `tests/test_tables.py`.)*
 - **`docs/decisions.md` records the "only `fontlib` may import fontTools"
   contract as currently violated. It is not — that was fixed and the note is
   stale.** `fontlib.glyph_set` is the public accessor the note asks for, and
@@ -781,6 +1013,13 @@ section 4 has the numbers at both the one-column and three-column measure.
 Roughly 1000 lines with the worst interaction in TeX; `docs/tex-notes.md` flags
 the trap and `docs/decisions.md` records why it was refused.
 
+*(2026-10-07: item 2 is built. `python scripts/bench_draw.py --copies 1,2,4
+--repeat 7` on a quiet machine gave a full draw of 15.9 ms and a culled draw
+of 5.9 ms, and 13.7 and 5.1 ms on one later run, after a per-glyph import was
+also hoisted out of `_glyph`; the text below is the item as it stood, with the
+unmemoised figures. Item 1 is untouched. Before either, read `docs/adoption-plan.md`
+section C, which is a longer and newer list of what is open.)*
+
 **2. Memoise the per-glyph preamble in `imgui_draw._glyph`.** Drawing
 `demo/sample.md` costs **26 ms per frame against a 16.7 ms budget** at best, and
 39-45 ms on a loaded machine, with the layout fully cached and nothing
@@ -819,6 +1058,13 @@ exactly why the enumeration test must be the thing that guards them.
 ---
 
 ## Provenance
+
+*(2026-10-07.)* Section 0 and the dated notes were added by an agent closing
+the adoption session. Of their figures, the suite count, the two draw timings
+and the probe's 18 of 18 were re-run by that agent on the final tree; the rest
+are quoted from `docs/adoption-plan.md`, which names who measured each. Nothing
+else in this file was re-measured for that revision, and the sections it did
+not touch are of their original date.
 
 Every number in this document was re-measured against the working tree during the
 gate that produced it, not copied from an earlier write-up. Where an earlier

@@ -154,7 +154,7 @@ way.
 ### Before the memo
 
 One run from before 2026-10-06, `--copies 1,2,4 --repeat 7`, of the backend as
-it was at commit `cb7bebf`. Kept as history; the counts are the same counts.
+it was at commit `27b3b73`. Kept as history; the counts are the same counts.
 
     copies 1 / 2 / 4:   full draw 30.32 / 59.86 / 114.52 ms,  culled 10.46 / 11.00 / 10.35 ms
 

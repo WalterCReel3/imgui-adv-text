@@ -1,6 +1,6 @@
 # Postmortem: the adoption build and the demo build, 2026-10-06 to 2026-10-07
 
-**Written by the session's lead agent, immediately after the merge (`a3c589a`).**
+**Written by the session's lead agent, immediately after the merge (`32e3953`).**
 It is an account of how the work went, not a description of the code; for the
 code read `docs/adoption-plan.md` (its first two sections) and
 `docs/decisions.md`.
@@ -31,7 +31,7 @@ document is the part of it that is committed.
 
 ## What was delivered
 
-One commit (`45cb641`), merged to `main`: 141 files, +77,589 / −1,827 lines, of
+One commit (`fa7681d`), merged to `main`: 141 files, +77,589 / −1,827 lines, of
 which `advtext/` is +30,390 and `tests/` is +38,749. The gate at the merge:
 `make check` — 4,893 passed, 7 skipped, 4 xfailed in about 300 s, ruff, black
 and mypy clean. It was 909 passed (4 red) in 40 s when the session began.

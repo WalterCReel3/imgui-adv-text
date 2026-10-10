@@ -455,7 +455,7 @@ an improvement. Each was accepted by the lead agent, not by you, and each says
 how to undo it.
 
 **What did not change, measured.** The demo's eight tabs, photographed in a
-real GLFW window under Xvfb at the default 1100x800 from commit `cb7bebf` and
+real GLFW window under Xvfb at the default 1100x800 from commit `27b3b73` and
 from the working tree: **all eight PNGs are byte-identical** (sha256), and the
 working tree photographed twice is identical to itself, so the comparison is
 not passing on noise. Re-run by the closer;

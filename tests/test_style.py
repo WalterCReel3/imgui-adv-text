@@ -9,7 +9,7 @@ as it did for every case the default theme can reach. Both are held against a
 *transcription of the old code kept in this file* -- `_build_as_it_was` and
 `_face_as_it_was` -- because a test that compared `Theme.build()` with
 `Theme.build()` would pass whatever either returned. The transcriptions were
-copied from `advtext/style.py` as it stood at commit `cb7bebf`; if they are ever
+copied from `advtext/style.py` as it stood at commit `27b3b73`; if they are ever
 "tidied" to call the new code they stop testing anything.
 
 **"A host can now say what it could not."** An all-monospace ragged theme at a
@@ -116,7 +116,7 @@ def _build_as_it_was(
     spacing: Spacing = Spacing.EXTRA_SPACE_ONLY,
 ) -> Theme:
     """
-    `Theme.build` at commit `cb7bebf`, with its constants written out as numbers.
+    `Theme.build` at commit `27b3b73`, with its constants written out as numbers.
 
     The constants are literals on purpose -- 1.25, 0.5, 1.4, 1.5 -- so that a
     change to `TYPE_SCALE_RATIO` or `WIDEST_MARKER_EM` shows up here as a moved
@@ -207,7 +207,7 @@ def _build_as_it_was(
 
 def _face_as_it_was(theme: Theme, kind: BlockKind, emphasis: Emphasis) -> Face:
     """
-    `Theme.face_for` at commit `cb7bebf`.
+    `Theme.face_for` at commit `27b3b73`.
     """
     if emphasis.code:
         return Face.CODE

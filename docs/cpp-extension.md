@@ -7,7 +7,7 @@ from scratch next time, and because two of the conclusions reverse what seemed
 obvious at the start.
 
 **Revised 2026-10-08**, against the tree after the adoption-and-demo merge
-(`a3c589a`) and against ImGui's own source, which the first version did not
+(`32e3953`) and against ImGui's own source, which the first version did not
 have. The conclusion did not move. What did: the probe in §2 looked in the wrong
 namespace, the rasteriser this build uses is FreeType and not stb_truetype, the
 timings in §3 predate the memo they recommend, and §4 never said where the port

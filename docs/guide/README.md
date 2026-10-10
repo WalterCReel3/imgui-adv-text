@@ -43,6 +43,7 @@ appear.
 | `docs/litmus.md` | the two litmus tests and what their artifacts show |
 | `docs/visual-review.md` | how to make a visual claim without being wrong |
 | `docs/adoption-plan.md` | the plan for adopting advtext in `../pptmstr`, and what was built against it |
+| `docs/postmortem-2026-10-adoption-and-demo.md` | how the two builds of 2026-10 went: what the plan got wrong, what went wrong, what is unknown |
 
 Two of those carry a **CORRECTIONS** section that is newer than the body:
 `docs/decisions.md` withdraws a premise several tasks were built on, and

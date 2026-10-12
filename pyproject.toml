@@ -5,9 +5,15 @@ name = "imscribe"
 # promises is written. `.devN`: no release exists; a requirement names a commit
 # or a file's sha256, never this alone. `make dist` builds the files.
 version = "0.2.0.dev0"
-description = "TeX-model text layout and rendering for Dear ImGui"
+description = "Markdown, streaming and diff views for Dear ImGui, typeset by imtypeset"
 readme = "README.md"
 requires-python = ">=3.11"
+# MIT, the licence of Dear ImGui and of Dear ImGui Bundle; the owner's choice
+# (2026-10-12: "permissive but compatible with the imgui ecosystem"). The six
+# fonts the views set text in are not in this package: they ship in the
+# imgui-bundle wheel under their own licences.
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Walter Reel" }]
 dependencies = [
     # Dear ImGui, the demo app, and the binary the imtypeset library is for.
@@ -46,6 +52,10 @@ dependencies = [
     "fonttools>=4.50",
 ]
 
+[project.urls]
+# The repository keeps its first name until its owner renames it on GitHub.
+Repository = "https://github.com/WalterCReel3/imgui-adv-text"
+
 [project.optional-dependencies]
 # The ruff floor is deliberately recent: the lint rule set shifts between minor
 # versions, and an older ruff passes code that a newer one rejects. A gate whose
@@ -73,11 +83,11 @@ dev = [
     # Added 2026-10-12 by a session with no index: neither was in `./.venv`
     # then, and `make dist` had not built anything when this line was written.
     "build>=1.2",
-    "hatchling>=1.26",
+    "hatchling>=1.27",
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 # The wheel is `imscribe/` and its metadata: no tests, no `demo/` sources, no
@@ -94,7 +104,7 @@ packages = ["imscribe"]
 [tool.hatch.build.targets.sdist]
 include = [
     "/imscribe", "/scripts", "/examples", "/tests", "/docs", "/README.md", "/Makefile",
-    "/pyproject.toml",
+    "/pyproject.toml", "/LICENSE",
     # Read by tests/test_ci_workflow.py (2026-10-12).
     "/imtypeset.ref", "/.github", "/HANDOFF-imtypeset.md",
     # The other half of the same record, and what the suite reads its sources

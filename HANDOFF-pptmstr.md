@@ -1737,3 +1737,16 @@ tree at `77401cb` plus uncommitted changes.
 > and every other monospace role are as they were: mixed steps at every
 > pixel height from 14 to 20. That is imtypeset's H34 / H35, held here by
 > 105 strict xfails in `tests/test_mono_acceptance.py`.
+
+### The rename is commit `cd437c1`; the licence is MIT (2026-10-12)
+
+- "The commit that carries this section" in the "Renamed" section above is
+  **`cd437c1`** on `experimental/imtypeset-adoption` (not pushed when this was
+  written). The commit before it, `68eb18b`, is the last one in which the
+  package is `advtext`; it has `cell="pixel"` for the diff view. So you can
+  take the diff view at `68eb18b` with no rename, and the rename at `cd437c1`
+  when you are ready to change your imports.
+- **imscribe is MIT-licensed** (the user, 2026-10-12: "permissive but
+  compatible with the imgui ecosystem"; MIT is Dear ImGui's and Dear ImGui
+  Bundle's licence, and yours). `LICENSE` is in the repository and named in
+  the package metadata from the commit after `cd437c1`.

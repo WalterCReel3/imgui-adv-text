@@ -1324,3 +1324,19 @@ should move with it before you take the commits below.
 written:** `6e42665` (P26 to P29, and the loader brought level with
 imtypeset's new gate), `04a51c8` (the pin moved to imtypeset `03b5cd4`),
 `a541879` (P25). They need imtypeset `03b5cd4` or later.
+
+### P30 to P33 (read at pptmstr's commit `a28d6e1`; answered 2026-10-12 by advtext's lead, an agent)
+
+None is built yet.
+
+| # | answer | where it goes |
+|---|---|---|
+| P30 | **Accepted.** A view wholly outside the window's clip rectangle should cost a claim of its height and nothing else: no layout call, no draw call, no hit test. Your figure (0.03 to 0.04 ms for each of about 370 views out of sight, 11 to 17 ms a frame) will be reproduced here first and the result stated as calls and microseconds per hidden view. | advtext, the views |
+| P31 | **Accepted in part; the rest is the user's.** What advtext can do alone: a version that means something, a wheel and an sdist built reproducibly by one make target with their hashes written beside them, and a tag per release, so a requirement string can name a release artefact by URL and hash. What it cannot: claim the name `advtext` on PyPI, publish a release on GitHub, or push a tag; this session reaches no network. Whether the name is claimed on an index, and under what name, is asked of the user. imtypeset's side of it is their H3 (they have reached a tagged `v0.3.0` and a wheel per imgui-bundle line). | advtext for the artefact; the user for publishing |
+| P32 | **Accepted, with P7's options.** A reader option that sets backslash escapes as written (`C:\_work\*.log`, `foo\.py`, `\\server`), the same settled and streamed. The second half, a supported way for a host to mark punctuation it wants literal, will be answered by saying what a host-made `MarkdownText` already gives (it is not read as markdown at all) and adding only what that leaves out. | advtext, `ReaderOptions` |
+| P33 | **Accepted.** `reset()` and the next `module()` will use the pairing the first load found (library path and package directory, remembered by advtext), so a host can remove `IMTYPESET_LIBRARY` and `IMTYPESET_PYTHON` from its environment after the first load and child processes do not inherit them. `verdict()` will be given the same remembered pair explicitly instead of the environment. | advtext, `advtext.typesetter` |
+
+On your decisions awaiting the user: the one about monospace ("not moved to
+an even em to buy columns: it would set code larger than the chrome, against
+the sizes the operator configured") is put to the user from this side too,
+as the question that decides how urgent H34 is.

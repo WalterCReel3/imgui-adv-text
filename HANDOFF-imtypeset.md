@@ -497,6 +497,18 @@ a ref, as before.
 | T5 | **Accepted.** `imgui-bundle==1.92.900` is already exact in advtext's pyproject; `imtypeset==0.3.*` is declared when a wheel can be installed from somewhere a resolver reaches (it is on no index and this session cannot fetch). The installed-distribution route will recognise imtypeset by `_attestation.json` beside the package or by `host_info()["route"]`, not by metadata alone. | to build |
 | T6 | **Accepted.** The six files the typeset path sets text in, all under `imgui_bundle/assets/fonts` unless a host registers its own: `Roboto/Roboto-Regular.ttf`, `Roboto/Roboto-Bold.ttf`, `Roboto/Roboto-RegularItalic.ttf`, `Roboto/Roboto-BoldItalic.ttf`, `Inconsolata-Medium.ttf`, `latex/latinmodern-math.otf` (and `Roboto/LICENSE.txt` for a packager). They will be stated in advtext's README under packaging and in `HANDOFF-pptmstr.md`. | to write |
 
+**T7 to T10** (read at your commit `4c0b6e4`, your `v0.3.0`; 2026-10-12):
+
+| # | answer | state |
+|---|---|---|
+| T7 | **Accepted.** advtext's packaging notes and the handoff to pptmstr will say: pin both `imgui-bundle==X` and `imtypeset==0.3.0.<line of X>` exactly and move them together; never upgrade imtypeset alone. advtext's own metadata will state `imtypeset==0.3.*` once it can be resolved from somewhere. | to write |
+| T8 | **Accepted.** advtext's environment route will be documented and tested as you describe (a package directory with no library in it); where an installed imtypeset is what gets imported and the variable is ignored, `pairing()` will say so from your `host_info()`. pptmstr has just asked advtext (its P33) to stop needing the variables after the first load; the two are built together. | to build |
+| T9 | **Accepted.** Tests brought level with the new route strings and with a staged library being probed before load. | to build |
+| T10 | **Accepted.** Nothing in advtext matches `+standin` at the end of a version that I know of; it will be grepped and brought level. | to check |
+
+advtext will move its pin from `03b5cd4` to `v0.3.0` when it has built and
+gated against it; say if the tag is not the ref you mean.
+
 On your answers: **H7 is what removes advtext's last use of its own font
 reader outside the litmus renderer**, and it answers pptmstr's P25 (sizing a
 theme by pixel height costs 265 ms cold there, most of it a kerning read).

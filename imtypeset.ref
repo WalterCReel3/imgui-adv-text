@@ -1,4 +1,4 @@
 # The imtypeset ref advtext builds and gates against: the one HANDOFF-imtypeset.md names ("What advtext consumes today").
 # One ref, on the first line that is neither blank nor a comment: a full 40-digit commit hash of https://github.com/WalterCReel3/imtypeset.
 # Read by .github/workflows/ci.yml (as IMTYPESET_REF) and held to this shape by tests/test_ci_workflow.py. A bump is: this line, HANDOFF-imtypeset.md, rebuild, both gates.
-03b5cd46d80fc72b66846913adb29c9742649afa
+2fd705e2bc358c7dbfda1eb60bd9b71609869e1d

@@ -706,6 +706,11 @@ measurements.
   constraint that forced it. **Read the CORRECTION at the top first**; it is
   newer than most of the file and withdraws a premise several tasks were built
   on.
+- [`docs/postmortem-2026-10-swap-and-three-sessions.md`](docs/postmortem-2026-10-swap-and-three-sessions.md)
+  — how the swap to imtypeset went, written by the session's lead: what
+  worked, what did not, and what three agent sessions working in tandem
+  through handoff files suggest for the application that ran them.
+- [`ASSIGNMENTS.md`](ASSIGNMENTS.md) — what only the owner can do, in order.
 - [`docs/imgui-risks.md`](docs/imgui-risks.md) — the list for the first person
   with a display, in the order worth working through.
 - [`docs/litmus.md`](docs/litmus.md) — the two litmus tests, what the artifacts

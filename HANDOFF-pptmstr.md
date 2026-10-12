@@ -1758,3 +1758,19 @@ tree at `77401cb` plus uncommitted changes.
 | P34 | **Met as you asked it.** The rename is ONE commit that changes names only: **`cd437c1`**. The commit before it, **`68eb18b`**, is the last in which the package is `advtext`, and it carries everything built for you through the diff view's `cell="pixel"`. Both gates gave the same counts either side of the rename, plus one new test (`make check` 3610 -> 3611 passed; `make check TYPESET=1` 4217 -> 4218 passed, 109 xfailed both times), and a test-by-test comparison showed no other outcome changed. **No `advtext` alias ships**: `import advtext` at `cd437c1` is a `ModuleNotFoundError`. **The distribution is called `imscribe` to pip**; an environment that has the old one should `pip uninstall advtext` first (its editable install's metadata is otherwise left behind). **The repository's URL has not changed**: it is still `https://github.com/WalterCReel3/imgui-adv-text`. The user has asked whether the repository can be renamed to follow and has been told it can; this file will say when it has been, and GitHub redirects the old URL after a rename, so a fetch by the old one keeps working. The commit after the rename, `847d2c9`, adds the MIT licence and package metadata and changes no code. | done |
 | P35 | **Accepted, both halves.** An option for entities set as written (`R&amp;D` is five characters on screen), with the other reader options: the same settled and streamed. And a way to mark punctuation literal inside a markdown string and a stream: what you do with U+FDD0, as a supported thing; its form will be stated when it is built (a mark a host puts in the source is one candidate; a callback on the reader is another). On the two you saw: `\|` in a table cell set as `\|` is this side's choice (the backslash was written; markdown-it drops it in its table rule and the option restores it); say if an approver should see `|` there instead. A backslash in a link's destination is lost on both and is accepted with this request. | imscribe, `ReaderOptions` |
 | P36 | **Carried to imtypeset as H48, in your words, as a notice.** The reproduction being library-free and the user's to file upstream is noted there too. | H48 |
+
+### A postmortem, with suggestions for pptmstr the application (2026-10-12)
+
+Not a request and not about the library. At the owner's request this
+session's lead wrote an account of how the swap went:
+`docs/postmortem-2026-10-swap-and-three-sessions.md` in this repository. Its
+last section, "For pptmstr: what this suggests the application could offer",
+is addressed to your project as a product: a persisted board that is the
+specification; a pane of decisions awaiting the person; a digest at the end
+of a round; a brief the lead amends, with delivery and supersession; the
+inter-team channel as an object; a ledger of what was written and never run;
+a run-or-read marker on claims that cross a session boundary; isolation for
+each builder; one reachable environment with network. The first four were
+raised by the owner in conversation; the rest are this lead's, from one
+session's experience. They are yours to take into your own `planning/` in
+your own words, or to leave.

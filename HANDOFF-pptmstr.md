@@ -1575,3 +1575,78 @@ which names the old Python core that imtypeset's oracle is pinned to. Whether
 a transitional `advtext` alias ships for one release will be said here when
 the rename is specified; assume none. The repository's name on GitHub and the
 name on any index are the user's to change.
+
+### The diff view on a whole-pixel cell: usable by you now (2026-10-12)
+
+The user, 2026-10-12: "We need to get the new diff interface working in
+pptmstr." By advtext's D-CELL builder, an agent; commit `1128ea2` on
+`experimental/imtypeset-adoption`, not pushed when this was written; both
+gates green after it (`make check` 3610 passed, `make check TYPESET=1` 4217
+passed and 109 xfailed, load 10 to 20, imtypeset `v0.3.0`). Measured in a
+real window by reading the vertex buffer; no pixel was read and nobody
+looked. What follows is the builder's own text, placed whole. It read your
+tree at `77401cb` plus uncommitted changes.
+
+> **The diff view can be put on a whole-pixel cell today:
+> `TypesetDiffView(model, theme, layout=layout, cell="pixel")`.** The
+> default is unchanged (`cell="font"`); nothing you have moves until you
+> pass it. In your tree as read on 2026-10-12 (`77401cb` plus your working
+> changes) it is **two lines**: the view `diffs.diff()` makes, and the
+> `TypesetDiffView(Diff(), theme).grid` in `gate._measured_columns`, which
+> must measure the view you draw. `TypesetDiffFences(cell="pixel")` is the
+> same for a fenced diff.
+>
+> **What it does.** The view asks Dear ImGui for the advance it has baked
+> for the library's code font at the pixel height your theme's code size
+> comes to, draws the face at the em whose advance is that whole pixel,
+> and keeps your pitch: `grid.cell` is 8.0 at 16, `grid.row` is your 18,
+> `content_height` and the row count do not change, `content_width`, the
+> panes and `headers()`' widths follow the cell. `code_size` still answers
+> the size you asked for; `grid.em * grid.scale` is the em drawn.
+>
+> **Measured** (advtext's D-CELL builder, an agent, 2026-10-12, imtypeset
+> v0.3.0, Dear ImGui 1.92.9, FreeType, loader flags 0, density 1, Xvfb;
+> load average 4 to 19, every run repeated and identical; vertices read, no
+> pixel, nobody looked), with a theme built as your `diff_theme()` builds
+> it, at every pixel height from 12 to 24, unified and side by side: one
+> step on every row; 0 px between rows at a column; characters 1, 10, 20,
+> 30, 40 and 74 on `ImDrawList.add_text`'s pens in the same face at your
+> pixel height; every glyph 0.00 px from its rectangle; a selection's fill
+> on the pens of its first glyph and of the glyph after its last; 0 pens
+> off the grid. At mono 16 your figures against these: `grid.cell` 7.626 /
+> 8.000; steps 7 x66 and 8 x92 / 8 x158; rows 13 px apart / 0; the 40th
+> character 297 / 312 against ImGui's 312; pen less ImGui's at 10, 20, 40,
+> 74: -9, -19, -27, -27 / 0, 0, 0, 0; a glyph up to 16.9 px left of its
+> cell / 0.00. Your figures reproduce exactly with the default cell.
+>
+> **Your adoption measurement, copied here and run with `cell=` as a
+> parameter (I cannot import pptmstr), holds at every pixel height from 12
+> to 24 with `cell="pixel"`** ("keeps a 8 px column: laid out, drawn and
+> hit over a row" at 16; 0 of 156 glyphs off their column, 0 mishit) **and
+> at none without.** Not run with your fonts: your registered Inconsolata
+> Bold and your chrome font were not loaded.
+>
+> **Your probe's hit-test figure is not a displacement.** The library's
+> `hit_test` answers the nearest caret. With every glyph 0.00 px from its
+> rectangle, `scripts/measure_typeset_diff.py`'s reading (the centre of the
+> quad against the glyph's own index) says 63 of 64 at 16, 3 of 64 at 14,
+> 15 at 18, 52 at 20. Your `gate.columns` already asks the right question
+> (a quarter and three quarters of a cell); by it the 74-character row is
+> 54 of 64 wrong with the default and 0 of 64 with the option. The "40 of
+> 64" in your handoff and in `diffs.py`'s docstring is the old reading.
+>
+> **What it costs you.** The glyphs are not the size you asked for: at an
+> even pixel height the em grows 4.9 % and the glyphs come from the raster
+> one pixel larger (16 px: em 15.253 becomes 16.000, raster 17); at an odd
+> one the em moves by -3.2 % (13) to +0.3 % (23) on the same raster. On
+> your 18/16 pitch no printable ASCII glyph leaves its row at any height
+> from 12 to 24; U+2502 overhangs by up to 4 px above and 3 below (3 and 2
+> without the option), more than 2 px at 18, 20, 22, 23 and 24. A
+> character the code face lacks still puts the rest of its line off the
+> grid. Not run: a framebuffer scale other than 1, a GPU, a loader that
+> does not hint.
+>
+> **This is the diff view only.** A fenced code block in a `TypesetView`
+> and every other monospace role are as they were: mixed steps at every
+> pixel height from 14 to 20. That is imtypeset's H34 / H35, held here by
+> 105 strict xfails in `tests/test_mono_acceptance.py`.

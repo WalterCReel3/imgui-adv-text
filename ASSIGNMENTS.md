@@ -10,18 +10,34 @@ the other side.
 
 ## 1. Push what exists (do this first; it loses nothing and unblocks the most)
 
-- [ ] **imscribe** (this repository, still named `imgui-adv-text` on GitHub).
-      The branch is about 30 commits ahead of the remote.
+Three repositories, three directories. **Each block must be run in its own
+directory**: a tag or branch of one repository does not exist in another
+(`git push origin v0.3.0` here answers "src refspec v0.3.0 does not match
+any", because `v0.3.0` is imtypeset's tag).
+
+### 1a. In `~/Source/imgui-adv-text` (imscribe; still named `imgui-adv-text` on GitHub)
+
+- [ ] The branch, about 30 commits ahead of the remote. Work in progress: do
+      not merge.
 
       ```sh
       cd ~/Source/imgui-adv-text
       git push -u origin experimental/imtypeset-adoption
       ```
 
-      Work in progress: do not merge.
+- [ ] Optional: this repository's one tag, `advtext-reference`. imtypeset's
+      test oracle is pinned to it; it points at a commit already on `main`,
+      so nothing depends on pushing it.
 
-- [ ] **imtypeset**: its branch AND its tag. imscribe's CI fetches imtypeset
-      by commit, and the commit it pins is the tag `v0.3.0`.
+      ```sh
+      cd ~/Source/imgui-adv-text
+      git push origin advtext-reference
+      ```
+
+### 1b. In `~/Source/imtypeset`
+
+- [ ] Its branch AND its tag `v0.3.0`. imscribe's CI fetches imtypeset by
+      commit, and the commit it pins is that tag.
 
       ```sh
       cd ~/Source/imtypeset
@@ -29,9 +45,9 @@ the other side.
       git push origin v0.3.0
       ```
 
-- [ ] **pptmstr**: the adoption branch.
+### 1c. In `~/.pptmstr/worktrees/pptmstr/adv-text-experiment` (pptmstr's adoption branch)
 
-      ```sh
+- [ ] ```sh
       cd ~/.pptmstr/worktrees/pptmstr/adv-text-experiment
       git push -u origin adv-text-experiment
       ```

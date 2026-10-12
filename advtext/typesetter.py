@@ -177,6 +177,7 @@ __all__ = [
     "RUN_FORMULA",
     "RUN_NO_BREAK",
     "RunDescription",
+    "SPACINGS",
     "StyleDescription",
     "base_style",
     "block_styles",
@@ -206,6 +207,17 @@ _with_tags = with_tags
 
 LIBRARY_VARIABLE = "IMTYPESET_LIBRARY"
 PACKAGE_VARIABLE = "IMTYPESET_PYTHON"
+
+SPACINGS: dict[str, int] = {"EXTRA_SPACE_ONLY": 0, "FRENCH": 1, "NONFRENCH": 2}
+"""
+imtypeset's sentence spacing for each `advtext.theme.Spacing`, by the NAME of the member.
+
+`ImTypesetSpacing_`: `Sentence` (the space after a sentence a third wider,
+stretching as any other), `French` (every space alike) and `TeX`
+(`\\nonfrenchspacing` entire). The three are the theme's three, and the
+library's default, 0, is the theme's default. `base_style` is where a
+theme's member becomes the number.
+"""
 
 # How the package was found: `pairing()["route"]`.
 ROUTE_ENVIRONMENT = "environment"
@@ -335,7 +347,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "table_row",
     ),
     "BlockStyle": (*StyleDescription._fields, "Color"),
-    "Style": ("EmSize", "PixelsPerInch", "Color"),
+    "Style": ("EmSize", "PixelsPerInch", "Color", "Spacing"),
     "DocumentOptions": (
         "CodeOverflow",
         "QuoteBarColor",
@@ -1232,6 +1244,16 @@ def base_style(theme: Theme, ink: int = 0) -> Any:
     `StyleDescription.Scale` is a multiple of. `ink` is an ImGui packed colour
     (`Palette.ink`); 0 leaves the library's default. Raises `RuntimeError`
     naming `reason()` when the library is not in use.
+
+    The space after a sentence is the theme's (`Theme.spacing`, by
+    `SPACINGS`): the library has one setting for a whole document and this
+    is where it is told. Under `Spacing.FRENCH` every space of a ragged line
+    is laid out at one width; under the other two the space after the end of
+    a sentence (a full stop or a question mark that does not follow a capital
+    letter, and a closing bracket or quotation mark after one) is a third
+    wider, and the space after a colon, a semicolon or a comma is not
+    (`tests/test_typeset_spacing.py`). A fenced block's spaces are one width
+    under all three.
     """
     ts = _must()
     paragraph = importlib.import_module("advtext.theme").BlockKind.PARAGRAPH
@@ -1240,6 +1262,7 @@ def base_style(theme: Theme, ink: int = 0) -> Any:
         EmSize=to_px(theme.style(paragraph).font.size, theme.px_per_inch),
         PixelsPerInch=theme.px_per_inch,
         Color=ink,
+        Spacing=SPACINGS[theme.spacing.name],
     )
 
 

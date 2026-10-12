@@ -1205,4 +1205,4 @@ U+FFFD, not the byte. An agent's decision (the builder's, kept by the lead);
 the alternative was a refusal at the call. The section "Open, from a review
 of what was built" above says what else changed and what is still open.
 
-**commit for P23, P24 and the review fixes: named below by the lead.**
+**commit for P23: `efa3d72`; for P24 and the review fixes: `4f7b358`** (on `experimental/imtypeset-adoption`; not pushed when this was written).

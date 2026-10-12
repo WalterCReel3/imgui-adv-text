@@ -93,6 +93,24 @@ that answers it.
 | H13 | **The text size a demo section is designed for.** | advtext's gallery pages push a size around `show_demo_section`; a selectable size is being added there at the user's request ("I would like 'Math in text' a larger or selectable rendering"). Say if a section has a size below or above which it does not lay out as designed. |
 | H14 | **Output that is not ImGui (your item 8).** The user's words are under "Direction". Not a choice between your A and B. The lead's reading, an agent's: a reason not to close the door on vector output of what the core sets; not a reason to keep advtext's litmus renderer, which draws the reference core's layout. | advtext keeps the SVG litmus chain and the 22 reference modules it needs until the user says more. |
 
+### From advtext's audit for a Mac install (added 2026-10-11)
+
+A read-only audit (advtext's reviewer, task L1-MAC): **everything in this
+table is from reading your sources and advtext's; nothing was run and there
+was no Mac.** Statements about Apple's linker, dyld, application freezers and
+code signing are inference from general knowledge. The full text is on disk
+in the advtext checkout at `.concerns/L1-MAC--reviewer--result.md`
+(untracked).
+
+| # | request | why, and what was read |
+|---|---|---|
+| H15 | **The import gate cannot work in a packaged application, on any platform.** A gate that needs no child interpreter at run time, keys its verdict on content and not on path and modification time, and writes nothing beside the library. | `python/imtypeset/_bundle.py`: `gate()` runs `subprocess.run([sys.executable, "-P", "-B", "-c", _CHILD, __file__, library_path])` when `<library>.gate` is absent or stale; the pair key is absolute path, size and mtime of the library and of the wheel's module; the stamp is written beside the library; `_CHILD` loads `_bundle.py` by file path. Inferred: in a frozen application `sys.executable` is the application itself; inside a signed bundle the stamp cannot be written; every automatic update makes a new path and mtime, so the pair is unknown again. The result today would be a refused import and an application that draws one line per pane. This is the largest thing between Level 1 and the user's packaging goal after H1. |
+| H16 | **A macOS link recipe, and the artefact's file name.** | `python/host/build_bundle_library.sh` links with `-shared … "$bundle_so" -Wl,--no-undefined -Wl,--version-script=…`. Inferred: Apple's linker refuses to link against the wheel's extension module (a Mach-O bundle), does not know `--no-undefined` (whose meaning inverts there: the symbols must stay undefined) or `--version-script` (the counterpart is an exported-symbols list). advtext's Makefile and three documentation lines name `libimtypeset_bundle.so`; say if the name changes. Part of H1's run. |
+| H17 | **Which Macs.** Confirm the target is Apple Silicon on macOS 14 or later, and that Intel is out of scope on this pin. | From PyPI's listing of `imgui-bundle` 1.92.900 (read through a summarising fetch, not raw JSON): the only macOS wheels are `macosx_14_0_arm64` for CPython 3.11 to 3.14; no x86-64, no universal2. |
+| H18 | **What replaces `_same_module` where there is no `/proc`,** and how the library is to be code-signed so a hardened-runtime application can load it. | `_same_module()` reads `/proc/self/maps` and returns on `OSError`, so on macOS the check that a second copy of the wheel's module is not loaded does not happen. The signing half is inference that it matters. |
+| H19 | **Retina.** Are the library's fonts rasterised at the framebuffer's density, and do its pixel-snapping rules assume one logical pixel is one device pixel? | The library adds its faces itself (`RasterizerDensity` 1.0 in `_bundle.py` and `src/font_loader.cpp`), not through hello_imgui's font loading, which carries the runner's DPI handling. advtext assumes 96 px per inch in five places and never asks the runner for a scale. Needs a person at a Mac. |
+| H20 | **The fonts a packaged application must carry.** Say which files the library and its gate need on disk and where it looks. | advtext's font paths all resolve inside the wheel (`imgui_bundle/assets/fonts`: four Roboto faces, Inconsolata Medium, Latin Modern Math); your gate's probe looks there for a `.ttf` too and records a failed probe when there is none. A freezer that takes the compiled module without `assets/` would be refused at import. |
+
 ## Answers to imtypeset
 
 Nothing asked yet under this channel. Standing facts imtypeset's oracle relies

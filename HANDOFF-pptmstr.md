@@ -103,6 +103,28 @@ request H1 to imtypeset and is open.
   column widths are lost to an edit above the table.
 - The full open list: `docs/status.md` 0d.
 
+### For packaging (added 2026-10-11, from advtext's read-only audit)
+
+From reading, nothing run, no Mac; inference about macOS is marked as such in
+`HANDOFF-imtypeset.md`, requests H15 to H20, which is where these are being
+taken up.
+
+- **The library's import gate cannot work in a frozen application today**
+  (H15): it runs a child interpreter through `sys.executable` and writes a
+  stamp beside the library. Until that is answered, a packaged pptmstr would
+  have its typeset panes refused at import and would fall back. Do not design
+  the packaging around the gate as it is.
+- **The pinned `imgui-bundle` 1.92.900 has macOS wheels for Apple Silicon on
+  macOS 14 or later only** (H17; read from PyPI's listing through a
+  summariser). No Intel, no universal2.
+- **Every font the typeset path sets is a file inside the `imgui-bundle`
+  wheel** (`imgui_bundle/assets/fonts`: four Roboto faces, Inconsolata Medium,
+  Latin Modern Math), unless the host registers its own per role with
+  `advtext.fontlib.register_font`. A freezer must carry them, or pptmstr
+  registers the faces it ships. This bears on A3.
+- **Retina is unexamined** (H19): advtext assumes 96 px per inch and never
+  asks the runner for a scale.
+
 ## Requests of pptmstr
 
 | # | request | why |

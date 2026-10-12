@@ -101,6 +101,15 @@ class HostedDiff:
         """
         self.view.handle_keys()
 
+    def headers(self, width_px: float | None = None) -> tuple[Any, ...]:
+        """
+        `TypesetDiffView.headers` of the view: each file's header as a
+        `DiffHeader`, with whether it fit the width this fence was last drawn
+        at (or `width_px`). A fenced diff carries no `will_not_apply`; its
+        warnings are the reader's own (lines not read, control characters).
+        """
+        return tuple(self.view.headers(width_px))
+
     @property
     def text(self) -> str:
         return self.stream.text

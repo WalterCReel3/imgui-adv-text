@@ -57,7 +57,7 @@ if we ever decide to render mermaid diagrams inline."
 
 | | |
 |---|---|
-| imtypeset ref built and gated against | commit `c9f8902` (lead's run, 2026-10-11: `make check` 2875 passed; `make check TYPESET=1` 3129 passed; and on the Level 1 working tree, L1-GATE's builder, an agent, 2026-10-12, load 3.4 to 4.5: 2955 passed and 3211 passed) |
+| imtypeset ref built and gated against | commit `c9f8902` (lead's run, 2026-10-11: `make check` 2875 passed; `make check TYPESET=1` 3129 passed; and on the Level 1 working tree, L1-GATE's builder, an agent, 2026-10-12, load 3.4 to 4.5: 2955 passed and 3211 passed; and on the tree with pptmstr's requests built, PH-FINAL's builder, an agent, 2026-10-12, alone on the tree, load 1.6 to 7.1: 3318 passed and 3612 passed) |
 | the ref in use | the full hash `c9f8902a67adf00a18426876d5983617b7d1408c`, in `imtypeset.ref` at advtext's root (one line; `tests/test_ci_workflow.py` holds it to a full hash and to the short hash in this table). imtypeset has no tag yet (H4). The Makefile does not read that file: a person passes the ref, and the CI workflow reads the file and passes it |
 | how it is built | Three ways, one recipe after the source is in hand (`python/host/build_bundle_library.sh`, and a snapshot of `python/imtypeset` beside the library). `make typeset-lib IMTYPESET_REF=<tag \| branch \| full hash>`: one commit fetched with `git fetch --depth 1` from `IMTYPESET_REPO` (default `https://github.com/WalterCReel3/imtypeset.git`) into a cache under `build/`, then `git archive`. `make typeset-lib IMTYPESET_COMMIT=<rev>`: `git archive` of that commit of the sibling checkout. `make typeset-lib`: the sibling's working tree. **The first has been run against a `file://` clone only (L1-PKG's builder, 2026-10-11, real compiler and gate, exit 0); nobody has run it against GitHub.** The pair the gates run against, `build/imtypeset-bundle`, was built the second way |
 | how it is found | `advtext/typesetter.py`, in this order: (1) `IMTYPESET_LIBRARY` (the shared library) with `IMTYPESET_PYTHON` (the package directory), the development override; (2) otherwise an installed `imtypeset` distribution, recognised by its metadata (`importlib.metadata.distribution("imtypeset")`), imported with no variable set; (3) otherwise not loaded, and `reason()` is `IMTYPESET_LIBRARY is not set`. `typesetter.pairing()` answers which route was taken, the library, the versions, the headers and what accepted the pair. Route 2 has met stand-ins only: there is no distribution yet (H3) |
@@ -218,6 +218,107 @@ each measured by the builder named, at `c9f8902`, on imgui-bundle 1.92.900):
 | H27 | **In a Code block, `Document.caret_rect` at the offset of a line's end, for a line that is not the block's last, answers the start of the next line.** Is that intended? | PH-DIFF's builder: `CodeOverflow.Grow`, text "abcdef\nxy", default block style: offset 5 gives x 39.99994, y 0.0; offset 6 (after 'f', before the newline) gives x 0.0, y 21.59999; offset 7 gives the same rectangle. So the end of a line has no caret position of its own and a line's set width cannot be read from a caret there. Not a blocker: advtext gives each diff header a block of its own. |
 | H28 | **`Document.edit_error` as a class attribute default.** | PH-GATE's builder: it is set in `__init__`, so advtext's check that the imtypeset it found has every name advtext calls (pptmstr's P3) cannot ask for it without making a document. Small. |
 
+#### H29 to H33, new requests (added 2026-10-12, later the same day)
+
+State of each: **open**. From the same work as H25 to H28 (advtext building
+pptmstr's P1 to P19). Each quoted passage is the builder's own sentence
+"for the typesetting core", copied as written from its result file
+(`.concerns/PH-VIEW--builder--result.md`, `.concerns/PH-MD--builder--result.md`;
+untracked, on disk in the advtext checkout). Each builder is an agent and
+measured at `c9f8902` on imgui-bundle 1.92.900, headless unless it says
+otherwise; nobody looked at a screen. What advtext did about each is said
+after the quotation.
+
+**H29. With grow, `GetDocumentSize` does not say how far the widest block
+reaches.** (pptmstr's P12.) PH-VIEW's builder:
+
+> With `ImTypesetCodeOverflow_Grow`, `GetDocumentSize().x` stays the layout
+> width: 444.0 for a document laid out 444 px wide whose code block's
+> `ImTypesetBlockGeometry::Max.x` is 3215.995 (a 400-character line at an 8
+> px advance after a 16 px indent), read after the draw and after a second
+> `LayoutDocument`, at c9f8902. The enumerator's comment says 'It runs on,
+> and the document is as wide as its longest'; `GetDocumentSize`'s says 'The
+> column's width'. advtext needs one call that answers how far the widest
+> block reaches, so a host can give its window a scroll range. Today it
+> asks `GetDocumentBlockGeometry` of every code block, which lays each out:
+> 128 ms against 12 ms for the first frame of 500 code blocks of 20 lines.
+
+The timing is the same builder's, load 11.9, once.
+
+**H30. With clip, nothing says that a line was cut.** (P12.) PH-VIEW's
+builder:
+
+> With `ImTypesetCodeOverflow_Clip` nothing says that a line was cut or how
+> long it was: the code block's `Max.x` is the measure (444.0). A host that
+> clips cannot say 'this line continues'.
+
+So advtext's `TypesetView.content_width` is the measure under clip, and
+pptmstr has been told the content's width cannot be reported there.
+
+**H31. A held table and stated widths: which wins?** (P19.) PH-VIEW's
+builder:
+
+> A table with `ImTypesetBlockFlags_TableHeld` keeps the widths it holds
+> when its columns state `ImTypesetTableColumn::Width`: stated 99.961 and
+> 55.945 px through `SetDocumentTableColumns`, the columns stayed 95.031 and
+> 53.516 px; the same widths on the same table without the flag are taken
+> exactly. `ImTypesetTableGeometry::Stated` is true in both. The header does
+> not say which wins. advtext now takes the flag off a table whose columns
+> are stated.
+
+**H32. Seeding a held table's widths.** (P19.) PH-VIEW's builder:
+
+> A held column is the widest its cells have wanted at ANY layout, so a
+> stream that re-reads its markdown as it arrives (`**bold wor` is literal
+> for some frames) ends with columns 4.93 and 2.43 px wider than the same
+> table described whole with the flag. 'Replace the stream by the settled
+> text and no column moves' therefore holds only when no cell was ever
+> wider than it ended. A held table that could be SEEDED with widths (held,
+> and not narrower than these) would close it; (3) is why stating them does
+> not do that today.
+
+"(3)" in that passage is H31. Until then the host states the stream's
+widths on the settled view (`TypesetView.set_table_columns`), which gives
+up the refit when the pane is later too narrow.
+
+**H33. Keep what a run's scale is a multiple of, and say so in the
+comment.** (P11.) PH-MD's builder:
+
+> `ImTypesetRun::Scale` is commented 'Size, as a multiple of the
+> paragraph's. 0 is 1.' Measured at c9f8902 it is a multiple of the size
+> of the BLOCK the run is in, a heading included: a code `m` advances
+> 8.0 px at scale 1 and 10.0 px at 1.25 in a 16 px paragraph, and 15.625 px
+> and 19.531 px in a 31.25 px heading. advtext now depends on that reading
+> (inline code sized from the theme); please keep it, and consider saying
+> 'the block's' in the comment.
+
+A request to keep the behaviour and fix the comment; nothing is broken.
+
+**A note, not a request** (information from the same builder, PH-MD's; it
+asks for no change):
+
+> A run scaled above 1 raises its line only when its ink passes the
+> line's strut (`.concerns/PH-MD-scripts/run_scale_line_probe.py`, body 16
+> px, line 21.6 px): `mmmm` at scale 2 leaves the pitch at 21.6; `bdfh` at
+> 2 makes the pitch into the next line 26.9 and `|Åg|` at 1.5 makes it
+> 24.6. That is the strut being a floor and we are not asking for a
+> change; it means a host that sizes code spans up needs the
+> fixed-line-height flag (P13) to keep one pitch.
+
+**Under H4, from the same work** (PH-GATE's builder; what advtext does
+alone until there is a rule):
+
+> For H4: advtext now refuses at `module()` any imtypeset lacking a name of
+> `advtext.typesetter.REQUIRED`, or whose `Block`/`Run`/`Cell`/`TableColumn`
+> do not begin with advtext's fields in order. It cannot see a name that is
+> there and means something else, nor enumerator values.
+
+`advtext.typesetter.REQUIRED` is therefore the exact list behind the row
+"public names used" in "What advtext consumes today": 25 names of the
+package, 29 members of `Document`, the fields advtext sets of four
+structures and the members it names of seven enums (counted off the code by
+PH-FINAL's builder, an agent).
+
 Also from pptmstr, on requests already here:
 - **On H15** (its P6, its words): "In a frozen application the gate's child
   would be the application itself, relaunched with `-P -B -c`, which pptmstr's
@@ -266,6 +367,24 @@ Done:
   `make check` 2955 passed, 264 skipped, 4 xfailed, load 3.4 at the start
   and 4.4 at the end; `make check TYPESET=1` 3211 passed, 8 skipped, 4
   xfailed, load 4.5 and 4.5).
+
+- **pptmstr's requests P1 to P19, built as far as `HANDOFF-pptmstr.md`,
+  "Answers to pptmstr", says** (four builders, agents, later on 2026-10-12;
+  uncommitted when written): kinds for why the library is not drawing, a
+  way back from a failure, a names-and-fields check of the imtypeset found
+  (`advtext.typesetter.REQUIRED`), a verdict from a child process, the
+  `ImFont` of a face, reader options, blocks and descriptions a host made,
+  code overflow per view, one line pitch per block, tables at natural
+  widths, a diff header's fit. Of the library it newly uses:
+  `CodeOverflow.Clip`, and `Grow` outside the diff view;
+  `BlockFlags.FixedLineHeight` on a document's text and code (the diff view
+  had it); `BlockFlags.TableHeld` on a settled table (a stream's had it); a
+  `Run.scale` that is not zero. H25 to H33 came out of it.
+- Both gates on that tree, against the pinned pair from `c9f8902`
+  (PH-FINAL's builder, an agent, alone on the tree, 2026-10-12):
+  `make check` 3318 passed, 302 skipped, 4 xfailed, load 1.8 at the
+  start and 1.6 at the end; `make check TYPESET=1` 3612 passed, 8 skipped,
+  4 xfailed, load 1.6 and 7.1. Each once.
 
 Not done, by anyone:
 

@@ -660,6 +660,44 @@ class Theme:
     # constructed by hand without one gets the default table, which is what
     # every theme had before the field existed.
     faces: Faces = DEFAULT_FACES
+    # The size of a code span beside the size of the block it is in: the
+    # block's size times `inline_code_scale` (0 is 1, the library's own
+    # convention for a run's scale), plus `inline_code_step` scaled points.
+    # Both at their defaults is a span at its block's size, which is what
+    # every theme gave before the fields existed. `inline_code_run_scale` has
+    # the arithmetic and says why there are two numbers.
+    inline_code_scale: float = 0.0
+    inline_code_step: Scaled = 0
+
+    def __post_init__(self) -> None:
+        """
+        Refuse an inline-code size no block could be set at, where the theme is made.
+
+        A theme is a host's input, and the two fields are read while a
+        document is being parsed, which for a stream is inside a draw. So a
+        value that cannot be a size is an error here, at `Theme(...)` or
+        `dataclasses.replace(theme, ...)`, and never there. With both fields
+        at their defaults nothing is looked at.
+        """
+        scale, step = self.inline_code_scale, self.inline_code_step
+        if scale == 0 and step == 0 and type(scale) is float and type(step) is int:
+            return
+        if isinstance(scale, bool) or not isinstance(scale, int | float):
+            raise TypeError(f"inline_code_scale is a number (0 for 1), not {type(scale).__name__}")
+        if isinstance(step, bool) or not isinstance(step, int):
+            raise TypeError(
+                f"inline_code_step is whole scaled points (an int), not {type(step).__name__}"
+            )
+        if not math.isfinite(scale) or scale < 0:
+            raise ValueError(
+                f"inline_code_scale is {scale!r}: it is 0 (for 1) or a positive number"
+            )
+        for kind, style in self.blocks.items():
+            if style.font.size * (scale or 1.0) + step <= 0:
+                raise ValueError(
+                    f"inline_code_scale {scale!r} and inline_code_step {step!r} leave a code "
+                    f"span in a {kind.name} block of size {style.font.size} no size at all"
+                )
 
     @classmethod
     def build(
@@ -908,5 +946,52 @@ class Theme:
     def font_for(self, kind: BlockKind, emphasis: Emphasis) -> FontSpec:
         """
         `face_for` at the block's own size.
+
+        The block's own size whatever `inline_code_scale` and
+        `inline_code_step` say: those are read by `inline_code_run_scale`,
+        which is what a caller setting text through imtypeset asks. The
+        reference core, which asks here, sets a code span at its block's size.
         """
         return FontSpec(self.face_for(kind, emphasis), self.style(kind).font.size)
+
+    def inline_code_run_scale(self, kind: BlockKind) -> float:
+        """
+        What a code span in a `kind` block is given as its run's scale: 0.0 for "the block's size".
+
+        The library reads a run's scale as a multiple of the size of the
+        block the run is in, and 0 as 1 (`imtypeset.h`, `ImTypesetRun::Scale`:
+        "Size, as a multiple of the paragraph's. 0 is 1."; measured, not
+        only read: `tests/test_reader_options.py`). So this is
+
+            (size * (inline_code_scale or 1) + inline_code_step) / size
+
+        with `size` the block's own, and exactly `0.0` when both fields are
+        at their defaults, so that a theme which says nothing describes its
+        code spans as it always did.
+
+        **Why two numbers.** One is not enough for either thing a host wants.
+        A host that wants a code span to stand as TALL as the prose it is in
+        needs a ratio: a face's pixel height per em is its own (Inconsolata is
+        about 14.3 px tall at the em at which Roboto is 16), so the span's em
+        is the block's times `prose height per em / code height per em`,
+        whatever the block's size. A host that gives inline code a size of
+        its own, some pixels more or less than the prose, needs a difference,
+        and a difference is not a ratio: two pixels less is a different
+        fraction of a paragraph than of a heading. Together they are linear
+        in the block's size, which is all either case needs. For a code span
+        `d` pixels taller than its block's text, with `p` and `c` the two
+        faces' (ascent + descent) / em: `inline_code_scale = p / c` and
+        `inline_code_step = sp_from_px(d / c)`.
+
+        **On a monospace base the answer is 0.0**, whatever the fields say: a
+        code span in a block whose own face is one of `faces.monospace` is
+        that block's face (`face_for`), there is no second family for it to
+        be sized against, and it is set at the block's size.
+        """
+        scale, step = self.inline_code_scale, self.inline_code_step
+        if not scale and not step:
+            return 0.0
+        font = self.style(kind).font
+        if font.face in self.faces.monospace:
+            return 0.0
+        return (font.size * (scale or 1.0) + step) / font.size

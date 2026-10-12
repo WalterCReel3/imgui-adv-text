@@ -6,6 +6,250 @@ before `README.md` if you are deciding whether to trust anything here.
 It is written to be useful rather than flattering. Section 4 is the longest on
 purpose.
 
+## 0f. Revision of 2026-10-12, later the same day: what the first host asked for. Thirteen of pptmstr's requests built, two of them only partly; nobody has looked at any of it
+
+The newest revision, put first. Section 0e below was the newest when it was
+written and says so; it is hours older and is not changed. **Where 0e says
+the facade "is still 89 names" and that `pairing` "is not on the facade",
+read this section**: it is 102 and `pairing` is one of them. **Where 0e says
+pptmstr's file "has six requests of advtext, P1 to P6, read on 2026-10-12
+and not answered"**: it had twenty by the time the lead answered them
+(commit `4b84ec8`), and it has twenty-four now; P21 to P24 are not answered.
+What this section describes was in the working tree, uncommitted, when its
+writer (the builder of the task PH-FINAL, an agent) wrote it; `HEAD` was
+`8c05c33`; the lead commits.
+
+**Read every paragraph below with these in mind:**
+
+- **Nobody has looked at anything.** Every claim is a number an agent read
+  off a draw list, a layout or a return value. No pixel was read by anyone.
+- **Nothing was run through pptmstr's code or its tests.** Its named tests
+  are on its old seam and do not import. "Met" below means a test in this
+  tree asserts the same behaviour, and `HANDOFF-pptmstr.md` says for each
+  how that is known.
+- **Nothing here has run on macOS, on a GPU, at a display scale other than
+  1, or in a frozen application**, and 0e's three (GitHub, macOS, the CI
+  workflow) still stand.
+- **Every default is what it was.** Each thing below is an option, a new
+  call, or a refusal of something that used to become an empty block.
+
+### What the user asked
+
+Nothing new. The direction is the one 0e quotes: "The goal now is initial
+stability and deliverability for a full pptmstr adoption and product
+packaging (goal of a Mac supported install with automatic updates)."
+pptmstr's session, the first real host, wrote twenty requests (P1 to P20)
+in its own repository's `HANDOFF-advtext.md`; advtext's lead (an agent)
+accepted thirteen to build, carried four to imtypeset, and answered three
+in words. Which were built, and how, are agents' decisions:
+`docs/decisions.md`, "Host requests".
+
+### What is true of the tree now
+
+`HANDOFF-pptmstr.md`, "Answers to pptmstr", is the full account, request by
+request, with signatures. In short, and with what each does NOT do:
+
+**The library's gate (`advtext.typesetter`; the builder of PH-GATE).**
+`kind()` answers a `Kind`: READY, NOT_INSTALLED, REFUSED, FAILED,
+UNSUPPORTED, UNCHECKED. READY says nothing of fonts; `ready()` does.
+UNSUPPORTED is never worked out: a host says it with `unsupported(why)`,
+and it is used only when nothing is found. `reset()` forgets a `disable` or
+a refusal, and `ready()` is then false until `load_fonts()` is called
+again. `module()` now refuses an imtypeset that lacks a name or field
+advtext calls (`REQUIRED`, `missing`): 25 names of the package, 29 members
+of `Document`, fields of four structures, members of seven enums, and the
+leading fields of four tuples; **not** the fields of what the library
+answers, keywords, enumerator values, or what a name means. `verdict()`
+asks a child process and leaves the asker as it was; `python -m
+advtext.typesetter` prints `pairing()` as one line of JSON and exits 0, 3,
+4, 5, 6 or 7 by the kind. In a frozen application the verdict is
+"unchecked" and no child is started; `sys.frozen` was set by hand for the
+test and nothing was frozen. `font(face)` answers the `ImFont` the library
+draws a role with.
+
+**`load_fonts()` after start-up** (the same builder, in a real window on
+Xvfb with a software renderer, imgui-bundle 1.92.900, imtypeset `c9f8902`,
+called from `pre_new_frame` with a view open): it answered true each time;
+the atlas held 8, 15, 22, 29 and 36 fonts after five loads and 29 before
+and after an `unload()`; the open view drew 152 vertices on every frame it
+drew, before and after each call. **So the atlas takes fonts after
+start-up, and nothing is ever taken off it**: seven more per load, for the
+life of the ImGui context. `load_fonts`'s docstring says this and what is
+not promised. pptmstr's own run found the same growth and asks for a reload
+that does not grow the atlas; that is not built (H25 of
+`HANDOFF-imtypeset.md`).
+
+**Reading markdown (`advtext.typeset_markdown`; the builder of PH-MD).**
+`ReaderOptions`, a frozen dataclass of four `bool`s, as `reader=` to
+`parse_markdown`, `describe_markdown`, `MarkdownStream` and `TypesetView`:
+`html_as_text`, `images_as_text`, `keep_glob_stars`,
+`show_link_destinations`. All off is the same parser objects as before.
+Equal options give a parse and a stream one parser object, and a stream is
+held to one parse of its text so far after every piece. Two of the four are
+less than their names: with `images_as_text` alone `![alt](addr)` is `!alt`
+as a link and the address stays hidden; `keep_glob_stars` is pptmstr's own
+heuristic, pinned, and wrong in both directions (`rm *tmp and old* now`
+loses its stars; `foo*bar*baz` is not emphasis).
+
+**Inline code's size (`advtext.theme`; the same builder).**
+`Theme.inline_code_scale` and `Theme.inline_code_step`, both zero by
+default, written into `RunDescription.scale` for runs in the code role.
+Measured headless on the pinned library by that builder: a run's scale is a
+multiple of the size of the block the run is in, a heading included (a code
+`m` advances 8.0 px at scale 1 and 10.0 at 1.25 in a 16 px paragraph;
+15.625 and 19.531 in a 31.25 px heading), where the library's header says
+"the paragraph's".
+
+**The views (`advtext.ui.typeset_view`, `typeset_stream_view`,
+`advtext.description`; the builder of PH-VIEW).**
+
+- *Blocks a host made.* `TypesetView` and `set_document` take a sequence of
+  `MarkdownText` / `MarkdownCode` / `MarkdownRule` / `MarkdownTable`, or a
+  `Description` (`description_of`, `check_description`). An object that is
+  no block is a `TypeError` at the call, through every way into a view.
+  **`MarkdownConverter.describe` called directly still stands an empty Host
+  block in for an object it does not know** and counts it in `misfits`; two
+  existing tests assert that.
+- *Code overflow.* `code_overflow="wrap"` (default), `"clip"`, `"grow"`,
+  with `content_width`. Measured headless at a 444 px pane with a
+  400-character code line: under grow `content_width` is 3215.995 and the
+  library's own `size().x` is still 444.0, so the view asks each code
+  block's geometry once: 128 ms against 12 ms for the first frame of 500
+  code blocks of 20 lines (once, load 11.9). Under clip nothing can say a
+  line was cut. Grow or clip with columns: not measured.
+- *One pitch.* `fixed_line_height=True`: paragraphs, headings, list items
+  and code; not tables, hosted blocks, or a block holding a display
+  formula. Measured: a code block of six lines has heights 22.4, 22.4, 20,
+  20, 22.4, 20 without it and 20 x 6 with it. Box-drawing and block glyphs
+  make a code line taller; **an accented capital does not**, at this pin
+  and the stock sizes. **Not built**: a view of many blocks capped in
+  pixels ending on a whole line (pptmstr's case); a host reads
+  `set_lines()`.
+- *Tables at natural widths.* `table_widths="natural"`. Equal to a keeping
+  stream's columns to 0.001 px for pptmstr's table; **not in general**: a
+  stream whose cell was wider while it was written (`**bold wor`) ended
+  4.93 and 2.43 px wider than the same table given whole. The host closes
+  it by stating the stream's widths with `set_table_columns` (tested to
+  0.001 px).
+
+**The diff view (`advtext.ui.typeset_diff_view`; the builder of PH-DIFF).**
+`TypesetDiffView.headers(width_px=None)` answers a `DiffHeader` a file:
+`text`, `warning`, the widths, `fits`, `text_fits`. Widths are the
+library's, measured once per text and size (59 us for one file, 1.65 ms for
+100, headless, load 6.1). `fits` has no margin, where pptmstr's seam
+counted a spare cell; asked for a width before a draw it does not allow for
+a capped view's scrollbar.
+
+**The facade is 102 names; it was 89** (this section's writer). Thirteen
+added, none removed, no module added as a home: `Kind`, `kind`, `reset`,
+`pairing`, `verdict` (beside `load_fonts`, `ready`, `reason`);
+`ReaderOptions`; `MarkdownText`, `MarkdownCode`, `MarkdownRule`,
+`MarkdownTable`, and `MarkdownCell` and `ColumnAlign`, without which a
+`MarkdownTable` cannot be constructed; `DiffHeader`. 65 of the typeset
+layer, 8 for font files, 29 of the reference core. Left to their modules,
+with no promise: `advtext.typesetter.font`, `unsupported`, `missing`,
+`REQUIRED`, `EXIT_CODES`; `advtext.description.description_of`,
+`check_description`, `check_runs`; `advtext.typeset_markdown.reader_options`.
+`tests/test_facade.py` holds the list, and one new test builds each block
+type and asks the kind from the package root in a fresh interpreter, with
+no ImGui, fontTools or imtypeset loaded at the end of it.
+
+**Nine requests and a note went to the other team**, H25 to H33, in
+`HANDOFF-imtypeset.md`, each in its builder's sentence.
+
+### What was measured, by whom, at what load
+
+All on the one 16-core machine, by agents. No window was looked at. The
+figures above are each from the result file of the builder named
+(`.concerns/PH-GATE--builder--result.md`, `PH-MD`, `PH-VIEW`, `PH-DIFF`;
+not version-controlled), measured while four builders shared the machine
+(load 5.8 to 15).
+
+- **The gate, on the tree as it stands, nothing else writing or testing in
+  it** (this section's writer, PH-FINAL's builder, an agent, 2026-10-12,
+  against the pinned pair from `c9f8902`). `make check`:
+  **3318 passed, 302 skipped, 4 xfailed** in 159 s, load 1.81 at the start
+  and 1.60 at the end. `make check TYPESET=1`, straight after: **3612
+  passed, 8 skipped, 4 xfailed** in 257 s, load 1.55 and 7.09. Ruff and
+  black clean (122 files), mypy clean over 51 files, both times. 3,624
+  tests each way (3,223 in section 0e); no failure and no error. Each gate
+  once. Nothing else was writing or testing in this tree; other sessions
+  share the machine, and where the load at the end of the second run came
+  from was not looked into. These counts were written into this paragraph
+  after the runs; `tests/test_docs.py`, `tests/test_ci_workflow.py` and
+  `tests/test_facade.py` were run again afterwards and passed.
+- **The builders' own gates were on a moving tree and none was one green
+  command from start to end**, except PH-VIEW's: its `make check` (3304
+  passed, 302 skipped, 4 xfailed, load 12.3 to 14.2) started before its
+  last two small edits, and its `make check TYPESET=1` (3598 passed, 8
+  skipped, 4 xfailed, load 13.0 to 6.9) was on its final tree. The other
+  three ran the stages apart because lint stopped on another builder's
+  half-written file.
+- **One test was red once for two builders in that moving tree**:
+  `tests/test_typeset_markdown.py::test_the_resume_helpers_copied_from_markdown_have_not_drifted`.
+  Run alone by this section's writer on the quiet tree before the gates: it
+  passed (0.19 s); and it passed in both gates. It compares the source of
+  five helpers in two modules; nothing was changed to make it pass, and
+  why it was red then was not established (both builders who saw it
+  supposed a file caught half-written).
+- **A native line in a typeset face** (PH-GATE's builder, a real window,
+  software renderer, three rows): the code face at em 16 sets 13 characters
+  104 x 14 px of ink; pushed at 16 ImGui draws them 103 x 11; pushed at
+  16.78, made 17, 104 x 14. The prose face at em 16: 116 x 15 typeset, 103
+  x 13 pushed at 16, 116 x 15 pushed at 18.75, made 19. The code face at em
+  21: 136 x 17 typeset (laid out 136.5), 142 x 17 pushed at 22.
+- **Forty characters of the code face are half an em each** (the same
+  builder, headless): 280, 300, 320, 340, 360 and 400 px at ems of 14, 15,
+  16, 17, 18 and 20. So 8.0 px a character at an em of 16, and 7.63 at an
+  em of 15.25, which is what a 16 px line height of that file is.
+- **Settled equals streamed under reader options** (PH-MD's builder): in
+  the suite after every piece; outside it, 6000 generated sources, about
+  1.36 million pieces, 0 failures (137 s and 155 s, load 8).
+- **The command line** (PH-GATE's builder, five runs each): 91 to 151 ms
+  with nothing to find, 286 to 319 ms with the pinned pair.
+
+### What nobody has looked at, or run
+
+- Everything in 0e's and 0d's lists of the same name, still.
+- Any of the above on a screen: code scrolled sideways, one pitch through
+  `tree` output, a table at its natural widths, a shown link destination,
+  inline code at another size, a diff header that did not fit.
+- pptmstr's tests, or any of this from pptmstr's code.
+- A frozen application; macOS; a GPU; a display scale of 2.
+- `fixed_line_height` or `code_overflow` together with columns.
+- The field check of host-made blocks against anything a real host made:
+  it is held against this tree's own converter on every demo document.
+
+### Open
+
+- **pptmstr's P21 to P24**, written after the lead's answer and not
+  answered: monospace columns and alignment with ImGui's text at the same
+  pixel height (P21), a glyph drawn where it was laid out (P22), one word
+  space under `Spacing.FRENCH` (P23), and `ready()` after the ImGui context
+  is gone without `unload()` (P24). Its measurements for P21 to P23 size
+  text with `Theme.at_pixel_height`, a line height; the half-em figures
+  above are at an em.
+- **A reload that does not grow the atlas** (P17, H25).
+- **A capped view of many blocks ending on a whole line** (P13).
+- **A stream's table against the settled one when a cell was wider while
+  written** (P19, H31, H32).
+- **The content's width under clip, and a cheap one under grow** (P12, H29,
+  H30).
+- **`MarkdownConverter.describe` and an object it does not know**: still an
+  empty Host block when called directly.
+- **`advtext/ui/app.py` has its own `_library_font`**, which
+  `typesetter.font` now duplicates; not changed.
+- **Whether refusing the whole library for one missing name is what a host
+  wants**, when the name is used by one gallery page (PH-GATE's builder's
+  question).
+- **`description_of` and `check_description` are not facade names** (this
+  section's writer's decision: a host that describes its own blocks imports
+  `advtext.description` for the tuples and enumerators anyway, and no host
+  has asked). One line to reverse.
+- With HTML read as HTML (the default), a paragraph followed by an unclosed
+  `<!--` stays live in a stream until the comment closes, and is re-read at
+  every piece (PH-MD's builder; as it was before this work; pinned).
+
 ## 0e. Revision of 2026-10-12: Level 1. The pairing with imtypeset is pinned, found three ways, and buildable from GitHub; none of it has run there
 
 The newest revision, put first. Section 0d below was the newest when it was

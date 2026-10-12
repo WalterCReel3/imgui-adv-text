@@ -124,6 +124,33 @@ and the same at the first tenth as at the last. What it does NOT have: a
 fence inside a list item or a quote is read whole while it is open (1.0 ms a
 read by its 300th line, against `StreamDocument`'s 0.08).
 
+## What a host may ask of the reading
+
+`ReaderOptions`, as `reader=` to `parse_markdown`, `describe_markdown` and
+`MarkdownStream` (2026-10-12; pptmstr's request P7). Four switches, all off by
+default, and all off is the reading there has always been: raw HTML set as
+the characters written (`html_as_text`), an image read as an exclamation mark
+and a link (`images_as_text`), the stars of a glob kept (`keep_glob_stars`),
+and a link followed by its destination, inside the link
+(`show_link_destinations`). The class says what each does exactly. The first
+three choose the PARSER (`advtext.markdown_rules._reader_parser`, one object
+per combination, never a rule switched on a shared one); the fourth is
+`_Reader`'s. A stream and a settled parse given equal options go through the
+same parser and the same reader, and `tests/test_reader_options.py` holds a
+stream to one parse of what it has after every piece under each option.
+**No host needs `markdown_rules._parser`**, and one that changes that shared
+object changes the reading of everything else in its process.
+
+## The size of a code span
+
+`Theme.inline_code_scale` and `Theme.inline_code_step` (2026-10-12; pptmstr's
+P11), which at their defaults say nothing. Otherwise every run in the code
+role (a code span, and a formula shown as its source) carries
+`RunDescription.scale = Theme.inline_code_run_scale(kind)`, which the library
+reads as a multiple of the size of the block the run is in (measured:
+`tests/test_reader_options.py`). Nothing else writes a scale, and on a
+monospace base nothing does.
+
 ## What this module imports
 
 `advtext.description` (the standard library only) for the description types
@@ -144,7 +171,7 @@ import collections
 import re
 import threading
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from typing import Any, NamedTuple
 
 from advtext.description import (
@@ -186,7 +213,7 @@ from advtext.markdown_rules import (
     SourceSpan,
     _line_starts,
     _parse,
-    _parser,
+    _reader_parser,
     _span,
 )
 from advtext.primitives import Scaled, px_from_sp
@@ -222,11 +249,13 @@ __all__ = [
     "RUN_DISPLAY_FORMULA",
     "RUN_FORMULA",
     "RUN_NO_BREAK",
+    "ReaderOptions",
     "Refuses",
     "RunDescription",
     "StyleDescription",
     "describe_markdown",
     "parse_markdown",
+    "reader_options",
     "table_text",
 ]
 
@@ -373,6 +402,130 @@ Refuses = Callable[[str, bool, Scaled], bool]
 
 
 # ---------------------------------------------------------------------------
+# What a host may ask of the reading
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ReaderOptions:
+    """
+    How markdown is READ, where a host wants something other than CommonMark's reading.
+
+    For `parse_markdown`, `describe_markdown` and `MarkdownStream`, as
+    `reader=`. **One object for a settled document and for a stream**: two
+    calls given equal options read with the same parser object
+    (`advtext.markdown_rules._reader_parser`) and the same reader, so what a
+    stream ends as is what one parse of its whole source gives, option for
+    option (`tests/test_reader_options.py` holds it after every piece). A
+    frozen value: it compares and hashes by its fields.
+
+    **Every field is off by default, and all off is the reading there has
+    always been**: the same parser objects, the same blocks.
+
+    These exist for a host whose reader is approving text somebody else
+    wrote (pptmstr's request P7). A CommonMark reader shows less than was
+    written in four ways, and each field puts one of them back:
+
+    `html_as_text`
+        Raw HTML is set as the characters written. Off, a block of HTML is
+        dropped whole, a tag in a line is dropped with nothing in its place
+        (`List<String>` reads `List`), and an unclosed `<!--` takes every
+        line after it to the end of the document. On, the two rules that
+        read raw HTML are not run, so `<div>` and `<!-- note` are the text
+        of a paragraph and `<String>` is seven characters of its line. An
+        autolink (`<https://example.org>`) is not raw HTML and is a link
+        either way; an entity (`&amp;`) is still one character.
+
+    `images_as_text`
+        `![alt](address)` is not dropped. Off, an image and its description
+        are left out (this library draws no image). On, the image rule is
+        not run, and what is left is what markdown reads when nothing claims
+        the `!`: an exclamation mark and then a LINK whose text is the
+        description and whose target is the image's address. The address is
+        on screen only with `show_link_destinations` as well, as any link's
+        is; the characters `[`, `]`, `(` and `)` are not set.
+
+    `keep_glob_stars`
+        The stars of `**/*.py`, `src/*`, `/* note */` and `2*3*4` are set,
+        and `**bold**` is still bold. The rule, what tells the two apart
+        (the character on each side of a run of stars) and what it gets
+        wrong in each direction are `advtext.markdown_rules._written_stars`'s
+        docstring; in one line, a run of stars is text when a `/` touches
+        it, when `.` and a non-space follow it, or when a letter or digit is
+        on both sides of it.
+
+    `show_link_destinations`
+        A link is followed by where it goes: its text, a space, and the
+        destination in parentheses, `text (https://example.org/x)`, or with
+        a title `text (https://example.org/x "the title")`. **The link's
+        range covers all of it**, the parenthesis included, so the
+        destination takes the link's tag, its ink and its click
+        (`MarkdownText.links`, then `Description.links` and `Run.tag`). The
+        destination is the one that would be followed: markdown-it's
+        normalised form (percent-encoded, a host name in punycode), so a
+        text that only looks like its destination does not hide it. It is
+        left unsaid in one case, when the link's text already IS the
+        destination, character for character, give or take a scheme the
+        reader supplied (`mailto:`, `http://`, `https://`) and one closing
+        `/`: most autolinks, and a bare address written as its own text. A
+        link with a title is always followed by both. In a table cell the
+        same.
+
+    Not here, because pptmstr's old seam did them outside the parser and a
+    host still can: showing a fence's info string (it is
+    `MarkdownCode.language`), and breaking a long unbreakable word.
+    """
+
+    html_as_text: bool = False
+    images_as_text: bool = False
+    keep_glob_stars: bool = False
+    show_link_destinations: bool = False
+
+    def __post_init__(self) -> None:
+        for field in fields(self):
+            value = getattr(self, field.name)
+            if not isinstance(value, bool):
+                raise TypeError(
+                    f"ReaderOptions.{field.name} is True or False, not {type(value).__name__}"
+                )
+
+
+_AS_COMMONMARK = ReaderOptions()
+
+
+def reader_options(reader: object) -> ReaderOptions:
+    """
+    `reader` as given to `parse_markdown` or `MarkdownStream`, checked: `None` is the default.
+
+    Raises `TypeError`, naming the type, for anything that is neither `None`
+    nor a `ReaderOptions`. Public so that something which keeps a host's
+    `reader=` for a parse it makes later (a view) can refuse a mistake at
+    the host's call and not at that parse.
+    """
+    if reader is None:
+        return _AS_COMMONMARK
+    if not isinstance(reader, ReaderOptions):
+        raise TypeError(f"reader is a ReaderOptions or None, not {type(reader).__name__}")
+    return reader
+
+
+def _names_itself(said: str, target: str) -> bool:
+    """
+    Whether a link's text is its own destination, character for character.
+
+    pptmstr's rule (`_names_itself` in its old seam). The two may differ in a
+    scheme the reader supplied and in one closing `/`, and in nothing else.
+    markdown-it's own normalising is deliberately not asked: it is what turns
+    `https://аpple.com` written with a Cyrillic `а` into the `xn--` host the
+    link goes to, and a text that only NORMALISES to its destination is a
+    lookalike of it, which is the link whose destination most needs showing.
+    """
+    said = said.strip().removesuffix("/")
+    goes = target.removesuffix("/")
+    return bool(said) and goes in (said, f"mailto:{said}", f"http://{said}", f"https://{said}")
+
+
+# ---------------------------------------------------------------------------
 # Inline content to text and runs
 # ---------------------------------------------------------------------------
 
@@ -413,6 +566,7 @@ class _Run:
         "parts",
         "pos",
         "run_font",
+        "run_scale",
         "run_start",
         "runs",
     )
@@ -428,7 +582,11 @@ class _Run:
         self.hard = False
         self.runs: list[RunDescription] = []
         self.run_start = 0
+        # The open run's face and its scale. A scale of 0.0 is "the block's
+        # size", and is what every run has unless the theme sizes its code
+        # spans (`Theme.inline_code_run_scale`).
         self.run_font = base
+        self.run_scale = 0.0
         # A link is [start, end, target] while the run is being built: a hard
         # break may still move either end.
         self.links: list[list[Any]] = []
@@ -461,34 +619,38 @@ class _Run:
         self.pos += 1
         self.hard = True
         if not self.converter_spaces:
-            self.run_start, self.run_font = self.pos, self.base
+            self._open(self.pos, self.base, 0.0)
+
+    def _open(self, start: int, font: int, scale: float) -> None:
+        self.run_start, self.run_font, self.run_scale = start, font, scale
 
     def _close(self, end: int) -> None:
-        if self.run_font != self.base and end > self.run_start:
-            self.runs.append(RunDescription(self.run_start, end, self.run_font))
+        if (self.run_font != self.base or self.run_scale) and end > self.run_start:
+            self.runs.append(RunDescription(self.run_start, end, self.run_font, self.run_scale))
 
-    def space(self, font: int) -> None:
+    def space(self, font: int, scale: float = 0.0) -> None:
         """
         A run of white space: one space, or nothing at the very start of the block.
 
         `font` is the face of the text the space was written in, and the
-        space is set in it: a run begins or ends at a space as it does at a
-        letter. With `converter_spaces` a space has no face, as glue has
-        none in the material, and whatever run is open goes on over it.
+        space is set in it, at that text's `scale`: a run begins or ends at
+        a space as it does at a letter. With `converter_spaces` a space has
+        no face, as glue has none in the material, and whatever run is open
+        goes on over it.
         """
         if not self.any:
             return
         self._node()
-        if font != self.run_font and not self.converter_spaces:
+        if (font != self.run_font or scale != self.run_scale) and not self.converter_spaces:
             self._close(self.pos)
-            self.run_start, self.run_font = self.pos, font
+            self._open(self.pos, font, scale)
         self.parts.append(" ")
         self.pos += 1
         self.glues += 1
 
-    def text(self, text: str, font: int) -> None:
+    def text(self, text: str, font: int, scale: float = 0.0) -> None:
         """
-        Characters in the face `font`, every run of white space in them one space.
+        Characters in the face `font` at `scale`, every run of white space in them one space.
 
         `str.split` and `str.isspace` agree on what white space is, which is
         what makes this `_append_text`'s loop: it cuts on `isspace`.
@@ -497,20 +659,34 @@ class _Run:
             return
         words = text.split()
         if not words:
-            self.space(font)
+            self.space(font, scale)
             return
         if text[0].isspace():
-            self.space(font)
+            self.space(font, scale)
         self._node()
-        if font != self.run_font:
+        if font != self.run_font or scale != self.run_scale:
             self._close(self.pos)
-            self.run_start, self.run_font = self.pos, font
+            self._open(self.pos, font, scale)
         joined = " ".join(words)
         self.parts.append(joined)
         self.pos += len(joined)
         self.glues = 0
         if text[-1].isspace():
-            self.space(font)
+            self.space(font, scale)
+
+    def after_white_space(self) -> bool:
+        """
+        Whether what is written next begins a line or follows a space: no space is wanted first.
+
+        True at the very start, after an interword space, and after a hard
+        break, whether its newline is written yet or not.
+        """
+        return (
+            not self.any
+            or self.glues > 0
+            or self.eject
+            or (bool(self.parts) and self.parts[-1] == "\n")
+        )
 
     def formula(self, source: str, display: bool) -> None:
         """
@@ -525,7 +701,7 @@ class _Run:
         self.formulas.append(FormulaRange(self.pos, end, source, display))
         self.parts.append(source)
         self.pos = end
-        self.run_start, self.run_font = end, self.base
+        self._open(end, self.base, 0.0)
         self.glues = 0
 
     def link_open(self, target: str) -> None:
@@ -564,7 +740,7 @@ class _Run:
                     self.runs.append(last._replace(end=end))
             if self.run_start >= end:
                 # The open run held nothing but a removed space.
-                self.run_start, self.run_font = end, self.base
+                self._open(end, self.base, 0.0)
         self._node()
         if align in (Align.RIGHT, Align.CENTER):
             # The penalty alone. A newline only if a node follows: `_node`.
@@ -619,11 +795,16 @@ class _Reader:
     """
 
     def __init__(
-        self, theme: Theme, refuses: Refuses | None, converter_spaces: bool = False
+        self,
+        theme: Theme,
+        refuses: Refuses | None,
+        converter_spaces: bool = False,
+        reader: ReaderOptions = _AS_COMMONMARK,
     ) -> None:
         self._theme = theme
         self._refuses = refuses
         self._converter_spaces = converter_spaces
+        self._destinations = reader.show_link_destinations
         self._blocks: list[MarkdownBlock] = []
         self._sources: list[BlockSource] = []
         self._lists: list[_List] = []
@@ -633,14 +814,23 @@ class _Reader:
         self._heading: BlockKind | None = None
         self._heading_span: SourceSpan | None = None
         self._next = 0
-        self._roles: dict[tuple[BlockKind, Emphasis], int] = {}
+        self._roles: dict[tuple[BlockKind, Emphasis], tuple[int, float]] = {}
         self._marked: tuple[int, _Nesting | None] = (0, None)
 
-    def _role(self, kind: BlockKind, emphasis: Emphasis) -> int:
+    def _role(self, kind: BlockKind, emphasis: Emphasis) -> tuple[int, float]:
+        """
+        The face a run of `emphasis` in a `kind` block is set in, and its scale.
+
+        The scale is 0.0, "the block's size", for everything but text in the
+        code role (a code span, and a formula shown as its source), which
+        takes the theme's (`Theme.inline_code_run_scale`: 0.0 unless the
+        theme says otherwise, and always on a monospace base).
+        """
         key = (kind, emphasis)
         found = self._roles.get(key)
         if found is None:
-            found = self._roles[key] = face_role(self._theme.face_for(kind, emphasis))
+            scale = self._theme.inline_code_run_scale(kind) if emphasis.code else 0.0
+            found = self._roles[key] = (face_role(self._theme.face_for(kind, emphasis)), scale)
         return found
 
     # -- inline -----------------------------------------------------------
@@ -649,12 +839,19 @@ class _Reader:
         run = _Run(face_role(style.font.face), self._converter_spaces)
         emphasis = _PLAIN
         stack: list[Emphasis] = []
+        # With `show_link_destinations`: each open link's target, its title,
+        # and the text read inside it so far.
+        shown: list[tuple[str, str, list[str]]] = []
         for token in tokens or ():
             match token.type:
                 case "text":
-                    run.text(str(token.content), self._role(kind, emphasis))
+                    run.text(str(token.content), *self._role(kind, emphasis))
+                    for entry in shown:
+                        entry[2].append(str(token.content))
                 case "code_inline":
-                    run.text(str(token.content), self._role(kind, _CODE))
+                    run.text(str(token.content), *self._role(kind, _CODE))
+                    for entry in shown:
+                        entry[2].append(str(token.content))
                 case "strong_open":
                     stack.append(emphasis)
                     emphasis = emphasis.with_(bold=True)
@@ -664,17 +861,33 @@ class _Reader:
                 case "strong_close" | "em_close":
                     emphasis = stack.pop() if stack else _PLAIN
                 case "link_open":
-                    run.link_open(str(token.attrs.get("href", "")))
+                    target = str(token.attrs.get("href", ""))
+                    run.link_open(target)
+                    if self._destinations:
+                        shown.append((target, str(token.attrs.get("title") or ""), []))
                 case "link_close":
+                    if shown:
+                        # Before the link is closed, so that its range, and
+                        # with it the tag and the click, covers the destination.
+                        target, title, said = shown.pop()
+                        if title or not _names_itself("".join(said), target):
+                            font, scale = self._role(kind, emphasis)
+                            if not run.after_white_space():
+                                run.space(font, scale)
+                            run.text(
+                                f'({target} "{title}")' if title else f"({target})", font, scale
+                            )
                     run.link_close()
                 case "softbreak":
-                    run.space(self._role(kind, emphasis))
+                    run.space(*self._role(kind, emphasis))
                 case "hardbreak":
                     run.hard_break(style.align)
                 case "math_inline":
                     self._formula(run, kind, str(token.content), token.markup == "$$")
                 case _:
                     # Images, raw HTML: dropped with their text, as there.
+                    # (A parser built for `ReaderOptions.html_as_text` or
+                    # `images_as_text` makes no such token.)
                     continue
         return run
 
@@ -694,7 +907,7 @@ class _Reader:
         # and read first, `run.pos` is one short of where the dollar will be.
         run._node()
         start = run.pos
-        run.text(f"{marker}{source}{marker}", self._role(kind, _CODE))
+        run.text(f"{marker}{source}{marker}", *self._role(kind, _CODE))
         run.formulas.append(FormulaRange(start, run.pos, source, display, "refused"))
 
     # -- blocks -----------------------------------------------------------
@@ -735,7 +948,7 @@ class _Reader:
         if closed:
             self._formula(run, kind, source, True)
         else:
-            run.text(f"$${source}", self._role(kind, _CODE))
+            run.text(f"$${source}", *self._role(kind, _CODE))
             run.formulas.append(FormulaRange(0, run.pos, source, True, "unclosed"))
         self._text(kind, style, run)
 
@@ -943,6 +1156,7 @@ def parse_markdown(
     more_may_follow: bool = False,
     refuses: Refuses | None = None,
     converter_spaces: bool = False,
+    reader: ReaderOptions | None = None,
 ) -> MarkdownDocument:
     """
     Markdown source as blocks of text and runs, with where each came from.
@@ -953,9 +1167,26 @@ def parse_markdown(
     docstring has what is done with the answer. It is not called with math
     off. `converter_spaces=True` gives the runs `advtext.typesetter.Converter`
     gives ("The space after a run" in the module docstring).
+
+    `reader` is a `ReaderOptions`: what of the source a CommonMark reader
+    would hide and this host wants set. `None` is `ReaderOptions()`, the
+    reading there has always been. Anything else is a `TypeError` here.
     """
-    tokens = _parse(_parser(references, math), source, more_may_follow and math)
-    return _Reader(theme, refuses if math else None, converter_spaces).read(tokens, source)
+    options = reader_options(reader)
+    tokens = _parse(_parser_for(references, math, options), source, more_may_follow and math)
+    return _Reader(theme, refuses if math else None, converter_spaces, options).read(tokens, source)
+
+
+def _parser_for(references: bool, math: bool, reader: ReaderOptions) -> Any:
+    """
+    The parser for the two switches and a host's reader options: one object per combination.
+
+    `show_link_destinations` is not a parser's business (`_Reader` writes
+    the destination), so two options that differ only in it share a parser.
+    """
+    return _reader_parser(
+        references, math, not reader.html_as_text, not reader.images_as_text, reader.keep_glob_stars
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1208,6 +1439,7 @@ def describe_markdown(
     more_may_follow: bool = False,
     refuses: Refuses | None = None,
     converter_spaces: bool = False,
+    reader: ReaderOptions | None = None,
 ) -> Description:
     """
     `MarkdownConverter(theme).describe(parse_markdown(source, theme, ...).blocks)`.
@@ -1223,6 +1455,7 @@ def describe_markdown(
         more_may_follow=more_may_follow,
         refuses=refuses,
         converter_spaces=converter_spaces,
+        reader=reader,
     )
     return MarkdownConverter(theme, link_color=link_color).describe(document.blocks)
 
@@ -1683,6 +1916,7 @@ def _read_tokens(
     first: int = 0,
     state: _Nesting | None = None,
     mark: int = -1,
+    options: ReaderOptions = _AS_COMMONMARK,
 ) -> tuple[MarkdownDocument, int, _Nesting | None]:
     """
     `tokens` as blocks, optionally from part of the way in, noting the nesting at `mark`.
@@ -1694,7 +1928,7 @@ def _read_tokens(
     been emitted when the walk reached token `mark`, with the nesting there
     (zero and `None` when it never did).
     """
-    reader = _Reader(theme, refuses, converter_spaces)
+    reader = _Reader(theme, refuses, converter_spaces, options)
     top: SourceSpan | None = None
     if state is not None:
         reader._restore(state)
@@ -1767,10 +2001,16 @@ class MarkdownStream:
         refuses: Refuses | None = None,
         live_theme: Theme | None = None,
         converter_spaces: bool = False,
+        reader: ReaderOptions | None = None,
     ) -> None:
         self._theme = theme
         self._live_theme = theme if live_theme is None else live_theme
         self._math = math
+        # A host's reader options, checked here, and the one parser every
+        # read of this stream goes through: the parser `parse_markdown` is
+        # handed for the same options with `references=False`.
+        self._reader = reader_options(reader)
+        self._parser = _parser_for(False, math, self._reader)
         self._refuses = refuses if math else None
         self._converter_spaces = converter_spaces
         self._head: list[str] = []
@@ -1854,6 +2094,11 @@ class MarkdownStream:
         return self._live_theme
 
     @property
+    def reader(self) -> ReaderOptions:
+        """The reader options this stream reads with: `ReaderOptions()` unless some were given."""
+        return self._reader
+
+    @property
     def closed(self) -> bool:
         """Whether `close` has been called."""
         return self._closed
@@ -1920,7 +2165,7 @@ class MarkdownStream:
         # closing dollar that is the last character so far closes nothing yet
         # (`advtext.markdown_rules`). Only the unfinished last line of the
         # tail can end in one: every other slice parsed here ends at a line end.
-        return _parse(_parser(False, self._math), source, self._math and not self._closed)
+        return _parse(self._parser, source, self._math and not self._closed)
 
     def _blocks_of(
         self,
@@ -1943,6 +2188,7 @@ class MarkdownStream:
             first=first,
             state=state,
             mark=mark,
+            options=self._reader,
         )
 
     def _fence_at(self, source: str) -> _Fence | None:
@@ -1960,7 +2206,7 @@ class MarkdownStream:
         unfinished = source[source.rfind("\n") + 1 :]
         if unfinished:
             source = source + "\n" if unfinished.strip(" \t") else source[: -len(unfinished)]
-        tokens = _parse(_parser(False, self._math), source)
+        tokens = _parse(self._parser, source)
         if not tokens:
             return None
         token = tokens[0]

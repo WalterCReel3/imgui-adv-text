@@ -133,7 +133,13 @@ everything, as in `TypesetView`.
   `source` and `source_of` read the stream.
 - `sync` answers whether the blocks changed, not whether the revision did.
 - `set_document` and `set_theme` are refused: the stream is the document,
-  and its theme is the one its blocks are built with.
+  and its theme is the one its blocks are built with. So are its reader
+  options (`MarkdownStream(..., reader=...)`): the view is given none.
+- `code_overflow` and `fixed_line_height` are `TypesetView`'s, as
+  constructor arguments and setters. `table_widths` is not: a stream's
+  tables are sized by its policy (the section above), and
+  `set_table_widths` is refused. A stream whose blocks hold something that
+  is no block raises `TypeError` at the `sync` that meets it.
 - What `TypesetView`'s docstring lists against `BareView` (copy, colour,
   `fonts=` ignored, the height an estimate until seen) applies here too.
 
@@ -284,13 +290,19 @@ class TypesetStreamView(TypesetView):
         separator: str = "\n\n",
         follow: bool = True,
         host_for: HostFor | None = None,
+        code_overflow: str = "wrap",
+        fixed_line_height: bool = False,
     ) -> None:
         """
         `stream` is an `advtext.typeset_markdown.MarkdownStream`: it is read
         for `theme`, `revision`, `blocks`, `committed`, `live_theme`,
         `closed` and, for the source map, `source` and `sources`.
-        The theme is the stream's. Raises `TypesetUnavailable` when the
-        library is not in use.
+        The theme is the stream's, and so are the reader options: a
+        `MarkdownStream(..., reader=...)` reads with them, and the view is
+        given none. `code_overflow` and `fixed_line_height` are
+        `TypesetView`'s ("How it is set" in its module docstring), checked
+        here as there. Raises `TypesetUnavailable` when the library is not
+        in use.
         """
         super().__init__(
             None,
@@ -302,6 +314,8 @@ class TypesetStreamView(TypesetView):
             style_links=style_links,
             separator=separator,
             host_for=host_for,
+            code_overflow=code_overflow,
+            fixed_line_height=fixed_line_height,
         )
         self.stream = stream
         self.follow = follow
@@ -343,9 +357,23 @@ class TypesetStreamView(TypesetView):
         self._stream_revision = revision
         return self._set_blocks(self.stream.blocks)
 
-    def set_document(self, document: object) -> bool:
+    def set_document(self, document: object, *, reader: Any = None) -> bool:
         """Refused: the stream is the document, and the next `sync` would put it back."""
         raise TypeError("a TypesetStreamView shows its stream; append to the stream instead")
+
+    def set_table_widths(self, widths: str) -> bool:
+        """
+        Refused: how a stream's tables are sized is the stream's policy (`keeps_streamed`).
+
+        A table still being written holds its columns, and a committed one
+        keeps them or is fitted as the module docstring says. A settled
+        `TypesetView` is what takes `table_widths="natural"`, to show a
+        finished text as a stream that keeps had shown it.
+        """
+        raise TypeError(
+            "a TypesetStreamView sizes its tables by its stream's policy (keeps_streamed); "
+            "table_widths is a TypesetView's"
+        )
 
     def set_theme(self, theme: Theme, document: object = None) -> bool:
         """Refused: the theme is the stream's, whose blocks are built with it."""

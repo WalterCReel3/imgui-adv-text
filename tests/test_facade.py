@@ -40,14 +40,29 @@ import advtext
 REPO = Path(__file__).resolve().parent.parent
 
 TYPESET_LAYER = {
-    "advtext.typesetter": ("load_fonts", "ready", "reason"),
+    "advtext.typesetter": (
+        "load_fonts",
+        "ready",
+        "reason",
+        "Kind",
+        "kind",
+        "reset",
+        "pairing",
+        "verdict",
+    ),
     "advtext.typeset_markdown": (
         "parse_markdown",
         "MarkdownDocument",
         "MarkdownStream",
         "MarkdownConverter",
+        "ReaderOptions",
+        "MarkdownText",
+        "MarkdownCode",
+        "MarkdownRule",
+        "MarkdownTable",
+        "MarkdownCell",
     ),
-    "advtext.markdown_rules": ("BlockSource", "SourceSpan"),
+    "advtext.markdown_rules": ("BlockSource", "SourceSpan", "ColumnAlign"),
     "advtext.description": ("Description", "BlockDescription"),
     "advtext.typeset_find": ("Finder", "FindIndex", "Match"),
     "advtext.theme": ("Theme", "Faces", "Align", "Spacing", "BlockKind", "Emphasis"),
@@ -85,12 +100,39 @@ TYPESET_LAYER = {
         "DiffLayout",
         "SyntaxColour",
         "language_for",
+        "DiffHeader",
     ),
     "advtext.ui.typeset_hosts": ("TypesetDiffFences", "HostedDiff"),
 }
 """
-What a host draws with, by the module each name is fetched from: 52 names.
+What a host draws with, by the module each name is fetched from: 65 names.
 None of these modules is reference core, and none imports it.
+"""
+
+HOST_REQUESTS = (
+    # advtext.typesetter: pptmstr's P1 (a kind), P18 (a way back), P2 (a verdict), and
+    # `pairing`, which answers both and stood beside `reason` unpromised.
+    "Kind",
+    "kind",
+    "reset",
+    "pairing",
+    "verdict",
+    # advtext.typeset_markdown: P7 (reader options) and P8 (blocks a host makes).
+    "ReaderOptions",
+    "MarkdownText",
+    "MarkdownCode",
+    "MarkdownRule",
+    "MarkdownTable",
+    # What a `MarkdownTable` cannot be constructed without.
+    "MarkdownCell",
+    "ColumnAlign",
+    # advtext.ui.typeset_diff_view: P16 (whether a file header fit).
+    "DiffHeader",
+)
+"""
+The 13 names added on 2026-10-12, each because the first real host asked for
+the thing it names (pptmstr's `HANDOFF-advtext.md`, P1 to P19). No module was
+added: all four homes were homes already.
 """
 
 FONT_FILES = {
@@ -235,18 +277,23 @@ def _type_checking_imports() -> dict[str, str]:
 
 def test_the_surface_is_this_list_and_this_many() -> None:
     """
-    89 names: 52 of the typeset layer, 8 for font files, 29 of the reference core.
+    102 names: 65 of the typeset layer, 8 for font files, 29 of the reference core.
 
     It was 94 until tranche 5. 28 of those named a deleted module; 21 are gone
     by name (`REMOVED`) and 7 are back as the typeset layer's object of the
-    same name (`REPLACED`), with 16 names that are new.
+    same name (`REPLACED`), with 16 names that are new: 89. The 13 of
+    `HOST_REQUESTS` were added to those and nothing was taken away.
     """
     counts = [
         sum(len(names) for names in group.values())
         for group in (TYPESET_LAYER, FONT_FILES, REFERENCE_CORE)
     ]
-    assert counts == [52, 8, 29]
-    assert len(SURFACE) == 89, "a name is in two groups"
+    assert counts == [65, 8, 29]
+    assert len(SURFACE) == 102, "a name is in two groups"
+    assert len(HOST_REQUESTS) == 13 and len(set(HOST_REQUESTS)) == 13
+    assert set(HOST_REQUESTS) <= set(SURFACE)
+    assert len(set(SURFACE) - set(HOST_REQUESTS)) == 89
+    assert {SURFACE[name] for name in HOST_REQUESTS} <= set(TYPESET_LAYER)
     assert advtext._HOMES == SURFACE
     assert sorted(advtext.__all__) == sorted(SURFACE)
     assert not set(REMOVED) & set(SURFACE)
@@ -308,7 +355,7 @@ def test_no_home_is_a_module_that_is_not_in_the_tree() -> None:
     The rule itself: a name is on the surface only while its defining module exists.
 
     Read from the file system and not by importing, so a module deleted
-    tomorrow fails here by name and not as 1 of 89 parametrised cases.
+    tomorrow fails here by name and not as 1 of 102 parametrised cases.
     """
     for home in sorted(set(advtext._HOMES.values())):
         path = REPO / home.replace(".", "/")
@@ -320,14 +367,20 @@ def test_the_surface_covers_what_a_host_of_the_typeset_layer_needs() -> None:
     The library's gate, markdown, a stream, find, the looks, the three views, a diff.
 
     Spelled out by group so that removing one is a failing test with a reason
-    on it rather than a quiet edit to a list. The last line is the names a
+    on it rather than a quiet edit to a list. The last lines are the names a
     reader would look for that are deliberately absent: the typesetter's
-    `module` and `unload` (a host takes the module `advtext.typesetter` for
-    those; `advtext.module` would say nothing), and `typeset`, which was the
-    deleted formula function and must not come back meaning something else.
+    `module`, `unload`, `font` and `unsupported` (a host takes the module
+    `advtext.typesetter` for those; `advtext.module` would say nothing);
+    `typeset`, which was the deleted formula function and must not come back
+    meaning something else; and `description_of` / `check_description`, which
+    a host that describes its own blocks takes from `advtext.description`
+    with the tuples and enumerators it needs from there anyway.
     """
     promised = set(advtext.__all__)
     assert {"load_fonts", "ready", "reason"} <= promised
+    assert {"Kind", "kind", "reset", "pairing", "verdict"} <= promised
+    assert {"ReaderOptions", "MarkdownText", "MarkdownCode", "MarkdownRule"} <= promised
+    assert {"MarkdownTable", "MarkdownCell", "ColumnAlign", "DiffHeader"} <= promised
     assert {"parse_markdown", "MarkdownDocument", "MarkdownStream"} <= promised
     assert {"MarkdownConverter", "Description", "BlockDescription"} <= promised
     assert {"Finder", "FindIndex", "Match"} <= promised
@@ -339,6 +392,75 @@ def test_the_surface_covers_what_a_host_of_the_typeset_layer_needs() -> None:
     assert {"DiffLayout", "SyntaxColour", "language_for"} <= promised
     assert {"DiffPalette", "DEFAULT_DIFF_PALETTE", "DARK_DIFF_PALETTE"} <= promised
     assert not {"module", "unload", "typeset", "parse"} & promised
+    assert not {"font", "unsupported", "missing", "REQUIRED", "EXIT_CODES"} & promised
+    assert not {"description_of", "check_description", "check_runs"} & promised
+    assert not {"reader_options", "LinkRange", "RunDescription"} & promised
+
+
+def test_a_host_makes_every_block_and_asks_the_kind_through_the_surface() -> None:
+    """
+    The 13 names of `HOST_REQUESTS` do what a host asked them for, from the package root alone.
+
+    A fresh interpreter with nothing to find (both variables removed): each
+    of the four block types constructed from names of `__all__` only, a
+    style taken from the theme, and the four described with nothing misfit
+    (the table's text is its cells'); reader options read `List<String>` as
+    written, in a parse and in a stream alike; the kind is NOT_INSTALLED,
+    `pairing()` says so in its own key, and `reset()` leaves that as it was;
+    `verdict` and `DiffHeader` resolve to the typesetter's and the diff
+    view's. The last line: none of it loaded ImGui, fontTools or imtypeset.
+    `verdict` is resolved and not called: it starts a child, which
+    `tests/test_typesetter_kinds.py` does.
+    """
+    lines = _fresh(r"""
+        import os, sys
+        os.environ.pop("IMTYPESET_LIBRARY", None)
+        os.environ.pop("IMTYPESET_PYTHON", None)
+        import advtext
+        from advtext import (
+            BlockKind, ColumnAlign, DiffHeader, Kind, MarkdownCell, MarkdownCode,
+            MarkdownConverter, MarkdownRule, MarkdownStream, MarkdownTable, MarkdownText,
+            ReaderOptions, Theme, kind, pairing, parse_markdown, reset, verdict,
+        )
+
+        theme = Theme.build()
+        blocks = [
+            MarkdownText(BlockKind.PARAGRAPH, theme.style(BlockKind.PARAGRAPH), "a *literal* tail"),
+            MarkdownCode(theme.style(BlockKind.CODE), "$ rm **/*.py"),
+            MarkdownRule(theme.style(BlockKind.RULE), theme.rule_thickness),
+            MarkdownTable(
+                theme.style(BlockKind.TABLE),
+                (MarkdownCell("k", header=True), MarkdownCell("v", header=True)),
+                ((MarkdownCell("a"), MarkdownCell("<b>")),),
+                (ColumnAlign.LEFT, ColumnAlign.RIGHT),
+            ),
+        ]
+        described = MarkdownConverter(theme).describe(blocks)
+        print(described.texts, dict(described.misfits), described.tables)
+
+        reader = ReaderOptions(html_as_text=True)
+        settled = parse_markdown("List<String>", theme, reader=reader)
+        stream = MarkdownStream(theme, reader=reader)
+        stream.append("List<String>")
+        plain = parse_markdown("List<String>", theme)
+        print(settled.blocks[0].text, plain.blocks[0].text, stream.reader is reader)
+
+        installed = Kind.NOT_INSTALLED if pairing()["distribution"] is None else Kind.REFUSED
+        print(kind() is installed or kind().name, pairing()["kind"] == kind().value)
+        reset()
+        print(kind() is installed or kind().name, [member.value for member in Kind])
+        print(verdict is advtext.typesetter.verdict, DiffHeader.__module__)
+        heavy = ("imgui_bundle", "fontTools", "imtypeset")
+        print(any(name.split(".")[0] in heavy for name in sys.modules))
+        """)
+    assert lines == [
+        "['a *literal* tail', '$ rm **/*.py', '', 'k\\tv\\na\\t<b>'] {} [3]",
+        "List<String> List True",
+        "True True",
+        "True ['ready', 'not-installed', 'refused', 'failed', 'unsupported', 'unchecked']",
+        "True advtext.ui.typeset_diff_view",
+        "False",
+    ]
 
 
 def test_a_diff_a_document_and_a_search_are_made_through_the_surface() -> None:
@@ -427,7 +549,7 @@ def test_importing_the_package_imports_nothing_else_of_it() -> None:
 
 def test_the_typeset_layers_names_are_reached_without_the_reference_core() -> None:
     """
-    `from advtext import <all 52>` loads the modules that define them and one leaf.
+    `from advtext import <all 65>` loads the modules that define them and one leaf.
 
     The whole of what a host of the typeset layer can take from the facade,
     in one statement, and then a theme built: what is in `sys.modules` of

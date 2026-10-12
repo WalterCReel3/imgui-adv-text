@@ -298,6 +298,12 @@ def test_every_name_moved_out_of_markdown_is_the_same_object_there() -> None:
         for name, value in vars(markdown_rules).items()
         if getattr(value, "__module__", None) == "advtext.markdown_rules"
     ]
+    # Two names were ADDED to the rules module after the move (2026-10-12, a
+    # host's reader options) and were never in `advtext.markdown`. Named, so
+    # that a third arriving unannounced still fails here.
+    added = {"_written_stars", "_reader_parser"}
+    assert added <= set(moved) and not any(hasattr(markdown_module, name) for name in added)
+    moved = [name for name in moved if name not in added]
     moved += ["TAB_WIDTH", "_BULLET", "_COLUMN_ALIGNS", "_PARSER", "_PARSER_WITHOUT_REFERENCES"]
     moved += ["_MORE_MAY_FOLLOW", "_END_IS_OPEN"]
     assert {"SourceSpan", "BlockSource", "ColumnAlign", "_math_inline", "_math_block"} <= set(moved)

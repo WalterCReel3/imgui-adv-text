@@ -21,9 +21,138 @@ A string is read by `advtext.typeset_markdown.parse_markdown` (text and runs
 straight from the parser's tokens: no node, no font metrics) and described by
 its `MarkdownConverter`. The view keeps the string and the source map.
 `parse_markdown`'s blocks, or a `MarkdownDocument`, may be handed over
-instead. Nothing else is taken: until tranche 5 the node material of
+instead, and so may blocks or a description a host made (the next two
+sections). Nothing else is taken: until tranche 5 the node material of
 `advtext.markdown` was too, walked by `advtext.typesetter.Converter`, and that
-path is deleted with the converter.
+path is deleted with the converter. `reader=` (an
+`advtext.typeset_markdown.ReaderOptions`) is what a string is read with, the
+same object a `MarkdownStream` of that text is given; the view hands it to
+`parse_markdown` and reads nothing of it.
+
+## Blocks a host made (pptmstr's P8)
+
+Tool output, arguments and a literal tail are not markdown and must not be
+read as it. A host makes the blocks itself and hands over a sequence of them:
+
+    from advtext.theme import BlockKind
+    from advtext.typeset_markdown import MarkdownCode, MarkdownText
+
+    code = MarkdownCode(theme.style(BlockKind.CODE), "$ ls **/*.py\n<div>")
+    note = MarkdownText(BlockKind.PARAGRAPH, theme.style(BlockKind.PARAGRAPH), "exit status 1")
+    view = TypesetView([note, code], theme=theme)       # or view.set_document([...])
+
+A `MarkdownCode`'s text is set verbatim, line for line, in the code face; a
+`MarkdownText`'s is broken into lines as prose is, with whatever `runs` and
+`links` the host gives it and none it does not (`hard_breaks=True` keeps its
+newlines). `MarkdownRule` and `MarkdownTable` are taken too. They may be
+mixed with `parse_markdown`'s blocks in one sequence: they are the same
+types. Edits are as for any blocks (compared from the front, one
+`replace_blocks`), so a list that grew by a block, or whose last block's text
+grew, is an edit of its end. There is no source map (`source` is `None`).
+
+**What is no block is refused where it is handed over**, a `TypeError` naming
+its type and its number, and the view is as it was. Until 2026-10-12 a view
+described such an object as an EMPTY Host block 16 px tall and drew a gap
+without a word. Every way in is held to it (`set_document`, the constructor,
+`set_theme(theme, document)`, and a stream view's stream, at the `sync` that
+meets it). A block whose fields are wrong (a style that is no `BlockStyle`,
+runs out of order or past the text) is a `TypeError` or `ValueError` there
+as well. A Host block still exists where it is ASKED for: a block `host_for`
+answers for, and a `KIND_HOST` block of a host's own description.
+`advtext.typeset_markdown.MarkdownConverter.describe`, called directly, still
+describes what it does not know as a Host block and counts it in
+`Description.misfits`; a view refuses a description that has any.
+
+## A description a host made
+
+    from advtext.description import BlockDescription, StyleDescription, description_of
+
+    view.set_document(description_of(blocks, styles, links))
+
+A `Description` is used AS IT IS GIVEN: the blocks go to the library as they
+are, `style` indexing the description's own `styles`, tags, tables and
+`KIND_HOST` blocks included. `advtext.description.check_description` holds it
+to the shape first, at the call. Given again with more blocks and a style
+table that begins with the one on show, it is an edit of the blocks that
+differ; with another style table, a new document.
+
+- **Still the view's**: the document's own text (the theme's paragraph size
+  and faces, `Palette.ink`), the highlight, the rule ink and a table's
+  padding and rule (the theme's); selection, copy, marks, inks, hit tests,
+  `scroll_to`, columns, `host_for` (asked about each `BlockDescription`);
+  `links`, `hovered_link` and `on_link`, from the description's `LinkRow`s;
+  `fixed_line_height` and `table_widths`, laid over the blocks' flags.
+- **Not done for a description the view did not make**: the source map
+  (`source` is `None`, `source_of` answers `None`, `selected_source` is
+  empty); `Palette.roles` (a `BlockDescription` has a kind, not a role:
+  `block_role` answers `""`, and a style keeps the `Color` it states);
+  `Palette.link` and `style_links` (a run has the `color` it was given);
+  a re-reading by `set_theme` (the lengths are pixels already: only the
+  document's own text changes).
+
+## How it is set: code overflow, one pitch, table widths
+
+Three choices of the view's, each a constructor argument and a `set_...`,
+each defaulting to what the view always did, each checked at the call.
+
+**`code_overflow`** (`CODE_OVERFLOWS`; pptmstr's P12): what becomes of a code
+line longer than the measure. `"wrap"` (the default) continues it on further
+lines hung by two ems; `"clip"` cuts it at the measure when drawn (a copy
+has all of it); `"grow"` lets it run on. Under `"grow"` prose is still
+broken at the measure (`column_width`), and the view CLAIMS its content's
+width (`content_width`, which is `width`): in a child window with
+`WindowFlags_.horizontal_scrollbar` the window scrolls sideways by itself,
+the view is then drawn at a negative x under the window's clip, and the
+mouse, the selection, the marks and `scroll_to` (which goes sideways to an
+offset) are in the document's coordinates as before. A hosted block is as
+wide as the measure and adds nothing to the content's width: a hosted diff
+scrolls its own long lines. Costs: the frame is the same three calls, and
+one `block_geometry` for each code block once, and again for those an edit
+replaced, because the library's `size()` is the measure whatever the code
+does (`_grown`). Not measured: `"grow"` or `"clip"` together with columns.
+
+**`fixed_line_height`** (pptmstr's P13): every line of a text or code block
+is exactly the block's line height, so line `n` is `n` pitches under the
+block's top whatever is on it, and a view of one block capped at N pitches
+ends on a whole line (`set_lines` has every line's top and foot). Without it
+a line holding something taller than its face (a box-drawing glyph or an
+accented capital set from another face) is as tall as that and moves every
+line below it: measured 2026-10-12 at imtypeset `c9f8902`, a code block of
+five lines of which three hold such glyphs has steps of 24, 24, 20 and 21.6
+px without it and 20, 20, 20, 20 with it. It is the library's
+`ImTypesetBlockFlags_FixedLineHeight`, set on paragraphs, headings, list
+items and code. **Not on tables** (the other team lists a defect for a
+table whose last row wraps), not on a hosted block, and not on a block that
+holds a DISPLAY formula, which would be set over its neighbours.
+**The other team's caveat**: a taller glyph then overhangs into the next
+line's box, and ink overhanging by more than 2 px can go undrawn in the
+strip where its line is just outside the clip rectangle.
+
+**`table_widths`** (`TABLE_WIDTHS`; pptmstr's P19): `"fitted"` (the default)
+fits a table to the measure, scaled up or squeezed. `"natural"` sets the
+library's `ImTypesetBlockFlags_TableHeld` on every table, so each column is
+as wide as its widest cell wants and the table as wide as its columns, and
+it is fitted only while that is more than the measure: what a
+`TypesetStreamView` shows of a stream that keeps what it streamed, so that
+replacing one by a `TypesetView` of the same source moves no column **when
+no cell of the stream was ever wider than it ended** (not in general: the
+paragraph after this one).
+A table whose columns somebody STATES (`set_table_columns`, a `MarkdownTable`
+with `widths`) is not held and is exactly what was stated: the library does
+not apply a stated width to a held table (measured), so the view takes the
+flag off that one table, one `replace_blocks` when it changes.
+
+**Where the stream and the settled view still differ** (measured 2026-10-12,
+`tests/test_typeset_host_blocks.py`): a held column is the widest its cells
+have EVER wanted, and a cell can be wider while it is written than it ends
+(`**bold words**` arriving three characters a frame is for a while the
+literal `**bold wor`). Such a stream's columns ended 4.93 and 2.43 px wider
+than the same table given whole. A stream given its text in pieces that
+never show a wider cell agrees to a thousandth of a pixel. What closes the
+rest is the host's: state the stream's widths on the settled view,
+`settled.set_table_columns(at, [c.max - c.min for each column of the
+stream's table])`, which puts every edge where the stream had it and gives
+up the refitting when the pane is later too narrow.
 
 `tests/test_typeset_view.py` holds what the view describes equal, on every
 markdown file under `demo/`, to what that old path described (frozen in
@@ -350,25 +479,41 @@ has looked at what it draws; the tests say that vertices reach the draw list.
 
 from __future__ import annotations
 
+import collections
 import ctypes
 import math
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple, NoReturn, Protocol
+from typing import TYPE_CHECKING, Any, Final, NamedTuple, NoReturn, Protocol
 
+from advtext import typeset_markdown as _markdown
 from advtext import typesetter
 from advtext.description import (
+    BLOCK_FIXED_LINE_HEIGHT,
+    BLOCK_TABLE_HELD,
+    KIND_CODE,
+    KIND_HEADING,
     KIND_HOST,
+    KIND_LIST_ITEM,
+    KIND_PARAGRAPH,
+    KIND_TABLE,
+    RUN_DISPLAY_FORMULA,
     BlockDescription,
     ColumnDescription,
     Description,
     LinkRow,
     StyleDescription,
+    check_description,
+    check_runs,
 )
 from advtext.markdown_rules import BlockSource
+from advtext.primitives import px_from_sp
+from advtext.theme import BlockKind, BlockStyle
 from advtext.typeset_markdown import (
+    MarkdownCell,
     MarkdownCode,
     MarkdownConverter,
+    MarkdownRule,
     MarkdownTable,
     MarkdownText,
     parse_markdown,
@@ -387,7 +532,9 @@ if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from advtext.style import Theme
 
 __all__ = [
+    "CODE_OVERFLOWS",
     "MAX_COLUMNS",
+    "TABLE_WIDTHS",
     "HostFor",
     "Hosted",
     "Position",
@@ -516,6 +663,65 @@ class ViewColumns(NamedTuple):
 MAX_COLUMNS = 4096
 """The most columns `set_columns` takes: the library's own limit on `Columns.count`."""
 
+CODE_OVERFLOWS: Final = ("wrap", "clip", "grow")
+"""
+What a view can do with a code line longer than the measure (`TypesetView.code_overflow`).
+
+`"wrap"`, the default: it continues on further lines, hung by two ems.
+`"clip"`: it is cut at the measure when drawn, and a copy has all of it.
+`"grow"`: it runs on, the view claims its content's width and the host's
+window scrolls sideways. The library's `ImTypesetCodeOverflow_`, by name.
+"""
+
+TABLE_WIDTHS: Final = ("fitted", "natural")
+"""
+How a view sizes a table whose columns nobody stated (`TypesetView.table_widths`).
+
+`"fitted"`, the default: to the measure, scaled up or squeezed. `"natural"`:
+each column as wide as its widest cell wants and the table as wide as its
+columns, fitted only when that is more than the measure; what a
+`TypesetStreamView` shows of a stream that keeps what it streamed.
+"""
+
+_TEXT_KINDS: Final = frozenset({KIND_PARAGRAPH, KIND_HEADING, KIND_LIST_ITEM, KIND_CODE})
+_UNSET: Final[Any] = object()
+
+
+class _Given:
+    """
+    What stands where a converter does when a host hands the view a `Description`.
+
+    It describes nothing: the blocks ARE the descriptions. It has the three
+    things the view asks a converter for: the style table a block's `style`
+    indexes, where a tag goes, and the theme's pixels.
+    """
+
+    def __init__(self, theme: Theme, description: Description) -> None:
+        self.theme = theme
+        self.styles: list[StyleDescription] = list(description.styles)
+        self.links: list[LinkRow] = list(description.links)
+        self._targets: dict[int, str] = {}
+        for row in self.links:
+            self._targets.setdefault(row.tag, row.target)
+
+    def px(self, length: Any) -> float:
+        return px_from_sp(length, self.theme.px_per_inch)
+
+    def link_target(self, tag: int) -> str | None:
+        return self._targets.get(tag)
+
+    def describe(self, blocks: Sequence[Any], base: int = 0) -> Description:
+        """The blocks themselves; `base` is the number the first has in the document."""
+        return Description(
+            list(blocks),
+            list(self.styles),
+            [row for row in self.links if row.block >= base],
+            [base + at for at, block in enumerate(blocks) if block.kind == KIND_TABLE],
+            [block.text for block in blocks],
+            collections.Counter(),
+            collections.Counter(),
+        )
+
 
 class _Host(NamedTuple):
     block: object
@@ -607,19 +813,35 @@ class TypesetView:
         math: object = None,
         references: bool = True,
         host_for: HostFor | None = None,
+        reader: Any = None,
+        code_overflow: str = "wrap",
+        fixed_line_height: bool = False,
+        table_widths: str = "fitted",
     ) -> None:
         """
         `document` is what `set_document` takes; `None` is an empty view.
 
         `theme` is the one a markdown string is read with, and the one blocks
         given ready-made were built with (it is what their sizes are read
-        against). `math` and `references` are used only to read a markdown
-        string: anything true for `math` turns `$...$` and `$$` on (a
-        `MathBuilder` is accepted for that and is not called), and
-        `references` is `parse_markdown`'s. `palette` may also be given to
-        each `draw`, as `BareView` takes it. `host_for` is asked which blocks
-        a widget of the host's draws ("A block the host draws" in the module
-        docstring). Raises `TypesetUnavailable` when the library is not in use.
+        against). `math`, `references` and `reader` are used only to read a
+        markdown string: anything true for `math` turns `$...$` and `$$` on (a
+        `MathBuilder` is accepted for that and is not called), `references`
+        is `parse_markdown`'s, and `reader` is an
+        `advtext.typeset_markdown.ReaderOptions` (or `None`, CommonMark's
+        reading), handed to `parse_markdown` untouched: the one a
+        `MarkdownStream` of the same text is given. `palette` may also be
+        given to each `draw`, as `BareView` takes it. `host_for` is asked
+        which blocks a widget of the host's draws ("A block the host draws"
+        in the module docstring).
+
+        `code_overflow` (one of `CODE_OVERFLOWS`), `fixed_line_height` and
+        `table_widths` (one of `TABLE_WIDTHS`) are "How it is set" in the
+        module docstring; each has a `set_...` to change it later. The
+        defaults are what the view has always done.
+
+        Raises `TypesetUnavailable` when the library is not in use, and
+        `TypeError` or `ValueError` for an option that is none of its values
+        or a document `set_document` refuses.
         """
         if typesetter.module() is None:
             raise TypesetUnavailable(f"imtypeset is not in use: {typesetter.reason()}")
@@ -628,6 +850,20 @@ class TypesetView:
 
             theme = _Theme.build()
         self.theme = theme
+        self.reader = _checked_reader(reader)
+        """What a markdown string is read with: a `ReaderOptions`, or `None` for CommonMark's."""
+        self._overflow = _one_of(code_overflow, CODE_OVERFLOWS, "code_overflow")
+        self._fixed = _flag(fixed_line_height, "fixed_line_height")
+        self._table_widths = _one_of(table_widths, TABLE_WIDTHS, "table_widths")
+        # The overflow the library's document was last told, and what is
+        # known of how far a document whose code grows reaches: each code
+        # block's right edge, and the first block whose edge is not known.
+        self._overflow_told: str | None = None
+        self._code_rights: dict[int, float] = {}
+        self._grow_from: int | None = 0
+        self._reach = 0.0
+        self._content_width = 0.0
+        self._description: Description | None = None
         self.on_link = on_link
         self.hand_cursor = hand_cursor
         self.copy_as = copy_as
@@ -718,20 +954,32 @@ class TypesetView:
     # The document
     # ------------------------------------------------------------------
 
-    def set_document(self, document: object) -> bool:
+    def set_document(self, document: object, *, reader: Any = _UNSET) -> bool:
         """
-        Show `document`: markdown source, or blocks already made.
+        Show `document`: markdown source, blocks already made, or a description.
 
         **A string is read by `advtext.typeset_markdown.parse_markdown`** with
-        the view's `theme`, `math` and `references`: text and runs, no node
-        material and no font asked anything. The view keeps the string and
-        where each block came from in it (`source`, `source_of`).
+        the view's `theme`, `math`, `references` and `reader`: text and runs,
+        no node material and no font asked anything. The view keeps the
+        string and where each block came from in it (`source`, `source_of`).
+        `reader=`, when given, is the view's `reader` from this call on (a
+        `ReaderOptions`, or `None` for CommonMark's reading again), and a
+        string equal to the last one is read again when it is other options.
 
-        Anything else is its `blocks` if it has that attribute, or a sequence
-        of blocks: what `parse_markdown` or an
-        `advtext.typeset_markdown.MarkdownStream` made. A `sources`
+        **Blocks**: a sequence of `advtext.typeset_markdown.MarkdownText`,
+        `MarkdownCode`, `MarkdownRule` and `MarkdownTable`, or something with
+        such a sequence as its `blocks` (a `MarkdownDocument`, which is what
+        `parse_markdown` answers). They may be `parse_markdown`'s or **a
+        host's own**, for text that is not markdown and must not be read as
+        it ("Blocks a host made" in the module docstring). A `sources`
         attribute as long as the blocks, or a `source_of`, is kept for the
         source map.
+
+        **A `Description`** (`advtext.description`; `description_of` makes
+        one) is used as it is given: its blocks, its styles, its links and
+        its tables go to the library unchanged. The module docstring says
+        what the view still owns of such a document and what it cannot do
+        for it.
 
         Describes again only what changed, and returns whether anything did.
         A string equal to the last one given is nothing. Blocks are compared
@@ -739,25 +987,61 @@ class TypesetView:
         values, so an edit to the end of a long source re-describes its last
         blocks and not the document); those after the first different one
         are described and replaced in one edit.
+
+        **Refused here, with the view as it was**: `TypeError` for anything
+        else, and for a sequence holding something that is not one of those
+        blocks, naming its type and its number (it is NOT shown as an empty
+        gap); `TypeError` or `ValueError` for a block or a description whose
+        fields the library could not be handed (`check_description`).
         """
+        reread = False
+        if reader is not _UNSET:
+            reader = _checked_reader(reader)
+            reread = reader is not self.reader and reader != self.reader
         if isinstance(document, str):
-            if document == self._source:
+            if not reread and self._description is None and document == self._source:
+                if reader is not _UNSET:
+                    self.reader = reader
                 return False
-            parsed = parse_markdown(
-                document, self.theme, references=self.references, math=bool(self.math)
-            )
+            more = {} if reader is _UNSET else {"reader": reader}
+            parsed = self._read(document, **more)
+            if reader is not _UNSET:
+                self.reader = reader
+            emptied = self._leave_description(None)
             # Before the blocks: a `host_for` asked about them reads `source`.
             self._source = document
             self._given = None
-            return self._set_blocks(parsed.blocks, parsed.sources)
-        blocks = getattr(document, "blocks", document)
-        if not isinstance(blocks, Sequence):
+            return self._set_blocks(parsed.blocks, parsed.sources) or emptied
+        if isinstance(document, Description):
+            check_description(document)
+            if reader is not _UNSET:
+                self.reader = reader
+            return self._set_description(document)
+        if isinstance(document, (BlockDescription, *_BLOCKS)):
             raise TypeError(
-                "set_document takes a markdown str, a Document, or a sequence of blocks"
+                f"set_document: one {type(document).__name__} is not a document; give a "
+                "sequence of blocks (a list of one)"
             )
+        blocks = getattr(document, "blocks", document)
+        if not isinstance(blocks, Sequence) or isinstance(blocks, (str, bytes, bytearray)):
+            raise TypeError(
+                "set_document takes a markdown str, a sequence of MarkdownText / MarkdownCode "
+                "/ MarkdownRule / MarkdownTable blocks (or something with one as its `blocks`), "
+                f"or an advtext.description.Description; not a {type(document).__name__}"
+            )
+        blocks = tuple(blocks)
+        _check_blocks(blocks, 0)
+        # Everything a block's fields are handed to the library as, for the
+        # blocks that are not the ones on show already.
+        differs = 0 if self._description is not None else _same_prefix(self._blocks, blocks)
+        for at in range(differs, len(blocks)):
+            _check_fields(blocks[at], at)
         sources = getattr(document, "sources", ())
         if not isinstance(sources, Sequence) or len(sources) != len(blocks):
             sources = ()
+        if reader is not _UNSET:
+            self.reader = reader
+        emptied = self._leave_description(None)
         held = (self._source, self._given, self._sources)
         self._source = None
         self._given = document if callable(getattr(document, "source_of", None)) else None
@@ -765,9 +1049,69 @@ class TypesetView:
         if not changed:
             # The same blocks again: what is known about their source stands.
             self._source, self._given, self._sources = held
-        return changed
+        return changed or emptied
 
-    def _new_converter(self) -> MarkdownConverter:
+    def _read(self, source: str, **more: Any) -> Any:
+        """
+        `source` read as markdown with the view's theme and options (`more` overrides one).
+
+        `reader` is named to `parse_markdown` only when there is one, so that
+        a view with none reads through the very call it always made.
+        """
+        options: dict[str, Any] = {"references": self.references, "math": bool(self.math)}
+        if self.reader is not None:
+            options["reader"] = self.reader
+        options.update(more)
+        if options.get("reader", _UNSET) is None:
+            del options["reader"]
+        return parse_markdown(source, self.theme, **options)
+
+    def _leave_description(self, description: Description | None) -> bool:
+        """
+        Go from a host's description to blocks the view describes, or the other way.
+
+        The two number their styles differently, so nothing described is
+        kept: a new converter and a new library document. True when there
+        was something on show. Nothing, and False, when the view already
+        held the kind it is given (`description` is `None` for blocks).
+        """
+        if (description is None) == (self._description is None):
+            return False
+        emptied = bool(self._blocks)
+        self._description = description
+        self._forget()
+        return emptied
+
+    def _set_description(self, description: Description) -> bool:
+        """
+        Show a description a host made: `check_description` has passed it.
+
+        An edit of the last blocks when its style table begins with the one
+        on show (a converter's table only grows); everything again otherwise.
+        The same object given again is compared like any other: its lists
+        may have grown in the host's hands since.
+        """
+        held = self._description
+        emptied = self._leave_description(description)
+        if held is not None:
+            self._description = description
+            # Against the copy taken when it was shown, not the host's list.
+            shown = self._converter.styles
+            if list(description.styles[: len(shown)]) != list(shown):
+                emptied = bool(self._blocks)
+                self._forget()
+            else:
+                self._converter = self._new_converter()
+        self._source, self._given = None, None
+        changed = self._set_blocks(description.blocks, ())
+        links = [row for row in description.links if row.block not in self._hosts]
+        if links != list(self._links):
+            self._links, changed = links, True
+        return changed or emptied
+
+    def _new_converter(self) -> Any:
+        if self._description is not None:
+            return _Given(self.theme, self._description)
         return MarkdownConverter(self.theme, link_color=self._link_color())
 
     def _forget(self) -> None:
@@ -793,11 +1137,7 @@ class TypesetView:
         By identity, and by value too: `parse_markdown`'s blocks are frozen
         values, and a string read again makes new ones that are equal.
         """
-        old = self._blocks
-        first = 0
-        limit = min(len(old), len(blocks))
-        while first < limit and (old[first] is blocks[first] or old[first] == blocks[first]):
-            first += 1
+        first = _same_prefix(self._blocks, blocks)
         # A hosted block that is what it was, from somewhere else in the
         # source: its widget is shown what arrived ("A block the host draws").
         for at in self._hosts:
@@ -820,11 +1160,19 @@ class TypesetView:
     def _set_blocks(self, given: Sequence[object], sources: Sequence[BlockSource] = ()) -> bool:
         blocks = tuple(given)
         # Before `_kept`, which asks where the hosted blocks come from now.
+        was_from = self._sources
         self._sources = tuple(sources)
         first = self._kept(blocks)
         old = self._blocks
         if first == len(old) == len(blocks):
             return False
+        try:
+            # Every way in comes through here (a stream's blocks too): what is
+            # no block is refused, and never described as an empty gap.
+            _check_blocks(blocks, first, described=self._description is not None)
+        except TypeError:
+            self._sources = was_from
+            raise
         # A block that is what it was is the object it was: `host_for` is
         # asked once per object, and a stream's selection rule reads identity.
         blocks = old[:first] + blocks[first:]
@@ -841,8 +1189,11 @@ class TypesetView:
             at: columns for at, columns in self._described_columns.items() if at < first
         }
         self._ask_hosts(first)
+        self._flag_blocks(first)
         self._describe_more(first)
         self._ink_blocks(first)
+        # How far the code from here on reaches is not known any more.
+        self._grow_from = first if self._grow_from is None else min(self._grow_from, first)
         self.revision += 1
         if self._all_selected:
             self._selection = self._everything()
@@ -934,18 +1285,45 @@ class TypesetView:
         Give each block from `first` on its style in the view's table: the converter's, in its ink.
 
         The ink is its role's in `Palette.roles`, or 0 (the document's) when
-        the palette names none for it.
+        the palette names none for it. A block of a host's description plays
+        no role the view knows, and keeps the ink its own style states.
         """
         roles = {kind.name: int(colour) for kind, colour in self._palette.roles}
+        given = self._description is not None
         for at in range(first, len(self._described)):
             ink = roles.get(_role_of(self._blocks[at]), 0) if roles else 0
             key = (self._converted[at], ink)
             found = self._style_index.get(key)
             if found is None:
                 found = self._style_index[key] = len(self._styles)
-                self._styles.append(self._converter.styles[key[0]]._replace(Color=ink))
+                style = self._converter.styles[key[0]]
+                self._styles.append(style if given else style._replace(Color=ink))
             if self._described[at].style != found:
                 self._described[at] = self._described[at]._replace(style=found)
+
+    def _flag_blocks(self, first: int) -> None:
+        """
+        Lay the view's own choices over the descriptions from `first` on, as block flags.
+
+        `fixed_line_height` on the blocks that hold text or code and no
+        display formula; `table_widths` of `"natural"` on the tables. Never
+        a hosted block, whose kind is neither.
+        """
+        if not self._fixed and self._table_widths == "fitted":
+            return
+        held = BLOCK_TABLE_HELD if self._table_widths == "natural" else 0
+        for at in range(first, len(self._described)):
+            described = self._described[at]
+            more = 0
+            if described.kind == KIND_TABLE:
+                # Columns somebody stated are not held: the library does not
+                # apply a stated width to a held table (`_states`).
+                more = 0 if _states(described.columns) else held
+            elif self._fixed and described.kind in _TEXT_KINDS:
+                if not any(run.flags & RUN_DISPLAY_FORMULA for run in described.runs):
+                    more = BLOCK_FIXED_LINE_HEIGHT
+            if more and described.flags | more != described.flags:
+                self._described[at] = described._replace(flags=described.flags | more)
 
     def _describe_more(self, first: int) -> None:
         """
@@ -1012,6 +1390,8 @@ class TypesetView:
                 self._failed(exc)
             self._rule = None
             self._columns_told = None  # a new document is shown uncut
+            self._overflow_told = None
+            self._grow_from = 0
         return self._doc
 
     def _failed(self, exc: Exception) -> NoReturn:
@@ -1126,7 +1506,10 @@ class TypesetView:
 
         Kept in the description, so they survive the document being handed
         to the library again (a palette's roles, a closed document), and
-        **dropped when an edit replaces the block**. One call into the
+        **dropped when an edit replaces the block**. Under a
+        `table_widths` of `"natural"` a table that states its columns is
+        not held, and the one block is handed over again when that changes
+        (one `replace_blocks` in place of the call below). One call into the
         library when its document exists: rows are set again only if a
         width or an alignment changed, and no cell is measured again. True
         when the columns are other than they were. Raises `ValueError` for a
@@ -1171,11 +1554,21 @@ class TypesetView:
             self._described_columns.setdefault(block, was.columns)
         if stated == was.columns:
             return False
-        self._described[block] = was._replace(columns=stated)
+        now = was._replace(columns=stated)
+        if self._table_widths == "natural":
+            # A table is held only while nobody states its columns.
+            held = 0 if _states(stated) else BLOCK_TABLE_HELD
+            now = now._replace(flags=(now.flags & ~BLOCK_TABLE_HELD) | held)
+        self._described[block] = now
         doc = self.native_document
         if doc is not None and typesetter.module() is not None:
             try:
-                doc.set_table_columns(block, stated)
+                if now.flags != was.flags:
+                    # The flag is the block's: the one table is handed over again.
+                    self._cut(doc.replace_blocks(block, 1, [now], ()))
+                    self.edits["replace"] += 1
+                else:
+                    doc.set_table_columns(block, stated)
             except Exception as exc:  # noqa: BLE001 -- see `_failed`
                 self._failed(exc)
         return True
@@ -1321,6 +1714,118 @@ class TypesetView:
         estimate until the last column has been reached.
         """
         return self._width
+
+    @property
+    def content_width(self) -> float:
+        """
+        How wide the document is as it was last drawn, in pixels: what a host scrolls sideways.
+
+        The measure, except under a `code_overflow` of `"grow"`, where it is
+        the right edge of the longest code line when that is past the
+        measure (its block's left indent included), and in columns, where
+        it is the page's. It is `width`: the rectangle the view claimed, so
+        a window with a horizontal scrollbar scrolls that far by itself.
+        Under `"wrap"` and `"clip"` nothing is wider than the measure
+        (clipped code is cut there, and the library does not say how long
+        the line was). `column_width` is the measure the text was broken at
+        in every case. 0 before the first `draw`.
+        """
+        return self._content_width
+
+    # ------------------------------------------------------------------
+    # How it is set: code overflow, one pitch, table widths
+    # ------------------------------------------------------------------
+
+    @property
+    def code_overflow(self) -> str:
+        """What becomes of a code line longer than the measure: one of `CODE_OVERFLOWS`."""
+        return self._overflow
+
+    def set_code_overflow(self, overflow: str) -> bool:
+        """
+        Wrap, clip or grow code lines longer than the measure from the next `draw` on.
+
+        One of `CODE_OVERFLOWS` ("How it is set" in the module docstring);
+        `ValueError` for another string and `TypeError` for anything else,
+        with nothing changed. Nothing is described again: the next layout
+        tells the library in the one `set_options` call a change of the
+        palette's rule ink costs, and the code blocks are laid out again as
+        the window reaches them. True when it is other than it was.
+        """
+        overflow = _one_of(overflow, CODE_OVERFLOWS, "code_overflow")
+        if overflow == self._overflow:
+            return False
+        self._overflow = overflow
+        self._drawn_marks = None
+        return True
+
+    @property
+    def fixed_line_height(self) -> bool:
+        """Whether every line of a text or code block is one pitch under the last."""
+        return self._fixed
+
+    def set_fixed_line_height(self, fixed: bool) -> bool:
+        """
+        Set every line of a block one pitch under the last, or as tall as what it holds.
+
+        "How it is set" in the module docstring has what it does and the
+        other team's caveat. `TypeError` for anything but `True` or `False`.
+        It is a flag of each block, so a change **describes every block
+        again and hands the library a new document** (nothing is parsed):
+        what `set_palette` says of a link ink is the cost, and marks handed
+        over packed go as at any edit. True when it is other than it was.
+        """
+        fixed = _flag(fixed, "fixed_line_height")
+        if fixed == self._fixed:
+            return False
+        self._fixed = fixed
+        self._redescribe()
+        return True
+
+    @property
+    def table_widths(self) -> str:
+        """How a table nobody stated the columns of is sized: one of `TABLE_WIDTHS`."""
+        return self._table_widths
+
+    def set_table_widths(self, widths: str) -> bool:
+        """
+        Fit tables to the measure, or leave them as wide as their columns want.
+
+        One of `TABLE_WIDTHS` ("How it is set" in the module docstring);
+        `ValueError` for another string and `TypeError` for anything else.
+        A flag of each table, so a change costs what `set_fixed_line_height`
+        does. True when it is other than it was.
+        """
+        widths = _one_of(widths, TABLE_WIDTHS, "table_widths")
+        if widths == self._table_widths:
+            return False
+        self._table_widths = widths
+        self._redescribe()
+        return True
+
+    def _grown(self, doc: Any) -> float:
+        """
+        The right edge of the longest code line, from the document's corner: 0 with no code.
+
+        `Document.size()` is the measure whatever the code does (measured
+        at imtypeset `c9f8902`: 400 of 400 px with a line that reaches
+        1,616), so each code block is asked where it ends: one
+        `block_geometry` a code block, once, and again for the blocks an
+        edit replaced. That lays those blocks out, which under grow is a
+        line a source line and no breaking.
+        """
+        first = self._grow_from
+        if first is not None:
+            rights = self._code_rights = {
+                at: right for at, right in self._code_rights.items() if at < first
+            }
+            described = self._described
+            for at in range(first, len(described)):
+                if described[at].kind == KIND_CODE:
+                    rights[at] = float(doc.block_geometry(at).max[0])
+            self._grow_from = None
+            self._reach = max(rights.values(), default=0.0)
+        return self._reach
 
     def column_count(self) -> int:
         """
@@ -1644,9 +2149,7 @@ class TypesetView:
         selection, dragging = self._selection, self._dragging
         self._forget()
         if read and source is not None:
-            parsed = parse_markdown(
-                source, self.theme, references=self.references, math=bool(self.math)
-            )
+            parsed = self._read(source)
             blocks, sources = parsed.blocks, parsed.sources
         self._set_blocks(blocks, sources)
         self._source, self._given = source, given
@@ -2118,6 +2621,18 @@ class TypesetView:
             if columns.height > 0.0:
                 bottom = min(bottom, max(columns.height, top))
             moved = self._scroll_to_column(left, origin_x)
+        elif offset is not None and self._overflow == "grow":
+            # A place in a line that grew may be past the pane's edge.
+            scroll = float(imgui.get_scroll_x())
+            at = origin_x - imgui.get_window_pos().x + scroll + left
+            wanted = scroll_for(
+                at, at + 1.0, scroll, float(imgui.get_window_size().x), margin=margin
+            )
+            if wanted is not None:
+                wanted = min(wanted, float(imgui.get_scroll_max_x()))
+                if abs(wanted - scroll) >= 0.5:
+                    imgui.set_scroll_x(wanted)
+                    moved = True
         scroll = float(imgui.get_scroll_y())
         # The place in the window's scrolled content.
         base = origin_y - imgui.get_window_pos().y + scroll
@@ -2211,8 +2726,11 @@ class TypesetView:
         if self._style is None:
             self._style = typesetter.base_style(self.theme, int(self._palette.ink))
             self._style.SelectionColor = int(self._palette.highlight)
-        if self._rule != self._palette.rule:
+        if self._rule != self._palette.rule or self._overflow_told != self._overflow:
             self._rule = int(self._palette.rule)
+            self._overflow_told = self._overflow
+            # How far grown code reaches is asked again under another overflow.
+            self._grow_from = 0
             # A table's padding and its header rule are the theme's; the
             # rule's ink is the palette's, as a Rule block's is. Below one
             # scaled point the library is told "none" (zero would be its
@@ -2224,6 +2742,8 @@ class TypesetView:
                 typesetter.module().DocumentOptions(
                     QuoteBarColor=self._rule,
                     RuleColor=self._rule,
+                    # 0, 1, 2: `ImTypesetCodeOverflow_`, in `CODE_OVERFLOWS`' order.
+                    CodeOverflow=CODE_OVERFLOWS.index(self._overflow),
                     TableCellPadding=padding if padding > 0.0 else -1.0,
                     TableRuleThickness=thickness if thickness > 0.0 else -1.0,
                     TableRuleColor=self._rule,
@@ -2292,7 +2812,16 @@ class TypesetView:
             marks = self._marks_for(
                 doc,
                 (
-                    (native.get_clip_rect_min().y - y, native.get_clip_rect_max().y - y, width_px)
+                    (
+                        native.get_clip_rect_min().y - y,
+                        native.get_clip_rect_max().y - y,
+                        # A line of code that grew ends past the measure.
+                        (
+                            max(width_px, self._content_width)
+                            if self._overflow == "grow"
+                            else width_px
+                        ),
+                    )
                     if self._colours
                     else None
                 ),
@@ -2306,6 +2835,10 @@ class TypesetView:
             self._height = float(size[1])
             # In columns the rectangle is the page's: every column and gutter.
             self._width = width_px if self._columns is None else float(size[0])
+            if self._overflow == "grow" and self._columns is None:
+                # ... and where code grows, as wide as its longest line reaches.
+                self._width = max(width_px, self._grown(doc))
+            self._content_width = self._width
             self._origin = (x, y)
             if not self._hosts:
                 self._hosts_shown = {}
@@ -2610,6 +3143,176 @@ def _length(value: object, name: str) -> float:
     return float(value)
 
 
+_BLOCKS: Final = (MarkdownText, MarkdownCode, MarkdownRule, MarkdownTable)
+
+
+def _checked_reader(reader: object) -> Any:
+    """
+    `reader` as the view keeps it: `None`, or a `ReaderOptions`; `TypeError` for anything else.
+
+    Asked of `advtext.typeset_markdown.reader_options`, looked up when a
+    reader is given and not when this module is imported.
+    """
+    if reader is None:
+        return None
+    check = getattr(_markdown, "reader_options", None)
+    if check is None:
+        raise TypeError("reader: this advtext.typeset_markdown has no reader options")
+    check(reader)
+    return reader
+
+
+def _one_of(value: object, values: tuple[str, ...], name: str) -> str:
+    """An option that is one of a few words: `TypeError` for no `str`, `ValueError` for another."""
+    if not isinstance(value, str):
+        raise TypeError(f"{name} is {value!r}; it is one of {', '.join(map(repr, values))}")
+    if value not in values:
+        raise ValueError(f"{name} is {value!r}; it is one of {', '.join(map(repr, values))}")
+    return value
+
+
+def _flag(value: object, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{name} is {value!r}; it is True or False")
+    return value
+
+
+def _same_prefix(old: Sequence[object], new: Sequence[object]) -> int:
+    """
+    How many leading blocks of `new` are the ones in `old`: by identity, and by value.
+
+    `parse_markdown`'s blocks are frozen values, and a string read again
+    makes new ones that are equal.
+    """
+    first = 0
+    limit = min(len(old), len(new))
+    while first < limit and (old[first] is new[first] or old[first] == new[first]):
+        first += 1
+    return first
+
+
+def _check_blocks(blocks: Sequence[object], first: int, *, described: bool = False) -> None:
+    """
+    Raise `TypeError` for the first of `blocks[first:]` that is no block, naming it and its number.
+
+    A block is one of the four `advtext.typeset_markdown` makes, or, in a
+    host's `Description` (`described`), a `BlockDescription`. Anything else
+    was until 2026-10-12 described as an EMPTY Host block 16 px tall and
+    shown as a gap, without a word (pptmstr's P8).
+    """
+    kinds: tuple[type, ...] = (BlockDescription,) if described else _BLOCKS
+    for at in range(first, len(blocks)):
+        block = blocks[at]
+        if isinstance(block, kinds):
+            continue
+        if described:
+            raise TypeError(f"block {at} is a {type(block).__name__}; it is a BlockDescription")
+        hint = (
+            "; a BlockDescription is shown through an advtext.description.Description, "
+            "which has the styles it indexes"
+            if isinstance(block, BlockDescription)
+            else ""
+        )
+        raise TypeError(
+            f"block {at} is a {type(block).__name__}, which is not a block a view shows: "
+            "MarkdownText, MarkdownCode, MarkdownRule or MarkdownTable of "
+            f"advtext.typeset_markdown{hint}"
+        )
+
+
+def _length_sp(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+    )
+
+
+def _check_links(links: object, length: int, where: str) -> None:
+    if not isinstance(links, (tuple, list)):
+        raise TypeError(f"{where}: links is a {type(links).__name__}; it is a tuple of LinkRange")
+    for number, link in enumerate(links):
+        try:
+            start, end, target = link
+        except (TypeError, ValueError):
+            raise TypeError(
+                f"{where}: link {number} is {link!r}; it is (start, end, target)"
+            ) from None
+        if (
+            isinstance(start, bool)
+            or not isinstance(start, int)
+            or isinstance(end, bool)
+            or not isinstance(end, int)
+            or not isinstance(target, str)
+        ):
+            raise TypeError(f"{where}: link {number} is {link!r}; two integers and a str")
+        if not 0 <= start <= end <= length:
+            raise ValueError(
+                f"{where}: link {number} is [{start}, {end}) of a text of {length} characters"
+            )
+
+
+def _check_fields(block: object, at: int) -> None:
+    """
+    Raise for a block whose fields the library could not be handed: block `at` of a host's.
+
+    `_check_blocks` has passed its type. What a converter reads of it is
+    held to what it reads it as, so that a host's slip is a `TypeError` or
+    a `ValueError` at `set_document`, naming the block, and neither an
+    `AttributeError` out of the converter nor a refusal in the middle of a
+    draw: a style that is a `BlockStyle` (`theme.style(BlockKind.CODE)`), a
+    `kind` that is a `BlockKind`, text that is a `str`, runs as
+    `advtext.description.check_runs` has them, links inside the text, and
+    lengths in scaled points that are finite and zero or more.
+    """
+    where = f"block {at} ({type(block).__name__})"
+    style = getattr(block, "style", None)
+    if not isinstance(style, BlockStyle):
+        raise TypeError(
+            f"{where}: style is a {type(style).__name__}; it is a BlockStyle, which "
+            "theme.style(BlockKind...) answers"
+        )
+    if not _length_sp(getattr(block, "left_indent", 0)):
+        raise TypeError(f"{where}: left_indent is {block.left_indent!r}")  # type: ignore[attr-defined]
+    if isinstance(block, MarkdownRule):
+        if not _length_sp(block.thickness):
+            raise TypeError(f"{where}: thickness is {block.thickness!r}; scaled points >= 0")
+        return
+    if isinstance(block, MarkdownTable):
+        rows = [block.header, *block.rows] if block.header else list(block.rows)
+        for number, row in enumerate(rows):
+            if not isinstance(row, (tuple, list)):
+                raise TypeError(f"{where}: row {number} is a {type(row).__name__}")
+            for column, cell in enumerate(row):
+                here = f"{where}: row {number}, cell {column}"
+                if not isinstance(cell, MarkdownCell):
+                    raise TypeError(f"{here} is a {type(cell).__name__}; it is a MarkdownCell")
+                if not isinstance(cell.text, str):
+                    raise TypeError(f"{here}: text is {cell.text!r}; it is a str")
+                check_runs(cell.runs, len(cell.text), here)
+                _check_links(cell.links, len(cell.text), here)
+        if not all(isinstance(getattr(align, "name", None), str) for align in block.aligns):
+            raise TypeError(f"{where}: aligns are ColumnAlign members: {block.aligns!r}")
+        if not all(_length_sp(one) for one in (*block.widths, *block.shares)):
+            raise TypeError(f"{where}: widths and shares are finite numbers of zero or more")
+        return
+    text = block.text  # type: ignore[attr-defined]
+    if not isinstance(text, str):
+        raise TypeError(f"{where}: text is a {type(text).__name__}; it is a str")
+    if isinstance(block, MarkdownText):
+        if not isinstance(block.kind, BlockKind):
+            raise TypeError(f"{where}: kind is {block.kind!r}; it is an advtext.theme.BlockKind")
+        if not isinstance(block.marker, str):
+            raise TypeError(f"{where}: marker is {block.marker!r}; it is a str")
+        if isinstance(block.quote_depth, bool) or not isinstance(block.quote_depth, int):
+            raise TypeError(f"{where}: quote_depth is {block.quote_depth!r}; it is an integer")
+        if block.quote_depth < 0:
+            raise ValueError(f"{where}: quote_depth is {block.quote_depth}; zero or more")
+        check_runs(block.runs, len(text), where)
+        _check_links(block.links, len(text), where)
+
+
 def _is_default(value: object, default: object) -> bool:
     """Whether an argument of `set_columns` was left as it is declared: the same type and value."""
     return type(value) is type(default) and value == default
@@ -2647,6 +3350,21 @@ def _is_column(column: Any) -> bool:
         and isinstance(column.align, int)
         and isinstance(column.width, (int, float))
         and isinstance(column.share, (int, float))
+    )
+
+
+def _states(columns: Sequence[ColumnDescription]) -> bool:
+    """
+    Whether a table's columns state their own sizes: every one a width, or every one a share.
+
+    The library reads them so (`ColumnDescription`). Such a table is not
+    given `BLOCK_TABLE_HELD` under `table_widths="natural"`: measured at
+    imtypeset `c9f8902`, a held table keeps the widths it holds whatever
+    widths its columns state.
+    """
+    return bool(columns) and (
+        all(column.width > 0.0 for column in columns)
+        or all(column.share > 0.0 for column in columns)
     )
 
 

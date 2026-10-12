@@ -141,10 +141,11 @@ Open `markdown-debug.svg` first. It is the one that shows the machinery.
 
 ## Embedding it
 
-`advtext` itself is an import surface (`advtext.__all__`, 89 names since
-2026-10-11 and 94 before, resolved lazily: `import advtext` loads neither
-ImGui nor fontTools nor imtypeset), and four examples use nothing else of the
-package except the module `advtext.typesetter`:
+`advtext` itself is an import surface (`advtext.__all__`, 102 names since
+2026-10-12, 89 the day before and 94 before the swap, resolved lazily:
+`import advtext` loads neither ImGui nor fontTools nor imtypeset), and four
+examples use nothing else of the package except the module
+`advtext.typesetter`:
 
     python examples/typeset_minimal.py   # a markdown string in a plain ImGui window
     python examples/stream_replay.py     # demo/stream.md arriving in pieces
@@ -171,8 +172,9 @@ standard error and exits 1 before any window opens.
 `advtext.typesetter.pairing()` answers which route was taken (`route`:
 `"environment"`, `"distribution"` or `"none"`), the library's path, the
 versions, the headers it was built with and what accepted the pair: what a
-host puts in an About box or a bug report. It is not on the facade.
-`reason()` does not name the route. Each takes `--frames N`
+host puts in an About box or a bug report. It is on the facade since
+2026-10-12 (`advtext.pairing`), with a twelfth key, `kind`.
+`reason()` does not name the route. Each example takes `--frames N`
 to draw N frames and exit, which is how the tests run them. What a host
 calls, in the order it calls it:
 
@@ -192,6 +194,28 @@ calls, in the order it calls it:
 | a diff | `Diff.from_texts`, `Diff.from_edits` (several edits), `Diff.from_unified` (text that arrives as a diff), `UnifiedDiffStream`; `TypesetDiffView`, `DiffLayout`, `DiffPalette` |
 | a fenced `diff` drawn as one, or any widget in a block's place | `host_for=TypesetDiffFences(...)` on a view; `HostFor`, `Hosted`, `HostedDiff` |
 | `$...$` and `$$` | `TypesetView(markdown, math=True)`: the library sets the formula, and shows what it refuses as its source |
+
+**What a host can ask for since 2026-10-12.** Built for the first real
+host, pptmstr, whose requests P1 to P19 and advtext's answers are in
+`HANDOFF-pptmstr.md`, "Answers to pptmstr": read that for what each does not
+do. Every option is off by default and the defaults draw what they drew.
+Built by agents; **nobody has looked at any of it on a screen**, and nothing
+was run through pptmstr's code.
+
+| to | names |
+|---|---|
+| know why the library is not drawing, as a kind | `kind()` answers a `Kind`: ready, not installed, refused, failed, unsupported, unchecked. "Unsupported" is the host's to say (`advtext.typesetter.unsupported(why)`): advtext cannot tell it from "not installed" |
+| come back from a failure | `reset()`, then `load_fonts()` again, between frames. Every load leaves seven more fonts on Dear ImGui's atlas and nothing takes them off (measured in a window by the builder of the task PH-GATE) |
+| ask without loading anything | `verdict()` asks a child process and answers `pairing()`'s dict; `python -m advtext.typesetter` prints it as JSON and exits by the kind (0 ready, 3 not installed, 4 refused, 5 failed, 6 unsupported, 7 unchecked). In a frozen application the answer is "unchecked" |
+| be refused a mismatched imtypeset before a draw | `module()` checks the names and fields advtext calls (`advtext.typesetter.REQUIRED`, `missing`); not what a name means |
+| draw a native ImGui line in a typeset face | `advtext.typesetter.font(face)`; the size to push is the em times the file's line-height ratio, not the em |
+| read markdown showing what was written | `ReaderOptions(html_as_text=, images_as_text=, keep_glob_stars=, show_link_destinations=)` as `reader=` to `parse_markdown`, `MarkdownStream` and `TypesetView`; one object for a settled document and a stream |
+| size inline code apart from its prose | `Theme.inline_code_scale` and `Theme.inline_code_step`, set with `dataclasses.replace` |
+| show blocks that are not markdown | `TypesetView([MarkdownText(...), MarkdownCode(...), ...])` with `MarkdownRule`, `MarkdownTable`, `MarkdownCell`, `ColumnAlign`, a style from `theme.style(BlockKind...)`; or a `Description` from `advtext.description.description_of`. Anything else is a `TypeError` at the call |
+| scroll or clip wide code | `TypesetView(code_overflow="wrap" \| "clip" \| "grow")`, `content_width` for the host's scroll range |
+| one line pitch for every line of a block | `TypesetView(fixed_line_height=True)`: text and code, not tables, not a block holding a display formula |
+| a settled table as wide as a stream held it | `TypesetView(table_widths="natural")`; equal to a stream's only when no cell of the stream was ever wider than it ended |
+| know whether a diff's file header fit | `TypesetDiffView.headers()` answers a `DiffHeader` a file: `text`, `warning`, `fits`, `text_fits` |
 
 **A host that holds the before and after text must build its diff from them**
 (`from_texts`, `from_edits`) and not from a unified string of its own making:
@@ -384,8 +408,10 @@ They are orientation and route into the documents below, which carry the
 measurements.
 
 - [`docs/status.md`](docs/status.md) — what is true today. Start here, at
-  section 0e (2026-10-12: the pin, how the library is found and built, CI,
-  the Mac audit), then section 0d: the swap of 2026-10-11, what was deleted,
+  section 0f (2026-10-12, later: what the first host, pptmstr, asked for and
+  what of it was built), then section 0e (2026-10-12: the pin, how the
+  library is found and built, CI, the Mac audit), then section 0d: the swap
+  of 2026-10-11, what was deleted,
   what remains of the old core and why, what was measured and what is open. Section 0c is the day
   before, when the new layer stood beside the old. Sections 1 to 6 describe
   `main`. [`docs/decisions.md`](docs/decisions.md), "The swap" and "imtypeset

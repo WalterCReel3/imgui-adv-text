@@ -2635,3 +2635,458 @@ def test_the_times_of_a_growing_diff_were_taken(report: dict[str, Any]) -> None:
         assert after["set"] == before["set"], name
         assert 0 < after["replace"] - before["replace"] <= 120 * documents, name
         assert all(value > 0 for value in entry["set_diff_frame_us"] + entry["steady_us"]), name
+
+
+# ---------------------------------------------------------------------------
+# 3. Whether a file's header fit (`headers`, pptmstr's P16)
+# ---------------------------------------------------------------------------
+
+_LONG_LABEL = "a/very/long/" + "deep/" * 18 + "file.py"
+_VERDICT = "may not apply: anchor not found in file"
+
+
+@pytest.mark.parametrize("layout", [UNIFIED, SIDE])
+def test_headers_are_each_file_s_text_and_warning_in_the_order_drawn(
+    diffs: dict[str, Diff], frozen: dict[str, Any], layout: str
+) -> None:
+    """
+    Without the library: a `DiffHeader` a file, in file order, at the file's
+    header row, saying what the row says -- `DiffView`'s wording, frozen --
+    with the warning apart from the text and no width guessed.
+    """
+    for name, diff in _header_cases(diffs).items():
+        rows = _mine(diff, layout)
+        headers = rows.headers()
+        assert [header.file for header in headers] == list(range(len(diff.files))), name
+        assert [header.row for header in headers] == [
+            row for row in range(rows.row_count) if rows.row_info(row).kind == "file"
+        ], name
+        sheet = rows._described()
+        said = frozen["pure"]["texts"]["headers"][name]
+        for header, (text, warning) in zip(headers, said, strict=True):
+            assert header.text == module._shown(text)[0], name
+            assert header.warning == module._shown(warning)[0].removeprefix("  "), name
+            assert not header.warning or header.warning.startswith("! "), name
+            # What the row's own line is, after the cell it is set in from.
+            assert sheet.texts[0][sheet.row_block[header.row]] == " " + header.line, name
+            assert header.width_px is None and header.text_width_px is None, name
+            assert header.available_px is None, name
+            assert header.fits is None and header.text_fits is None, name
+        assert rows.headers() == headers, name
+
+
+def test_a_header_s_warnings_are_in_the_order_drawn_and_a_control_is_as_shown() -> None:
+    """
+    pptmstr's case (`test_a_diff_header_too_long_for_its_view_is_said_above_it_
+    warning_first`): the text is the path and its counts, the warning is the
+    host's verdict behind `! `. Two files are two headers; what else the view
+    warns of follows the verdict; a control character of a label is the
+    placeholder the row shows, not the character.
+    """
+    one = Diff.from_texts("a\n", "b\n", _LONG_LABEL, will_not_apply=_VERDICT)
+    (header,) = DiffRows(one).headers()
+    assert (header.file, header.row) == (0, 0)
+    assert header.text == f"{_LONG_LABEL}  +1 -1"
+    assert header.warning == f"! {_VERDICT}"
+    assert header.line == f"{_LONG_LABEL}  +1 -1  ! {_VERDICT}"
+
+    plain = Diff.from_texts("a\n", "b\n", "x.py")
+    (header,) = DiffRows(plain).headers()
+    assert (header.text, header.warning, header.line) == ("x.py  +1 -1", "", "x.py  +1 -1")
+
+    odd = Diff.from_texts("a\x00b\n", "a\x00c\n", "ctl\x07.py", will_not_apply="no")
+    two = Diff((*plain.files, *odd.files))
+    first, second = DiffRows(two).headers()
+    assert (first.file, first.row, second.file) == (0, 0, 1)
+    assert second.row == DiffRows(plain).row_count
+    assert second.text == f"ctl{CONTROL_PLACEHOLDER}.py  +1 -1"
+    assert second.warning == "! no  ! contains control characters"
+    assert DiffRows(Diff(())).headers() == ()
+
+
+def test_a_header_fits_when_its_width_is_inside_what_it_was_cut_at_and_none_is_not_a_guess() -> (
+    None
+):
+    header = module.DiffHeader(file=0, row=0, text="x.py  +1 -1", warning="! no")
+    assert header.fits is None and header.text_fits is None
+    measured = module.DiffHeader(0, 0, "x.py  +1 -1", "! no", width_px=144.0, text_width_px=96.0)
+    assert measured.fits is None and measured.text_fits is None  # never drawn: no width to fit
+
+    def at(available: float) -> Any:
+        return module.DiffHeader(0, 0, "x.py  +1 -1", "! no", 144.0, 96.0, available)
+
+    assert (at(144.0).fits, at(144.0).text_fits) == (True, True)
+    assert (at(143.0).fits, at(143.0).text_fits) == (False, True)  # only the warning is cut
+    assert (at(95.0).fits, at(95.0).text_fits) == (False, False)
+    with pytest.raises(AttributeError):
+        measured.text = "other"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("width", "error"),
+    [("420", TypeError), (True, TypeError), ([420.0], TypeError)]
+    + [(value, ValueError) for value in (float("nan"), float("inf"), -1.0)],
+)
+def test_a_width_that_is_not_one_is_refused_at_the_call(width: Any, error: type) -> None:
+    """
+    A host's mistake is raised where it was made, before anything is asked of
+    the library. (The check is the first thing `headers` does, so a view that
+    was never constructed -- there is no library here -- shows it; the window
+    half asks a real view.)
+    """
+    view = object.__new__(module.TypesetDiffView)
+    with pytest.raises(error, match=r"headers\(width_px=\.\.\.\)"):
+        view.headers(width)
+
+
+_HEADERS = r"""
+import json, sys
+from pathlib import Path
+
+from imgui_bundle import hello_imgui, imgui, immapp
+
+from advtext import typesetter
+from advtext.diff import Diff
+from advtext.theme import Theme
+from advtext.ui.typeset_diff_view import DiffLayout, DiffRows, TypesetDiffView
+from advtext.ui.typeset_hosts import HostedDiff
+
+LONG, VERDICT = sys.argv[1], sys.argv[2]
+POS = (10.0, 10.0)
+report = {"load": open("/proc/loadavg").read().split()[:3]}
+calls = []
+state = {"n": 0, "scene": None, "last": None, "done": False, "final": None}
+
+class Counting:
+    # Stands in front of the ctypes library and writes down each call made through it.
+    def __init__(self, target, log):
+        object.__setattr__(self, "_target", target)
+        object.__setattr__(self, "_log", log)
+
+    def __getattr__(self, name):
+        attr = getattr(self._target, name)
+        if not callable(attr):
+            return attr
+        log = self._log
+
+        def call(*args, **kwargs):
+            log.append(name.replace("ImTypeset_", ""))
+            return attr(*args, **kwargs)
+
+        return call
+
+def load_fonts():
+    hello_imgui.imgui_default_settings.load_default_font_with_font_awesome_icons()
+    report["load_fonts"] = typesetter.load_fonts()
+
+def dump(headers):
+    return [{"file": h.file, "row": h.row, "text": h.text, "warning": h.warning, "line": h.line,
+             "width_px": h.width_px, "text_width_px": h.text_width_px,
+             "available_px": h.available_px, "fits": h.fits, "text_fits": h.text_fits}
+            for h in headers]
+
+def asked(call):
+    calls.clear()
+    got = call()
+    return got, list(calls)
+
+def padded(length, **kwargs):
+    # A diff of sixty lines whose header LINE is `length` characters.
+    body = "".join(f"line {n}\n" for n in range(60))
+    label = "p.py"
+    for _ in range(3):
+        diff = Diff.from_texts(body, body.replace("line 9\n", "LINE\n"), label, **kwargs)
+        line = DiffRows(diff).headers()[0].line
+        label = "p" * (len(label) - 3 + length - len(line)) + ".py"
+    assert len(line) == length, (len(line), length)
+    return diff
+
+def script():
+    ts = typesetter.module()
+    report["module"] = ts is not None
+    report["ready"] = typesetter.ready()
+    report["reason"] = typesetter.reason()
+    if ts is None or not typesetter.ready():
+        return
+    ts._lib = Counting(ts._lib, calls)
+    theme = Theme.build()
+    cases = {
+        "short": Diff.from_texts("a\n", "b\n", "src/short.py", will_not_apply=VERDICT),
+        "long": Diff.from_texts("a\n", "b\n", LONG, will_not_apply=VERDICT),
+        "small": Diff.from_texts("a\n", "b\n", "x.py", will_not_apply="no"),
+    }
+    out = report["cases"] = {}
+    for name, diff in cases.items():
+        for layout in (DiffLayout.UNIFIED, DiffLayout.SIDE_BY_SIDE):
+            view = TypesetDiffView(diff, theme, layout=layout)
+            entry = out[f"{name} {layout.value}"] = {"cell": view.grid.cell}
+            got, made = asked(lambda: view.headers())
+            entry["before"], entry["before_calls"] = dump(got), made
+            got, made = asked(lambda: view.headers(420.0))
+            entry["asked"], entry["asked_calls"] = dump(got), made
+            for width in (420.0, 1400.0):
+                state["scene"] = {"view": view, "width": width}
+                yield
+                yield
+                yield
+                entry[str(int(width))] = state["last"]
+            entry["measured"] = view.headers_measured
+
+    # ---- height_cap: the line is cut at the width INSIDE the child ---------------------
+    # 52 cells: inside 420 px, and not inside 420 less a vertical scrollbar.
+    view = TypesetDiffView(padded(51), theme, height_cap=100.0)
+    state["scene"] = {"view": view, "width": 420.0}
+    yield
+    yield
+    yield
+    report["cap"] = {"drawn": state["last"], "asked": dump(view.headers(420.0)),
+                     "inner": view._width, "rows": view.row_count}
+
+    # ---- a header that changes is measured once more; one that does not, never ----------
+    view = TypesetDiffView(cases["short"], theme)
+    state["scene"] = {"view": view, "width": 420.0}
+    yield
+    yield
+    first = view.headers_measured
+    grown = Diff.from_texts("a\n", "b\nc\n", "src/short.py", will_not_apply=VERDICT)
+    view.set_diff(grown)
+    got, made = asked(lambda: view.headers())
+    again, made_again = asked(lambda: view.headers())
+    view.set_layout(DiffLayout.SIDE_BY_SIDE)
+    switched, made_switched = asked(lambda: view.headers())
+    report["changed"] = {"measured": [first, view.headers_measured], "calls": made,
+                         "again_calls": made_again, "text": got[0].text,
+                         "same": dump(again) == dump(got),
+                         "switch_calls": made_switched, "switched": dump(switched) == dump(got)}
+
+    # ---- a host's mistake is the host's: raised at the call, nothing switched off -------
+    refused = {}
+    for name, value in (("str", "420"), ("bool", True), ("nan", float("nan")), ("negative", -1.0)):
+        try:
+            view.headers(value)
+            refused[name] = "answered"
+        except (TypeError, ValueError) as exc:
+            refused[name] = [type(exc).__name__, str(exc)]
+    report["refused"] = refused
+    report["hosted"] = dump(HostedDiff(view).headers(300.0)) == dump(view.headers(300.0))
+    report["module_at_end"] = typesetter.module() is not None
+    report["ready_at_end"] = typesetter.ready()
+    report["trouble"] = typesetter.trouble()
+    state["final"] = view
+
+def gui():
+    state["n"] += 1
+    if not state["done"]:
+        try:
+            next(state["script"])
+        except StopIteration:
+            state["done"] = True
+    if state["done"]:
+        hello_imgui.get_runner_params().app_shall_exit = True
+        return
+    scene = state["scene"]
+    if scene is None:
+        return
+    view, width = scene["view"], scene["width"]
+    pad = imgui.get_style().window_padding.x
+    flags = (imgui.WindowFlags_.no_collapse.value | imgui.WindowFlags_.no_move.value
+             | imgui.WindowFlags_.no_saved_settings.value | imgui.WindowFlags_.no_scrollbar.value)
+    imgui.set_next_window_pos(imgui.ImVec2(*POS))
+    imgui.set_next_window_size(imgui.ImVec2(width + 2 * pad, 600.0))
+    imgui.begin("headers", None, flags)
+    try:
+        avail = imgui.get_content_region_avail().x
+        draw_list = imgui.get_window_draw_list()
+        before = draw_list.vtx_buffer.size()
+        calls.clear()
+        answered = view.draw()
+        headers = view.headers()
+        frame = list(calls)
+        after = draw_list.vtx_buffer.size()
+        ox, oy = view.origin
+        sheet = view._described()
+        document = view.native_documents[0]
+        ink, ends = [], []
+        for h in headers:
+            top = oy + h.row * view.row_px
+            xs = [draw_list.vtx_buffer[i].pos.x - ox for i in range(before, after)
+                  if top - 3 <= draw_list.vtx_buffer[i].pos.y < top + view.row_px + 2]
+            ink.append(max(xs) if xs else None)
+            # The row's own line in the view's own document: where the library ends it.
+            ends.append(document.caret_rect((sheet.row_block[h.row], 1 + len(h.line)))[0])
+        state["last"] = {"avail": avail, "answered": answered, "calls": frame,
+                         "headers": dump(headers), "rightmost_vertex": ink, "line_ends": ends,
+                         "visible": [view.visible_rows.start, view.visible_rows.stop]}
+    finally:
+        imgui.end()
+
+def before_exit():
+    view = state["final"]
+    if view is not None:
+        typesetter.unload()
+        try:
+            report["after_unload"] = dump(view.headers(420.0))
+        except Exception as exc:
+            report["after_unload"] = [type(exc).__name__, str(exc)]
+
+state["script"] = script()
+runner = hello_imgui.RunnerParams()
+runner.app_window_params.window_title = "TypesetDiffView headers under test"
+runner.app_window_params.window_geometry.size = (1500, 700)
+runner.imgui_window_params.default_imgui_window_type = (
+    hello_imgui.DefaultImGuiWindowType.no_default_window
+)
+runner.ini_disable = True
+runner.fps_idling.enable_idling = False
+runner.callbacks.load_additional_fonts = load_fonts
+runner.callbacks.show_gui = gui
+runner.callbacks.before_exit = before_exit
+immapp.run(runner)
+report["frame_count"] = state["n"]
+report["finished"] = state["done"]
+print("REPORT " + json.dumps(report))
+"""
+
+# What measuring a set of header lines costs, counted at the ctypes library: a
+# document made, its options, its blocks, one layout, two carets a file, closed.
+_MEASURE = ["CreateDocument", "SetDocumentOptions", "SetDocumentBlocks", _L]
+_CARET = "GetDocumentCaretRect"
+
+
+@pytest.fixture(scope="module")
+def header_report(window: Any) -> dict[str, Any]:
+    if not os.environ.get(typesetter.LIBRARY_VARIABLE):
+        pytest.skip(
+            "IMTYPESET_LIBRARY is not set: run `make test TYPESET=1` (after `make typeset-lib`) "
+            "for the tests that need the imtypeset library"
+        )
+    script = window.out / "typeset_diff_view_headers_driver.py"
+    script.write_text(_HEADERS, encoding="utf-8")
+    done = window.run([str(script), _LONG_LABEL, _VERDICT], timeout=180.0)
+    assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-6000:]
+    got = _report_of(done.stdout)
+    # In the child, not here: `window.run` gives it a PYTHONPATH of its own.
+    assert got["module"] is True, "the child did not get imtypeset: " + got.get("reason", "")
+    assert got["load_fonts"] is True and got["ready"] is True, got.get("reason", "")
+    assert got["finished"] is True and "refused" in got, "the driver did not reach its end"
+    # And after: nothing here switched the library off.
+    assert got["module_at_end"] is True and got["ready_at_end"] is True
+    assert got["trouble"] == ""
+    return got
+
+
+@pytest.mark.parametrize("layout", ["unified", "side-by-side"])
+def test_in_a_window_a_header_longer_than_a_narrow_view_did_not_fit_and_fits_a_wide_one(
+    header_report: dict[str, Any], layout: str
+) -> None:
+    """
+    pptmstr's P16, on the behaviour of its
+    `test_a_diff_header_too_long_for_its_view_is_said_above_it_warning_first`:
+    at 420 px a short path with a verdict has only the verdict cut, a long one
+    has the path cut too, and a view wide enough has nothing cut. Before a
+    first draw nothing is said about fitting; asked about a width, the answer
+    is the one the draw at that width then gives.
+
+    Held to two things that are not `headers`' own arithmetic: the end of the
+    row's line in the view's own gutter document, and the quads the frame put
+    on the draw list (the library emits none wholly right of the clip, so ink
+    past the edge shows as a quad that straddles it, and ink inside as none).
+    """
+    expected = {  # (fits, text_fits) at 420 and at 1400
+        "short": ((False, True), (True, True)),
+        "long": ((False, False), (True, True)),
+        "small": ((True, True), (True, True)),
+    }
+    labels = {"short": "src/short.py", "long": _LONG_LABEL, "small": "x.py"}
+    for name, (narrow, wide) in expected.items():
+        entry = header_report["cases"][f"{name} {layout}"]
+        (before,) = entry["before"]
+        assert before["text"] == f"{labels[name]}  +1 -1", name
+        assert before["warning"] == ("! no" if name == "small" else f"! {_VERDICT}"), name
+        assert before["available_px"] is None, name
+        assert before["fits"] is None and before["text_fits"] is None, name
+        cell = entry["cell"]
+        assert before["width_px"] == pytest.approx((1 + len(before["line"])) * cell, abs=0.01)
+        assert before["text_width_px"] == pytest.approx((1 + len(before["text"])) * cell, abs=0.01)
+
+        (asked,) = entry["asked"]
+        assert asked["available_px"] == 420.0, name
+        assert (asked["fits"], asked["text_fits"]) == narrow, name
+        for width, want in (("420", narrow), ("1400", wide)):
+            drawn = entry[width]
+            assert drawn["answered"] is True, name
+            (header,) = drawn["headers"]
+            assert header["available_px"] == drawn["avail"] == float(width), name
+            assert (header["fits"], header["text_fits"]) == want, (name, width)
+            assert header["width_px"] == drawn["line_ends"][0] == before["width_px"], name
+            (rightmost,) = drawn["rightmost_vertex"]
+            if header["fits"]:
+                assert rightmost <= header["available_px"], (name, width)
+            else:
+                assert header["available_px"] < rightmost < header["available_px"] + 2 * cell
+        assert entry["420"]["headers"] == [asked], name
+
+
+def test_in_a_window_asking_about_the_headers_every_frame_adds_no_call_to_a_frame(
+    header_report: dict[str, Any],
+) -> None:
+    """
+    The budget stays exact: a frame that draws AND asks is `layout` and `draw`
+    a document, as one that only draws. The widths are measured on the first
+    asking -- a document, its options, its blocks, a layout, two carets a file
+    -- and never again for the same lines at the same size: not for another
+    width, not after a draw, not after a layout switch.
+    """
+    for name, entry in header_report["cases"].items():
+        made = [call for call in entry["before_calls"] if call != "GetCurrentContext"]
+        assert made == [*_MEASURE, _CARET, _CARET, "DestroyDocument"], name
+        assert entry["asked_calls"] == [], name
+        frame = _frame_of(name.split(" ", 1)[1])
+        assert entry["420"]["calls"] == frame and entry["1400"]["calls"] == frame, name
+        assert entry["measured"] == 1, name
+    changed = header_report["changed"]
+    # A header whose text changed (a line arrived: the counts are in it) is measured again.
+    assert changed["text"] == "src/short.py  +2 -1"
+    assert changed["measured"] == [1, 2]
+    assert changed["calls"].count("CreateDocument") == 1 and changed["calls"].count(_CARET) == 2
+    assert changed["again_calls"] == [] and changed["same"] is True
+    assert changed["switch_calls"] == [] and changed["switched"] is True
+
+
+def test_in_a_window_a_capped_view_s_header_is_cut_inside_the_child(
+    header_report: dict[str, Any],
+) -> None:
+    """
+    With `height_cap` the rows are in a child window, and a vertical scrollbar
+    takes room from the line: `headers()` after a draw answers for the width
+    inside the child, which `headers(width_px)` cannot know before one. A
+    header of 52 cells is inside 420 px and is cut inside the child.
+    """
+    cap = header_report["cap"]
+    (drawn,) = cap["drawn"]["headers"]
+    (asked,) = cap["asked"]
+    assert cap["rows"] * 20 > 100.0  # taller than its cap: the child scrolls
+    assert drawn["available_px"] == float(int(cap["inner"])) < 420.0 == asked["available_px"]
+    assert drawn["width_px"] == asked["width_px"] == pytest.approx(416.0, abs=0.01)
+    assert asked["fits"] is True and drawn["fits"] is False
+    assert cap["drawn"]["calls"] == _UNIFIED_FRAME
+
+
+def test_in_a_window_a_host_s_mistake_is_raised_at_the_call_and_unloading_leaves_the_texts(
+    header_report: dict[str, Any],
+) -> None:
+    refused = header_report["refused"]
+    assert [refused[name][0] for name in ("str", "bool", "nan", "negative")] == [
+        "TypeError",
+        "TypeError",
+        "ValueError",
+        "ValueError",
+    ]
+    assert "not str" in refused["str"][1]
+    # `HostedDiff.headers` is the view's.
+    assert header_report["hosted"] is True
+    # After `typesetter.unload()` the library cannot be asked: the texts are still answered,
+    # no width is, and nothing is raised.
+    (after,) = header_report["after_unload"]
+    assert after["text"] == "src/short.py  +2 -1" and after["warning"] == f"! {_VERDICT}"
+    assert after["width_px"] is None and after["available_px"] is None and after["fits"] is None

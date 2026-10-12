@@ -11,6 +11,13 @@ here, and a view and `advtext.typeset_find` read them. A description is one
 thing whoever made it, and `tests/test_description.py` holds the two modules'
 names to be these very objects.
 
+**A host makes one too** (pptmstr's P8): `description_of(blocks, styles,
+links)` fills in what is read off the blocks, and `check_description` holds
+any description to the shape, raising `TypeError` or `ValueError` that names
+the block. `advtext.ui.typeset_view.TypesetView.set_document` takes a
+`Description` and runs the check where it is handed over, so a host's slip
+is told at its own call and not by the library in the middle of a draw.
+
 **A table is a block** (`KIND_TABLE`): `BlockDescription.rows` are its rows of
 `CellDescription`s (text and runs, the runs indexing the CELL's text) and
 `BlockDescription.columns` one `ColumnDescription` a column (alignment, and a
@@ -75,7 +82,10 @@ __all__ = [
     "UNKNOWN_BLOCK_EXTENT_PX",
     "align_code",
     "cell_spans",
+    "check_description",
+    "check_runs",
     "column_aligns",
+    "description_of",
     "face_role",
     "table_text",
     "with_tags",
@@ -308,6 +318,231 @@ class Description(NamedTuple):
 # ---------------------------------------------------------------------------
 # What both converters do the same way
 # ---------------------------------------------------------------------------
+
+
+def description_of(
+    blocks: Iterable[BlockDescription],
+    styles: Iterable[StyleDescription],
+    links: Iterable[LinkRow] = (),
+) -> Description:
+    """
+    A `Description` of blocks a HOST described, with what can be read off them filled in.
+
+    For a host that has its own segmenter and hands a view its description
+    (`advtext.ui.typeset_view.TypesetView.set_document`). `blocks[i].style`
+    indexes `styles`, so there is at least one style; `StyleDescription()`
+    is the document's own text. `links` say where each tagged run goes: a
+    run's `tag` is a number of the host's own, above zero, and one `LinkRow`
+    names its block, its range and its target. `tables` and `texts` are read
+    off the blocks, and nothing misfits. Checked (`check_description`):
+    raises `TypeError` or `ValueError` for something a view could not show.
+    """
+    held = list(blocks)
+    made = Description(
+        held,
+        list(styles),
+        list(links),
+        [at for at, block in enumerate(held) if getattr(block, "kind", None) == KIND_TABLE],
+        [getattr(block, "text", "") for block in held],
+        collections.Counter(),
+        collections.Counter(),
+    )
+    check_description(made)
+    return made
+
+
+def _whole(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _real(value: object) -> bool:
+    """A finite number that is no `bool`: what a C `float` field is given."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value == value
+        and value not in (float("inf"), float("-inf"))
+    )
+
+
+def check_runs(runs: object, length: int, where: str) -> None:
+    """
+    Raise for runs the library could not be handed: `where` names what holds them.
+
+    `runs` is a tuple or list of `RunDescription`s over a text of `length`
+    characters: integers `0 <= start <= end <= length`, ascending and not
+    overlapping (the library takes one run for a character), a face that is
+    0 or one of `FACE_ROLES`' seven, a `scale` that is a finite number of
+    zero or more, and integers of zero or more for `color`, `flags` and
+    `tag`. `TypeError` for a wrong type, `ValueError` for a wrong value.
+    """
+    if not isinstance(runs, (tuple, list)):
+        raise TypeError(
+            f"{where}: runs is a {type(runs).__name__}; it is a tuple of RunDescription"
+        )
+    reached = 0
+    for number, run in enumerate(runs):
+        here = f"{where}: run {number}"
+        if not isinstance(run, RunDescription):
+            raise TypeError(f"{here} is a {type(run).__name__}; it is a RunDescription")
+        for name in ("start", "end", "face", "color", "flags", "tag"):
+            if not _whole(getattr(run, name)):
+                raise TypeError(f"{here}: {name} is {getattr(run, name)!r}; it is an integer")
+        if not _real(run.scale):
+            raise TypeError(f"{here}: scale is {run.scale!r}; it is a finite number")
+        if not 0 <= run.start <= run.end <= length:
+            raise ValueError(f"{here} is [{run.start}, {run.end}) of a text of {length} characters")
+        if run.start < reached:
+            raise ValueError(
+                f"{here} starts at {run.start}, before the run before it ends ({reached}): "
+                "runs are ascending and do not overlap"
+            )
+        reached = run.end
+        if not 0 <= run.face <= max(FACE_ROLES.values()):
+            raise ValueError(f"{here}: face is {run.face}; it is 0 or one of FACE_ROLES")
+        if run.scale < 0.0 or not 0 <= run.color <= 0xFFFFFFFF or run.flags < 0 or run.tag < 0:
+            raise ValueError(f"{here}: scale, color, flags and tag are zero or more: {run!r}")
+
+
+def _check_block(block: object, at: int, styles: int) -> None:
+    where = f"block {at}"
+    if not isinstance(block, BlockDescription):
+        raise TypeError(f"{where} is a {type(block).__name__}; it is a BlockDescription")
+    for name in ("kind", "style", "quote_depth", "container", "item", "flags", "level"):
+        if not _whole(getattr(block, name)):
+            raise TypeError(f"{where}: {name} is {getattr(block, name)!r}; it is an integer")
+    for name in ("text", "marker"):
+        if not isinstance(getattr(block, name), str):
+            raise TypeError(f"{where}: {name} is {getattr(block, name)!r}; it is a str")
+    for name in ("left_indent", "extent"):
+        value = getattr(block, name)
+        if not _real(value):
+            raise TypeError(f"{where}: {name} is {value!r}; it is a finite number of pixels")
+        if value < 0.0:
+            raise ValueError(f"{where}: {name} is {value!r}; it is zero or more")
+    if not KIND_PARAGRAPH <= block.kind <= KIND_TABLE:
+        raise ValueError(f"{where}: kind is {block.kind}; it is one of the seven KIND_ integers")
+    if not 0 <= block.style < styles:
+        raise ValueError(
+            f"{where}: style is {block.style} and the description has {styles} style(s); "
+            "a block's style indexes Description.styles"
+        )
+    if min(block.quote_depth, block.container, block.item, block.flags, block.level) < 0:
+        raise ValueError(f"{where}: quote_depth, container, item, flags and level are zero or more")
+    check_runs(block.runs, len(block.text), where)
+    for name in ("rows", "columns"):
+        if not isinstance(getattr(block, name), (tuple, list)):
+            raise TypeError(f"{where}: {name} is a {type(getattr(block, name)).__name__}")
+    if block.kind != KIND_TABLE:
+        if block.rows or block.columns:
+            raise ValueError(f"{where}: rows and columns are a KIND_TABLE block's")
+        return
+    for number, row in enumerate(block.rows):
+        if not isinstance(row, (tuple, list)):
+            raise TypeError(
+                f"{where}: row {number} is a {type(row).__name__}; it is a tuple of "
+                "CellDescription"
+            )
+        for across, cell in enumerate(row):
+            here = f"{where}: row {number}, cell {across}"
+            if not isinstance(cell, CellDescription):
+                raise TypeError(f"{here} is a {type(cell).__name__}; it is a CellDescription")
+            if not isinstance(cell.text, str):
+                raise TypeError(f"{here}: text is {cell.text!r}; it is a str")
+            check_runs(cell.runs, len(cell.text), here)
+    if block.text != table_text([cell.text for cell in row] for row in block.rows):
+        raise ValueError(
+            f"{where}: a table's text is table_text of its cells (a tab between the cells of "
+            "a row, a newline between rows), which is what its positions index"
+        )
+    for number, column in enumerate(block.columns):
+        here = f"{where}: column {number}"
+        if not isinstance(column, ColumnDescription):
+            raise TypeError(f"{here} is a {type(column).__name__}; it is a ColumnDescription")
+        if not _whole(column.align) or not _real(column.width) or not _real(column.share):
+            raise TypeError(f"{here} is {column!r}; it is an integer and two finite numbers")
+        if column.align not in ALIGNS.values() or column.width < 0.0 or column.share < 0.0:
+            raise ValueError(f"{here} is {column!r}; an ALIGNS integer, a width and a share >= 0")
+
+
+def check_description(description: object) -> None:
+    """
+    Raise for a `Description` a view could not show as it is given; `None` for one it can.
+
+    What a host that describes its own blocks is told AT THE CALL that hands
+    them over, and not by the library in the middle of a draw. `TypeError`
+    for a wrong type and `ValueError` for a wrong value, each naming the
+    block (and the run, the cell or the column) by number:
+
+    - every block is a `BlockDescription` of the types its fields name, a
+      `kind` that is one of the seven, a `style` that indexes `styles`,
+      lengths that are finite and zero or more, runs as `check_runs` has
+      them, and `rows` / `columns` only on a `KIND_TABLE` block, whose
+      `text` is `table_text` of its cells;
+    - every style is a `StyleDescription` of numbers;
+    - every link is a `LinkRow` naming a block there is, a range of its text,
+      a tag above zero and a `str` target;
+    - `texts` are the blocks' texts and `tables` the table blocks' numbers
+      (`description_of` fills both in);
+    - `misfits` is empty: a block a converter did not know is an empty Host
+      block there, and a view does not show a gap nobody asked for.
+
+    This module's own check, with no library: it holds a description to the
+    shape, not to what the library would make of it.
+    """
+    if not isinstance(description, Description):
+        raise TypeError(f"{type(description).__name__} is not an advtext.description.Description")
+    for name in ("blocks", "styles", "links", "tables", "texts"):
+        if not isinstance(getattr(description, name), (tuple, list)):
+            raise TypeError(
+                f"Description.{name} is a {type(getattr(description, name)).__name__}; "
+                "it is a list"
+            )
+    if description.misfits:
+        raise ValueError(
+            "the description holds blocks its converter did not know, each an empty Host "
+            f"block: {dict(description.misfits)}"
+        )
+    for number, style in enumerate(description.styles):
+        if not isinstance(style, StyleDescription):
+            raise TypeError(f"style {number} is a {type(style).__name__}; it is a StyleDescription")
+        if not _whole(style.Face) or not _whole(style.Align) or not _whole(style.Color):
+            raise TypeError(f"style {number}: Face, Align and Color are integers: {style!r}")
+        for name in ("Scale", "LineHeight", "FirstLineIndent", "SpaceAbove", "SpaceBelow"):
+            if not _real(getattr(style, name)):
+                raise TypeError(
+                    f"style {number}: {name} is {getattr(style, name)!r}; it is a finite number"
+                )
+        if not _real(style.MarkerGap):
+            raise TypeError(f"style {number}: MarkerGap is {style.MarkerGap!r}; a finite number")
+        if (
+            not 0 <= style.Face <= max(FACE_ROLES.values())
+            or style.Align not in ALIGNS.values()
+            or not 0 <= style.Color <= 0xFFFFFFFF
+            or style.Scale < 0.0
+            or style.LineHeight < 0.0
+        ):
+            raise ValueError(
+                f"style {number}: a Face that is 0 or one of FACE_ROLES, an ALIGNS integer, "
+                f"a packed colour, and a Scale and a LineHeight of zero or more: {style!r}"
+            )
+    for at, block in enumerate(description.blocks):
+        _check_block(block, at, len(description.styles))
+    blocks = description.blocks
+    if list(description.texts) != [block.text for block in blocks]:
+        raise ValueError("Description.texts are not the blocks' texts, one for one")
+    if list(description.tables) != [at for at, b in enumerate(blocks) if b.kind == KIND_TABLE]:
+        raise ValueError("Description.tables are not the numbers of the KIND_TABLE blocks")
+    for number, row in enumerate(description.links):
+        here = f"link {number}"
+        if not isinstance(row, LinkRow):
+            raise TypeError(f"{here} is a {type(row).__name__}; it is a LinkRow")
+        if not all(_whole(value) for value in row[:4]) or not isinstance(row.target, str):
+            raise TypeError(f"{here} is {row!r}; four integers and a str")
+        if not 0 <= row.block < len(blocks):
+            raise ValueError(f"{here} names block {row.block} of {len(blocks)}")
+        if not 0 <= row.start <= row.end <= len(blocks[row.block].text) or row.tag < 1:
+            raise ValueError(f"{here} is {row!r}: a range of its block's text and a tag above zero")
 
 
 def table_text(rows: Iterable[Iterable[str]]) -> str:

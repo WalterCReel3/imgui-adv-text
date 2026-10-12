@@ -813,6 +813,21 @@ def test_an_edit_that_closes_a_fence_and_leaves_its_code_alone_reaches_the_widge
     assert got["texts"][1].endswith("+new")
 
 
+def test_a_hosted_diff_answers_its_view_s_headers() -> None:
+    """
+    PH-DIFF (pptmstr's P16): whether a file's header fit is asked of the
+    hosted widget as it is of a `TypesetDiffView`, the width passed on.
+    """
+
+    class Headed(_DiffView):
+        def headers(self, width_px: float | None = None) -> list[Any]:
+            return [("one.py  +1 -1", width_px)]
+
+    hosted = HostedDiff(Headed())
+    assert hosted.headers() == (("one.py  +1 -1", None),)
+    assert hosted.headers(300.0) == (("one.py  +1 -1", 300.0),)
+
+
 def test_a_hosted_diff_passes_the_keys_on_to_its_view() -> None:
     """
     T4-DIFF. `Hosted` says a widget with a `handle_keys()` is called through it
@@ -955,6 +970,11 @@ def script():
                    diff.row_count * diff.row_px],
         "visible_rows": [diff.visible_rows.start, diff.visible_rows.stop],
         "diff_documents": len(diff.native_documents),
+        # P16: whether the fence's file header fit is asked of the hosted widget.
+        "headers": [[h.text, h.warning, h.width_px, h.available_px, h.fits]
+                    for h in hosted.headers()],
+        "narrow": [[h.available_px, h.fits] for h in hosted.headers(40.0)],
+        "block_width": geometry.max[0] - geometry.min[0],
     }
 
     # ---- the mouse over it is the diff's: a drag selects in the diff, not in the document ----
@@ -1108,6 +1128,13 @@ def test_in_a_window_the_hosted_diff_is_drawn_in_its_block_s_rectangle(
     assert block == pytest.approx(content, abs=0.01) and content == rows
     first, stop = shown["visible_rows"]
     assert first == 0 and stop > 10
+    # P16: the fence's one file header, and that it fit the block it was drawn in.
+    ((text, warning, width, available, fits),) = shown["headers"]
+    assert text.startswith("replay.py  +")
+    assert warning == "" and 0.0 < width <= available and fits is True
+    assert available == pytest.approx(shown["block_width"], abs=1.0)
+    # Eight cells is the least a view is drawn at, in whole pixels (a cell is 7.99999 px).
+    assert shown["narrow"] == [[63.0, False]]
     side = windowed["side"]
     assert side["layout"] == "side-by-side" and side["documents"] == 4
     assert side["hosts_drawn"] == 1 and side["answered"] is True and side["vertices"] > 100

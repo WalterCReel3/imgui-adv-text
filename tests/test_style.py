@@ -867,3 +867,116 @@ def test_the_key_helpers_used_above_round_trip() -> None:
     """
     spec = parse_font_key(font_key(Face.CODE_BOLD, sp_from_px(16.0)))
     assert spec == FontSpec(Face.CODE_BOLD, sp_from_px(16.0))
+
+
+# -- the size of a code span (pptmstr's P11) ---------------------------------
+
+
+def test_a_theme_that_says_nothing_about_inline_code_sizes_it_as_it_always_did() -> None:
+    """
+    The two fields default to "the block's size", and then nothing asks: a run
+    scale of exactly 0.0 for every kind (what the reader has always written),
+    from `build`, from `at_pixel_height` and from a mono table.
+    """
+    names = [field.name for field in fields(Theme)]
+    assert names[-2:] == ["inline_code_scale", "inline_code_step"]
+    for theme in (
+        Theme.build(),
+        Theme.at_pixel_height(16.0),
+        Theme.build(faces=Faces.mono()),
+    ):
+        assert (theme.inline_code_scale, theme.inline_code_step) == (0.0, 0)
+        assert type(theme.inline_code_scale) is float and type(theme.inline_code_step) is int
+        for kind in BlockKind:
+            scale = theme.inline_code_run_scale(kind)
+            assert type(scale) is float and scale == 0.0, kind
+
+
+def test_the_run_scale_of_a_code_span_is_linear_in_its_block_s_size() -> None:
+    """
+    `(size * scale + step) / size`, with the size the block's own: a scale
+    alone is the same multiple everywhere, a step alone is the same LENGTH
+    everywhere and so a different multiple of a heading than of a paragraph.
+    """
+    base = Theme.build()
+    body = base.style(BlockKind.PARAGRAPH).font.size
+    h1 = base.style(BlockKind.HEADING_1).font.size
+    scaled = replace(base, inline_code_scale=1.1)
+    assert scaled.inline_code_run_scale(BlockKind.PARAGRAPH) == pytest.approx(1.1)
+    assert scaled.inline_code_run_scale(BlockKind.HEADING_1) == pytest.approx(1.1)
+    step = sp_from_px(-2.0)
+    stepped = replace(base, inline_code_step=step)
+    assert stepped.inline_code_run_scale(BlockKind.PARAGRAPH) == (body + step) / body
+    assert stepped.inline_code_run_scale(BlockKind.HEADING_1) == (h1 + step) / h1
+    assert stepped.inline_code_run_scale(BlockKind.PARAGRAPH) == pytest.approx(14.0 / 16.0)
+    both = replace(base, inline_code_scale=1.1, inline_code_step=step)
+    assert both.inline_code_run_scale(BlockKind.HEADING_2) == pytest.approx(
+        1.1 + step / base.style(BlockKind.HEADING_2).font.size
+    )
+    # A scale of 1 is a scale: the same size as 0, said out loud.
+    assert replace(base, inline_code_scale=1.0).inline_code_run_scale(BlockKind.QUOTE) == 1.0
+    # `font_for` is the reference core's question and answers the block's size still.
+    code = Emphasis(code=True)
+    assert both.font_for(BlockKind.PARAGRAPH, code) == base.font_for(BlockKind.PARAGRAPH, code)
+
+
+def test_on_a_monospace_base_a_code_span_is_never_resized() -> None:
+    """
+    The fenced block in every theme, and every block of a mono theme: a span
+    there is the block's own face (`face_for`) and has no second family to be
+    sized against.
+    """
+    sized = replace(Theme.build(), inline_code_scale=1.3, inline_code_step=sp_from_px(1.0))
+    assert sized.inline_code_run_scale(BlockKind.CODE) == 0.0
+    assert sized.inline_code_run_scale(BlockKind.PARAGRAPH) > 1.3
+    mono = replace(
+        Theme.build(faces=Faces.mono()), inline_code_scale=1.3, inline_code_step=sp_from_px(1.0)
+    )
+    assert {mono.inline_code_run_scale(kind) for kind in BlockKind} == {0.0}
+
+
+@pytest.mark.parametrize(
+    ("given", "error", "says"),
+    [
+        ({"inline_code_scale": -0.5}, ValueError, "inline_code_scale is -0.5"),
+        ({"inline_code_scale": float("nan")}, ValueError, "inline_code_scale is nan"),
+        ({"inline_code_scale": float("inf")}, ValueError, "inline_code_scale is inf"),
+        ({"inline_code_scale": "1.2"}, TypeError, "a number (0 for 1), not str"),
+        ({"inline_code_scale": True}, TypeError, "a number (0 for 1), not bool"),
+        ({"inline_code_scale": None}, TypeError, "a number (0 for 1), not NoneType"),
+        ({"inline_code_step": -1.5}, TypeError, "whole scaled points (an int), not float"),
+        ({"inline_code_step": False}, TypeError, "whole scaled points (an int), not bool"),
+        # A step that takes a whole block's size away leaves the span no size.
+        ({"inline_code_step": -sp_from_px(16.0)}, ValueError, "no size at all"),
+        (
+            {"inline_code_scale": 0.5, "inline_code_step": -sp_from_px(8.0)},
+            ValueError,
+            "in a HEADING_4 block",
+        ),
+    ],
+)
+def test_an_inline_code_size_that_is_no_size_is_refused_where_the_theme_is_made(
+    given: dict[str, Any], error: type[Exception], says: str
+) -> None:
+    """
+    At `replace(theme, ...)` or `Theme(...)`, which is the host's own call:
+    the fields are read while a document is parsed, and a stream parses
+    inside a draw.
+    """
+    with pytest.raises(error) as raised:
+        replace(Theme.build(), **given)
+    assert says in str(raised.value)
+
+
+def test_an_inline_code_size_that_is_a_size_is_accepted() -> None:
+    base = Theme.build()
+    for given in (
+        {"inline_code_scale": 1},
+        {"inline_code_scale": 0.25},
+        {"inline_code_step": sp_from_px(4.0)},
+        {"inline_code_step": -sp_from_px(15.0)},
+        {"inline_code_scale": 2.0, "inline_code_step": -sp_from_px(16.0)},
+    ):
+        theme = replace(base, **given)
+        assert all(theme.inline_code_run_scale(kind) >= 0.0 for kind in BlockKind)
+        assert theme.inline_code_run_scale(BlockKind.PARAGRAPH) > 0.0

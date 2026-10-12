@@ -22,7 +22,11 @@ Two stand-ins:
 
 - **a package of two functions** and a `dist-info`, with no library at all.
   It runs in both gates and holds the routing: who is asked, in what order,
-  what is remembered, what `pairing()` reports from `host_info()`.
+  what is remembered, what `pairing()` reports from `host_info()`. Since
+  `module()` holds what it imports to `typesetter.REQUIRED`, the stand-in
+  also has every name of that list, as a name and nothing more (`standin`
+  writes them from the list itself; `tests/test_typesetter_kinds.py` is
+  where one that LACKS a name is tried).
 - **the pinned pair, wrapped** (with the library only; skipped, with the
   reason, without it): a package named `imtypeset` that carries a library
   inside its own directory, names it to the real package's loader for the
@@ -54,6 +58,7 @@ _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
 _KEYS = {
     "route",
     "reason",
+    "kind",
     "library",
     "package",
     "distribution",
@@ -135,14 +140,55 @@ def _metadata(site: Path, version: str = "0.9.0", requires: str = "imgui-bundle=
     (info / "METADATA").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _a_distribution(tmp_path: Path, source: str = _TWO_FUNCTIONS) -> Path:
+def standin(source: str = _TWO_FUNCTIONS, without: tuple[str, ...] = (), **fields: Any) -> str:
+    """
+    The source of a package that has every name of `typesetter.REQUIRED`, and then `source`.
+
+    The names are written from the list, so the stand-in cannot fall behind
+    it: a function for a name of the package, a class holding its names for
+    an owner, a tuple type in advtext's field order where the library reads
+    by position. `without` leaves names out, spelled as `typesetter.missing`
+    spells them (`"stats"`, `"Document.pack_marks"`); `fields` gives a tuple
+    type other fields (`Block=("text", "kind")`). `source` comes last and so
+    wins: what a test says of `host_info` is what the package answers.
+    """
+    lines = ["import collections"]
+    owners = set(typesetter.REQUIRED) - {""}
+    for name in typesetter.REQUIRED[""]:
+        if name in without:
+            continue
+        if name in typesetter._IN_ORDER:
+            given = tuple(fields.get(name, typesetter._IN_ORDER[name]))
+            made = f"collections.namedtuple({name!r}, {given!r}, defaults=(0,) * {len(given)})"
+            lines.append(f"{name} = {made}")
+        elif name in owners:
+            lines.append(f"class {name}:")
+            lines += [
+                f"    {member} = 0"
+                for member in typesetter.REQUIRED[name]
+                if f"{name}.{member}" not in without
+            ] or ["    pass"]
+        else:
+            lines.append(f"def {name}(*args, **kwargs):\n    return None")
+    return "\n".join(lines) + "\n" + source
+
+
+def _a_package(site: Path, source: str = _TWO_FUNCTIONS, without: tuple[str, ...] = ()) -> None:
+    (site / "imtypeset").mkdir(parents=True)
+    (site / "imtypeset" / "__init__.py").write_text(standin(source, without), encoding="utf-8")
+    if "demo" not in without:
+        (site / "imtypeset" / "demo.py").write_text("", encoding="utf-8")
+
+
+def _a_distribution(
+    tmp_path: Path, source: str = _TWO_FUNCTIONS, without: tuple[str, ...] = ()
+) -> Path:
     """
     What `pip install imtypeset` is asked to leave in a site directory: a
     package, and the metadata that says it was installed.
     """
     site = tmp_path / "site"
-    (site / "imtypeset").mkdir(parents=True)
-    (site / "imtypeset" / "__init__.py").write_text(source, encoding="utf-8")
+    _a_package(site, source, without)
     _metadata(site)
     return site
 
@@ -159,6 +205,7 @@ def test_with_nothing_to_find_the_pairing_is_all_none_and_nothing_is_imported() 
     assert set(report["pairing"]) == _KEYS
     assert report["pairing"].pop("route") == typesetter.ROUTE_NONE
     assert report["pairing"].pop("reason") == "IMTYPESET_LIBRARY is not set"
+    assert report["pairing"].pop("kind") == typesetter.Kind.NOT_INSTALLED.value
     assert set(report["pairing"].values()) == {None}, report["pairing"]
     assert report["imtypeset"] == [] and report["imgui"] is False
     assert report["trouble"] == ""
@@ -200,6 +247,7 @@ def test_an_installed_distribution_is_loaded_with_no_variable_set(tmp_path: Path
     assert report["pairing"] == {
         "route": typesetter.ROUTE_DISTRIBUTION,
         "reason": "",
+        "kind": typesetter.Kind.READY.value,
         "library": str(site / "imtypeset" / "libimtypeset_bundle.so"),
         "package": str(site / "imtypeset"),
         "distribution": "imtypeset 0.9.0",
@@ -228,6 +276,7 @@ def test_a_distribution_that_refuses_is_a_sentence_that_names_it(tmp_path: Path)
     assert report["reason"] == f"the installed imtypeset 0.9.0 did not load: ImportError: {refusal}"
     assert report["pairing"]["route"] == typesetter.ROUTE_NONE
     assert report["pairing"]["reason"] == report["reason"]
+    assert report["pairing"]["kind"] == typesetter.Kind.REFUSED.value
     assert report["pairing"]["distribution"] == "imtypeset 0.9.0"
     assert report["pairing"]["library"] is None and report["pairing"]["built_for"] is None
 
@@ -245,8 +294,7 @@ def test_built_for_is_what_the_distribution_declares_and_none_when_it_declares_n
     requires: str, expected: str | None, tmp_path: Path
 ) -> None:
     site = tmp_path / "site"
-    (site / "imtypeset").mkdir(parents=True)
-    (site / "imtypeset" / "__init__.py").write_text(_TWO_FUNCTIONS, encoding="utf-8")
+    _a_package(site)
     _metadata(site, requires=requires)
     report = _child(_REPORT, _without(), site)
     assert report["pairing"]["route"] == typesetter.ROUTE_DISTRIBUTION
@@ -403,7 +451,7 @@ def _the_pair() -> tuple[Path, Path]:
 
 def _held(pairing: dict[str, Any], library: Path) -> None:
     assert set(pairing) == _KEYS
-    assert pairing["reason"] == ""
+    assert pairing["reason"] == "" and pairing["kind"] == typesetter.Kind.READY.value
     assert pairing["library"] == str(library)
     assert pairing["wheel_version"] == metadata.version("imgui-bundle")
     assert pairing["headers"].startswith(("fork:", "stand-in:")), pairing["headers"]

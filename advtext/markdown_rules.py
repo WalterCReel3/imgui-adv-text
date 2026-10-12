@@ -20,6 +20,10 @@ What is here:
   and `_parse`, with the three custom rules (`_asterisk_only_emphasis`,
   `_math_inline`, `_math_block`) and the core rule that tells the inline math
   rule where the source ends (`_inline_knowing_the_end`);
+- the parser a host's reader options choose (`_reader_parser`), and the one
+  rule those add (`_written_stars`). Added 2026-10-12 for
+  `advtext.typeset_markdown.ReaderOptions`, which is where a host says them:
+  these two names were never in `advtext.markdown` and are not imported back;
 - the source map: `SourceSpan`, `BlockSource`, `_line_starts`, `_span`;
 - three small things both readers need to agree on: `TAB_WIDTH`, `_BULLET`,
   and `ColumnAlign` with the table of style attributes it is read from.
@@ -371,7 +375,75 @@ def _math_block(state: StateBlock, start_line: int, end_line: int, silent: bool)
     return True
 
 
-def _build_parser(*, references: bool = True, math: bool = False) -> MarkdownIt:
+def _written_stars(state: StateInline, silent: bool) -> bool:
+    """
+    A run of `*` read as the characters it is, where it was written as one and not as emphasis.
+
+    Only in a parser built with `written_stars=True`
+    (`advtext.typeset_markdown.ReaderOptions.keep_glob_stars`), where it runs
+    before the emphasis rule and so decides first. pptmstr's rule, taken from
+    its old seam (`_written_stars`, which that host added to this module's
+    shared parser through `_parser`) with its three conditions unchanged.
+    CommonMark pairs the stars of `delete **/*.py and tests/**/*.md` into a
+    bold `/*.py and tests/` and draws none of the four: the reader sees
+    another command than the one that was written.
+
+    **What tells a written star from emphasis is the one character on each
+    side of the whole run of stars** (and for the second condition, one
+    more). A run is text when any of these holds:
+
+    - a `/` is immediately before it or immediately after it (`**/*.py`,
+      `src/*`, `/* note */`);
+    - a `.` is immediately after it and the character after that `.` is not
+      white space and not the end of the text (`*.py`, `**.tar.gz`; but not
+      `*.` before a space, which nobody writes as a glob);
+    - a letter or a digit is immediately before it AND immediately after it
+      (`2*3*4`, `foo*bar`), which is how CommonMark itself reads `_`.
+
+    The start and the end of the inline text count as a space. `**bold**`,
+    `*emphasis*`, `**and/or**`, `**src/x.py**` and `**Ends in a stop.**` meet
+    none of the three at either of their runs and are emphasis as before.
+
+    **What it gets wrong, in both directions, and is left so.** A glob
+    written exactly as emphasis is written still loses its stars:
+    `rm *tmp and old* now` is `rm`, an italic `tmp and old`, and `now`. And
+    emphasis written hard against a slash, or inside a word, is no longer
+    emphasis: `**/usr/bin**` keeps its four stars and is not bold, and
+    `foo*bar*baz`, in which CommonMark emphasises `bar`, keeps both. A star
+    in a code span or a fenced block never reaches this rule.
+    """
+    source = state.src
+    start = state.pos
+    if source[start] != "*":
+        return False
+    stop = start
+    while stop < state.posMax and source[stop] == "*":
+        stop += 1
+    before = source[start - 1] if start else " "
+    after = source[stop] if stop < len(source) else " "
+    more = source[stop + 1] if stop + 1 < len(source) else " "
+    written = (
+        before == "/"
+        or after == "/"
+        or (after == "." and not more.isspace())
+        or (before.isalnum() and after.isalnum())
+    )
+    if not written:
+        return False
+    if not silent:
+        state.pending += source[start:stop]
+    state.pos = stop
+    return True
+
+
+def _build_parser(
+    *,
+    references: bool = True,
+    math: bool = False,
+    html: bool = True,
+    images: bool = True,
+    written_stars: bool = False,
+) -> MarkdownIt:
     """
     CommonMark, plus tables, minus underscore emphasis.
 
@@ -384,9 +456,25 @@ def _build_parser(*, references: bool = True, math: bool = False) -> MarkdownIt:
     every `build_document` call shares. `math=True` adds the two math rules,
     again to a parser of its own (`_parser`): four objects at most, each built
     when first asked for.
+
+    The last three are a host's reader options (`_reader_parser`), and their
+    defaults are the parser this function always built. `html=False`
+    switches off the two rules that read raw HTML, block and inline: a tag,
+    a comment opener and a generic's `<T>` are then ordinary text, which is
+    CommonMark's own reading of them when HTML is not allowed. An autolink
+    (`<https://...>`) is another rule and stays a link. `images=False`
+    switches off the image rule, and `![alt](url)` is then what is left when
+    nothing claims the `!`: an exclamation mark and a link. `written_stars`
+    adds `_written_stars` in front of the emphasis rule.
     """
     parser = MarkdownIt("commonmark").enable("table")
     parser.inline.ruler.at("emphasis", _asterisk_only_emphasis)
+    if written_stars:
+        parser.inline.ruler.before("emphasis", "written_stars", _written_stars)
+    if not html:
+        parser.disable(["html_block", "html_inline"])
+    if not images:
+        parser.disable("image")
     if not references:
         parser.disable("reference")
     if math:
@@ -421,6 +509,29 @@ def _parser(references: bool, math: bool) -> MarkdownIt:
     if not math:
         return _PARSER if references else _PARSER_WITHOUT_REFERENCES
     return _build_parser(references=references, math=True)
+
+
+@cache
+def _reader_parser(
+    references: bool, math: bool, html: bool, images: bool, written_stars: bool
+) -> MarkdownIt:
+    """
+    The one parser for a combination of the two switches and three reader options.
+
+    With the options at their defaults (`html` and `images` true,
+    `written_stars` false) this IS `_parser(references, math)`, the same
+    object, so a caller that states no option reads with the parser every
+    caller read with before the options existed. Any other combination is a
+    parser of its own, built once and kept: `MarkdownIt.disable` mutates, so
+    an option cannot be a setting flipped on a shared object. A settled
+    document and a stream that state equal options are handed the same
+    parser, which is the point of going through here.
+    """
+    if html and images and not written_stars:
+        return _parser(references, math)
+    return _build_parser(
+        references=references, math=math, html=html, images=images, written_stars=written_stars
+    )
 
 
 def _parse(parser: MarkdownIt, source: str, more_may_follow: bool = False) -> list[Any]:

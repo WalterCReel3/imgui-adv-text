@@ -82,6 +82,25 @@ first time) is one `replace_blocks` per document, over the blocks that
 differ; the first draw makes the documents and measures a cell (once per
 size). `tests/test_typeset_diff_view.py` counts them in a window.
 
+## Whether a file's header fit (`headers`, pptmstr's P16)
+
+A file header is one line cut at the view's right edge, outside what scrolls
+sideways: under a long path the end of the path and `will_not_apply` are
+where nobody can reach them. `headers()` answers, per file in the order
+drawn, a `DiffHeader`: the text, the warning, their set widths and the width
+they were cut at **at the last draw** (`None`, and `fits` `None`, before a
+first draw); `headers(width_px)` answers for a width without drawing, for a
+host that says what was cut above the view before it draws the view.
+`DiffRows.headers()` is the texts alone, with no library. The widths are
+measured by the library in a document of the method's own, once for a set of
+header lines at a size, and only if `headers` is called: a frame's calls
+above are unchanged, and `headers()` on a diff that has not changed makes
+none (counted in a window). What it costs when a header does change -- on
+every line of a growing diff, since the counts are in the header -- is one
+small document made, laid out and closed: measured headless at a load of 6,
+59 us for one file, 0.21 ms for ten, 1.7 ms for a hundred; an answer already
+held is about 10 us (`.concerns/PH-DIFF--builder--result.md`).
+
 ## What is described, and when (T3-C)
 
 SW-3 turned every row into text before the first frame, and all of them again
@@ -257,6 +276,7 @@ __all__ = [
     "SYNTAX_CHUNK",
     "TAB_WIDTH",
     "DiffGrid",
+    "DiffHeader",
     "DiffLayout",
     "DiffRows",
     "RowInfo",
@@ -362,6 +382,59 @@ class DiffGrid:
     row: int
     em: float
     scale: float
+
+
+@dataclass(frozen=True, slots=True)
+class DiffHeader:
+    """
+    One file's header row: what it says, and whether a view was wide enough for it.
+
+    A header is one line that is never wrapped and does not scroll: it is cut
+    at the view's right edge. `text` is the file's label, its counts and its
+    state; `warning` is what follows it in the warning ink (`will_not_apply`,
+    lines not read, characters to be wary of), each part beginning `! ` and
+    two spaces from the next, or `""`. Both are **as drawn**: a control or an
+    invisible character of the label is `CONTROL_PLACEHOLDER` here, as it is
+    on screen. `line` is the two as the row holds them.
+
+    Widths are pixels from the view's left edge to the right edge of the last
+    character, the one cell the line is set in from included, **as the library
+    sets it** (a character the code face lacks has another face's advance):
+    `text_width_px` to the end of `text`, `width_px` to the end of the line.
+    `available_px` is the width the line is cut at. Any of the three is `None`
+    when it is not known (`TypesetDiffView.headers` says when), and then so
+    are `fits` and `text_fits`: `None` is "not known", never a guess.
+    """
+
+    file: int
+    row: int
+    text: str
+    warning: str
+    width_px: float | None = None
+    text_width_px: float | None = None
+    available_px: float | None = None
+
+    @property
+    def line(self) -> str:
+        """The header as its row holds it: `text`, then two spaces and `warning` if there is one."""
+        return f"{self.text}  {self.warning}" if self.warning else self.text
+
+    @property
+    def fits(self) -> bool | None:
+        """Whether the whole line is inside `available_px`; `None` when a width is not known."""
+        if self.width_px is None or self.available_px is None:
+            return None
+        return self.width_px <= self.available_px
+
+    @property
+    def text_fits(self) -> bool | None:
+        """
+        Whether `text` alone is inside `available_px`: with `fits` false and
+        this true, only the warning was cut. `None` when a width is not known.
+        """
+        if self.text_width_px is None or self.available_px is None:
+            return None
+        return self.text_width_px <= self.available_px
 
 
 _Pos = tuple[int, int, int, int]
@@ -597,6 +670,8 @@ class _Sheet:
     dirty: bool = True
     # Per header row: the (start, end) ranges of its line set in the warning ink.
     header_inks: dict[int, tuple[tuple[int, int], ...]] = field(default_factory=dict)
+    # Per file: (row of its header, file, the text as shown, the warning as shown).
+    file_headers: list[tuple[int, int, str, str]] = field(default_factory=list)
     blocks: int = 0
 
 
@@ -1427,6 +1502,9 @@ class DiffRows:
             if kind == _FILE:
                 text, warning = _file_header(file)
                 inks = ((1 + len(text), 1 + len(text) + len(warning)),)
+                # One character for one (`_shown`): the line cut where the text ends.
+                shown = _shown(text + warning)[0]
+                sheet.file_headers.append((row, f, shown[: len(text)], shown[len(text) :]))
                 header(text + warning, _R_HEADER, inks if warning else ())
             elif kind == _HUNK:
                 header(file.hunks[number].header, _R_HEADER)
@@ -1438,6 +1516,21 @@ class DiffRows:
                 chunks(kind, f, number, rows)
         sheet.segment_blocks.append(sheet.blocks)
         return sheet
+
+    def headers(self) -> tuple[DiffHeader, ...]:
+        """
+        Each file's header row, in the order drawn: its row, its text and its
+        warning (`DiffHeader`). Pure: no width is known here, so `width_px`,
+        `text_width_px`, `available_px`, `fits` and `text_fits` are `None`.
+        `TypesetDiffView.headers` fills them in.
+
+        The wording is the view's own (counts, the file's state, what was not
+        read), so a host that says a header again says what the row says.
+        """
+        return tuple(
+            DiffHeader(file=f, row=row, text=text, warning=warning.lstrip(" "))
+            for row, f, text, warning in self._described().file_headers
+        )
 
     def _place(self, sheet: _Sheet, pane: int, row: int) -> tuple[int, int]:
         """(block, offset of the line's start) of display row `row` in a pane's code document."""
@@ -1576,6 +1669,17 @@ class TypesetDiffView(DiffRows):
         self._max_scroll_x = 0
         self._bar_drag: tuple[float, int] | None = None
         self._width = 0.0
+        # The header lines measured, the grid they were measured on, and (whole
+        # line, text alone) per file: `headers`.
+        self._header_widths: (
+            tuple[tuple[str, ...], DiffGrid, tuple[tuple[float, float], ...]] | None
+        ) = None
+        # What `headers` last answered, and for which description, grid and width.
+        self._headers_answer: (
+            tuple[_Sheet, DiffGrid, float | None, tuple[DiffHeader, ...]] | None
+        ) = None
+        #: Times the file headers were measured by the library (`headers`).
+        self.headers_measured = 0
         self._visible = range(0)
         self._hot_gap: tuple[int, int] | None = None
         self._granularity = _CHARACTER
@@ -1724,6 +1828,114 @@ class TypesetDiffView(DiffRows):
         if full and self._overflow(self._panes(max(width_px, cell * 8), cell), cell) > 0:
             full += self._bar_height()
         return full if self.height_cap is None else min(full, self.height_cap)
+
+    def headers(self, width_px: float | None = None) -> tuple[DiffHeader, ...]:
+        """
+        Each file's header row, in the order drawn, and whether it fit
+        (`DiffHeader`): what a host needs to say again, above the view or
+        anywhere, what the view's edge cut off -- `will_not_apply` first.
+
+        `available_px` is the width the header line is cut at:
+
+        - with no argument, **at the last `draw`** (the view's width in whole
+          pixels; with `height_cap`, the width inside the child, which a
+          vertical scrollbar narrows). Before a first draw it is `None`, and
+          so are `fits` and `text_fits`.
+        - with `width_px`, at that width as `draw(width_px=...)` would take it
+          (no narrower than eight cells, whole pixels), without drawing: for a
+          host that lays out what it says above the view before it draws the
+          view. With `height_cap` the child's scrollbar is not known here and
+          is not allowed for; ask again with no argument after the draw.
+
+        The same in both layouts: a header spans the view. It does not scroll
+        sideways, so `scroll_x` changes nothing here.
+
+        The widths are the library's (`DiffHeader`), measured in a document of
+        its own, **once for a set of header lines at a size**: one document
+        made (a block a file), one `layout`, two `caret_rect` a file, and
+        nothing again until a header's text or the size changes
+        (`headers_measured` counts). Called every frame on a diff that does
+        not change it makes no call into the library; a view whose `headers`
+        is never called measures nothing.
+
+        When the library cannot be asked (`typesetter.ready()` is false) the
+        widths are `None` and the texts are still answered: this does not
+        raise for that. It raises `TypesetUnavailable`, as `draw` does, when
+        the library fails while measuring. `width_px` that is not a number is
+        a `TypeError`; one that is not finite or is negative, a `ValueError`.
+        """
+        if width_px is not None:
+            if isinstance(width_px, bool) or not isinstance(width_px, int | float):
+                raise TypeError(
+                    f"headers(width_px=...) takes a number of pixels, not {type(width_px).__name__}"
+                )
+            if not math.isfinite(width_px) or width_px < 0:
+                raise ValueError(
+                    f"headers(width_px=...) takes a finite width of 0 or more, not {width_px!r}"
+                )
+        if not typesetter.ready():
+            return super().headers()
+        ts, (_, grid, base) = typesetter.module(), self._gridded()
+        if width_px is not None:
+            available: float | None = float(int(max(float(width_px), grid.cell * 8)))
+        elif self._width > 0.0:
+            available = float(int(self._width))
+        else:
+            available = None
+        sheet = self._described()
+        answer = self._headers_answer
+        if (
+            answer is not None
+            and answer[0] is sheet
+            and answer[1] == grid
+            and answer[2] == available
+        ):
+            # The steady frame: the same rows, the same size, the same width.
+            return answer[3]
+        plain = super().headers()
+        if not plain:
+            return plain
+        lines = tuple(header.line for header in plain)
+        held = self._header_widths
+        if held is None or held[0] != lines or held[1] != grid:
+            # Each line as its row holds it (one cell in), in a Code block of its
+            # own as in the view's documents: the end of a block is a position on
+            # its last line, where the end of a line inside a block is answered
+            # as the start of the next one.
+            try:
+                code = int(ts.BlockKind.Code)
+                style = ts.BlockStyle(
+                    Scale=grid.scale, LineHeight=grid.row / (grid.em * grid.scale)
+                )
+                with ts.Document() as scratch:
+                    scratch.set_options(ts.DocumentOptions(CodeOverflow=int(ts.CodeOverflow.Grow)))
+                    scratch.set_blocks([ts.Block(code, " " + line) for line in lines], [style])
+                    scratch.layout(_COLUMN, base)
+                    widths = tuple(
+                        (
+                            float(scratch.caret_rect((at, 1 + len(header.line)))[0]),
+                            float(scratch.caret_rect((at, 1 + len(header.text)))[0]),
+                        )
+                        for at, header in enumerate(plain)
+                    )
+            except Exception as exc:  # noqa: BLE001 -- see `_failed`
+                self._failed(exc)
+            held = self._header_widths = (lines, grid, widths)
+            self.headers_measured += 1
+        found = tuple(
+            DiffHeader(
+                file=header.file,
+                row=header.row,
+                text=header.text,
+                warning=header.warning,
+                width_px=whole,
+                text_width_px=text,
+                available_px=available,
+            )
+            for header, (whole, text) in zip(plain, held[2], strict=True)
+        )
+        self._headers_answer = (sheet, grid, available, found)
+        return found
 
     @property
     def scroll_x(self) -> int:

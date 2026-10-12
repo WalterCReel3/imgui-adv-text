@@ -48,11 +48,19 @@ In three groups, which `_HOMES` keeps apart:
   (they also take the module `advtext.typesetter` itself, for `module()` and
   `unload()`; tests read their imports):
   - the library: `load_fonts` (in hello_imgui's `load_additional_fonts`),
-    `ready`, `reason`;
+    `ready`, `reason`; why it is not drawing as a `Kind` (`kind`), the way
+    back from a failure (`reset`, then `load_fonts` again), what was found
+    and by which route (`pairing`), and the same asked of a child process
+    without loading anything here (`verdict`);
   - markdown: `parse_markdown` answering a `MarkdownDocument`, `MarkdownStream`
     for a source still arriving, `MarkdownConverter` and the `Description` of
     `BlockDescription`s it answers, `BlockSource` / `SourceSpan` for where a
-    block came from;
+    block came from; `ReaderOptions` for a host that wants more shown than
+    CommonMark's reading shows, the same object for a parse and a stream;
+  - blocks a host makes itself and hands a view in place of markdown:
+    `MarkdownText`, `MarkdownCode`, `MarkdownRule`, and `MarkdownTable` with
+    the `MarkdownCell` and `ColumnAlign` it cannot be built without. A
+    block's `style` is `theme.style(BlockKind...)`;
   - find: `FindIndex` over a description, `Finder` (the current match and
     the marks a view takes), `Match`;
   - looks: `Theme`, `Faces`, `Face`, `Align`, `Spacing`, `BlockKind`,
@@ -63,7 +71,9 @@ In three groups, which `_HOMES` keeps apart:
     diffs as one (`TypesetDiffFences`, `HostedDiff`);
   - a diff: `Diff`, `FileDiff`, `Hunk`, `DiffRow`, `RowKind`, `FileStatus`,
     `UnifiedDiffStream`, `DiffApplyError`, `ContextUnavailable`; its view
-    `TypesetDiffView` with `DiffLayout`, `SyntaxColour`, `language_for`.
+    `TypesetDiffView` with `DiffLayout`, `SyntaxColour`, `language_for`, and
+    `DiffHeader`, what `TypesetDiffView.headers` answers (a file header's
+    text and whether it fit).
 - **Font files**: `register_font`, `unregister_font`, `registered_fonts`,
   `em_size_for_pixel_height` (`advtext.fontlib`: the files `load_fonts`
   hands the library are the ones registered there), and the Python atlas
@@ -90,12 +100,16 @@ rather than hidden behind the name.
 
 Not here, deliberately, and reached through their modules: the rest of the
 description (`advtext.description`: the run, cell, column and style tuples
-and the enumerators), the parsed block types (`MarkdownText`, `MarkdownCode`,
-...), `MarkDescription` and `marks_for`, the view's other records
+and the enumerators, and `description_of` / `check_description` for a host
+that describes its own blocks: it takes the tuples from that module anyway),
+the rest of what a parse holds (`LinkRange`, `FormulaRange`,
+`reader_options`), `MarkDescription` and `marks_for`, the view's other records
 (`ViewStats`, `ViewColumns`, `Position`, `Range`), the diff view's frame
 plan, the rest of the diff model (`Gap`, `SidePair`, `tokenize`), selection
 ownership (`advtext.ui.ownership`), the typesetter's `module`, `unload`,
-`note`, `trouble` and `disable`, the demo app and its pages, and all of the
+`note`, `trouble`, `disable`, `font`, `unsupported`, `missing`, `REQUIRED`
+and `EXIT_CODES` (a word like `font` or `module` says nothing without its
+module's name in front of it), the demo app and its pages, and all of the
 reference core that is not listed above (`advtext.linebreak`, `advtext.pack`,
 `advtext.nodes`, `advtext.selection`, `advtext.math`).
 
@@ -163,19 +177,34 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers; see the module docstr
         formula_spans,
         text_block,
     )
-    from advtext.markdown_rules import BlockSource, SourceSpan
+    from advtext.markdown_rules import BlockSource, ColumnAlign, SourceSpan
     from advtext.primitives import Face, Scaled, px_from_sp, sp_from_px
     from advtext.shipout import DrawCmd, Point, ship
     from advtext.style import MetricsResolver, char_measure, fontlib_metrics
     from advtext.theme import Align, BlockKind, Emphasis, Faces, Spacing, Theme
     from advtext.typeset_find import Finder, FindIndex, Match
     from advtext.typeset_markdown import (
+        MarkdownCell,
+        MarkdownCode,
         MarkdownConverter,
         MarkdownDocument,
+        MarkdownRule,
         MarkdownStream,
+        MarkdownTable,
+        MarkdownText,
+        ReaderOptions,
         parse_markdown,
     )
-    from advtext.typesetter import load_fonts, ready, reason
+    from advtext.typesetter import (
+        Kind,
+        kind,
+        load_fonts,
+        pairing,
+        ready,
+        reason,
+        reset,
+        verdict,
+    )
     from advtext.ui import (
         PROSE_BREAKING_TOTAL_FIT_RAGGED,
         ColumnLimits,
@@ -198,7 +227,13 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers; see the module docstr
         DrawStats,
         Palette,
     )
-    from advtext.ui.typeset_diff_view import DiffLayout, SyntaxColour, TypesetDiffView, language_for
+    from advtext.ui.typeset_diff_view import (
+        DiffHeader,
+        DiffLayout,
+        SyntaxColour,
+        TypesetDiffView,
+        language_for,
+    )
     from advtext.ui.typeset_hosts import HostedDiff, TypesetDiffFences
     from advtext.ui.typeset_stream_view import TypesetStreamView
     from advtext.ui.typeset_view import Hosted, HostFor, SetLine, TypesetUnavailable, TypesetView
@@ -209,14 +244,29 @@ _HOMES: dict[str, str] = {
     "load_fonts": "advtext.typesetter",
     "ready": "advtext.typesetter",
     "reason": "advtext.typesetter",
+    # Why it is not drawing as a kind, the way back, and what was found: here, or by a child.
+    "Kind": "advtext.typesetter",
+    "kind": "advtext.typesetter",
+    "reset": "advtext.typesetter",
+    "pairing": "advtext.typesetter",
+    "verdict": "advtext.typesetter",
     # Parse: markdown in, blocks of text and runs out; or the same from a source still arriving.
     "parse_markdown": "advtext.typeset_markdown",
     "MarkdownDocument": "advtext.typeset_markdown",
     "MarkdownStream": "advtext.typeset_markdown",
     "MarkdownConverter": "advtext.typeset_markdown",
-    # Where a block came from in the source.
+    # How it is read, where a host wants more shown than CommonMark's reading shows.
+    "ReaderOptions": "advtext.typeset_markdown",
+    # The blocks, for a host that makes its own and hands them to a view.
+    "MarkdownText": "advtext.typeset_markdown",
+    "MarkdownCode": "advtext.typeset_markdown",
+    "MarkdownRule": "advtext.typeset_markdown",
+    "MarkdownTable": "advtext.typeset_markdown",
+    "MarkdownCell": "advtext.typeset_markdown",
+    # Where a block came from in the source; and a table column's alignment.
     "BlockSource": "advtext.markdown_rules",
     "SourceSpan": "advtext.markdown_rules",
+    "ColumnAlign": "advtext.markdown_rules",
     # The description `MarkdownConverter.describe` answers, which find reads.
     "Description": "advtext.description",
     "BlockDescription": "advtext.description",
@@ -267,6 +317,7 @@ _HOMES: dict[str, str] = {
     "DiffLayout": "advtext.ui.typeset_diff_view",
     "SyntaxColour": "advtext.ui.typeset_diff_view",
     "language_for": "advtext.ui.typeset_diff_view",
+    "DiffHeader": "advtext.ui.typeset_diff_view",
     # Fenced diffs drawn as diff views inside a document.
     "TypesetDiffFences": "advtext.ui.typeset_hosts",
     "HostedDiff": "advtext.ui.typeset_hosts",
@@ -354,12 +405,14 @@ __all__ = [
     "BlockKind",
     "BlockSource",
     "CodeBlock",
+    "ColumnAlign",
     "ColumnLimits",
     "ComposeParams",
     "ContextUnavailable",
     "Description",
     "Diff",
     "DiffApplyError",
+    "DiffHeader",
     "DiffLayout",
     "DiffPalette",
     "DiffRow",
@@ -379,16 +432,23 @@ __all__ = [
     "Hosted",
     "HostedDiff",
     "Hunk",
+    "Kind",
     "LoadedFaces",
+    "MarkdownCell",
+    "MarkdownCode",
     "MarkdownConverter",
     "MarkdownDocument",
+    "MarkdownRule",
     "MarkdownStream",
+    "MarkdownTable",
+    "MarkdownText",
     "Match",
     "MathBuilder",
     "MathRefused",
     "MetricsResolver",
     "Palette",
     "Point",
+    "ReaderOptions",
     "RowKind",
     "RuleBlock",
     "Scaled",
@@ -414,21 +474,25 @@ __all__ = [
     "em_size_for_pixel_height",
     "fontlib_metrics",
     "formula_spans",
+    "kind",
     "language_for",
     "load_faces",
     "load_fonts",
+    "pairing",
     "parse_markdown",
     "px_from_sp",
     "ready",
     "reason",
     "register_font",
     "registered_fonts",
+    "reset",
     "ship",
     "sp_from_px",
     "table_column_limits",
     "table_columns",
     "text_block",
     "unregister_font",
+    "verdict",
     "with_columns",
 ]
 """

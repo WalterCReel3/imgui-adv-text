@@ -754,7 +754,10 @@ def test_in_a_frozen_application_the_verdict_is_unchecked_and_no_child_is_starte
     assert set(said) == pairing._KEYS
     assert said["kind"] == "unchecked" and said["route"] == typesetter.ROUTE_NONE
     assert said["reason"].startswith("this is a frozen application (sys.frozen)")
+    # Everything about the pair is unknown. What is known is who is asking
+    # (`advtext_version`, since 2026-10-12: this process's own advtext).
     assert {key for key, value in said.items() if value is None} == pairing._KEYS - {
+        "advtext_version",
         "kind",
         "reason",
         "route",

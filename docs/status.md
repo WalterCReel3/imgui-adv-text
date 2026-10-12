@@ -6,6 +6,357 @@ before `README.md` if you are deciding whether to trust anything here.
 It is written to be useful rather than flattering. Section 4 is the longest on
 purpose.
 
+## 0g. Revision of 2026-10-12, later still: thirteen more host requests, imtypeset `v0.3.0`, a version and the recipe for a release artefact that has not been built
+
+The newest revision, put first. Section 0f below was the newest when it was
+written and says so; it is hours older and is not changed. **Read 0f, 0e and
+0c with these corrections:**
+
+- **Where 0f says `ReaderOptions` is "a frozen dataclass of four `bool`s"**:
+  six (`show_fence_info`, `backslashes_as_written` added; below).
+- **Where 0f lists pptmstr's P21 to P24 as open and not answered**: answered
+  and, where they were advtext's, built; pptmstr's file has thirty-three
+  requests now.
+- **Where 0e and 0f say the pinned pair is from `c9f8902`**: it is imtypeset
+  `v0.3.0`, commit `2fd705e` (the pin history is below).
+- **Where 0e says the library's import gate starts a child and writes a
+  stamp, and that no imtypeset distribution exists**: not since `03b5cd4`
+  (below).
+- **Where 0c's code block says `make typeset-lib` "builds
+  build/imtypeset-bundle/libimtypeset_bundle.so"**: the file's name is the
+  build script's and differs by platform; `build/imtypeset-bundle/LIBRARY`
+  names it and the Makefile reads it from there.
+- **Where any section says `pairing()` has eleven or twelve keys**: seventeen.
+
+What this section describes is committed up to `5939683` (`HEAD` when its
+writer, the builder of the task O-REL, an agent, wrote it), except that
+task's own work, which was in the working tree, uncommitted: the version,
+`make dist`, `advtext_version` in `pairing()`, and these documents. The lead
+commits.
+
+**Read every paragraph below with these in mind:**
+
+- **Nobody has looked at anything.** Every figure is a number an agent read
+  off a draw list, a layout, a return value or a clock.
+- **Nothing was run through pptmstr's code or its tests** by advtext's
+  agents. Where pptmstr's own session ran something, it is said to be
+  pptmstr's.
+- **Nothing here has run on macOS, in a frozen application, on a GPU, at a
+  display density other than 1 (one headless measurement at a framebuffer
+  scale of 2 apart, below), or against GitHub; the CI workflow has never
+  run.**
+- **`make dist` has not built a wheel or an sdist.** Its script was run
+  against a stand-in builder only.
+- **Two defaults changed**, both below and both marked: a tab in a fence,
+  and a view out of sight.
+
+### What the user asked
+
+Nothing new. The direction is the one 0e quotes: "The goal now is initial
+stability and deliverability for a full pptmstr adoption and product
+packaging (goal of a Mac supported install with automatic updates)."
+Everything below was asked by pptmstr's session (P21 to P33 in its
+`HANDOFF-advtext.md`) or by imtypeset's (T1 to T10 in its
+`docs/advtext-swap-status.md`), both agents', and decided by advtext's
+agents: `docs/decisions.md`, "Host requests, second round" and "A release
+artefact".
+
+### What is true of the tree now
+
+**The pin moved twice in a day.** `c9f8902` (the swap gate) to `03b5cd4`
+(imtypeset's wheel and its attestation gate; advtext commit `04a51c8`) to
+`v0.3.0`, commit `2fd705e2bc358c7dbfda1eb60bd9b71609869e1d` (advtext commit
+`5939683`), all on 2026-10-12, each after both gates on the pair it moved to
+(the lead's account for the two moves; the counts are under "What was
+measured"). The pair in `build/imtypeset-bundle` was built by
+`make typeset-lib IMTYPESET_COMMIT=v0.3.0 IMTYPESET_HEADERS=stand-in` from
+the sibling checkout: **stand-in headers**, as every library this tree has
+run. imtypeset's tag `v0.3.0` is in that checkout and, by its own file, is
+not pushed.
+
+**Monospace columns, measured (pptmstr's P21 and P22; the builder of Q-MONO,
+in a real hello_imgui window on Xvfb, imtypeset `c9f8902`, density 1, load
+2.2 to 3.3, four runs of 26 pages, runs repeating exactly).** Through
+`TypesetView`, eight fenced rows, two face tables:
+
+- **Columns hold at an EM of 14, 16, 18 and 20**, where half an em is a
+  whole pixel: one distinct step in 170 of 170, 0 px between rows at every
+  column, characters 1, 10, 20, 30, 40 and 74 drawn on N times the laid-out
+  advance and on Dear ImGui's pen in the same font.
+- **Columns do not hold at an em of 15 or 17** (steps of 7 and 8, or 8 and
+  9; rows disagree at one column by up to 17 px).
+- **Columns do not hold at any pixel height from 14 to 20**
+  (`Theme.at_pixel_height`), in an all-mono theme or the default one: two
+  step sizes on every one of the fourteen pages, rows disagreeing at one
+  column by 1 to 16 px. That is the route pptmstr sizes by.
+- **Drawn and laid out agree at a row's two ends and not inside it**: first
+  glyph within 0.49 px and row width within 0.50 px on all 26 pages; in the
+  middle up to 18.20 px left and 18.00 px right of the rectangle the library
+  answers for that character. Zero at ems 14, 16, 18, 20.
+- **A selection follows layout, not the drawn glyphs**: at an all-mono pixel
+  height of 16 the fill for characters 21 to 40 of a 74-character row is
+  drawn 13 px right of the first glyph selected.
+
+All of that is the typesetting core's and is carried as H34 and H35.
+**It has not been measured again at `03b5cd4` or `v0.3.0`**; imtypeset's
+file says both are to be re-measured there before anything is said.
+pptmstr's own trial (its file) found columns holding at an even em.
+**advtext does not choose such an em for code by itself** (the lead's
+decision, an agent's: it would silently change sizes a host stated).
+
+**French spacing (P23) was advtext's defect and is fixed** (the same
+builder; commit `efa3d72`). `typesetter.base_style` never set the library's
+`Style.Spacing`, so every document was laid out under the library's default
+whatever `Theme.spacing` said. The mapping is one to one and the default
+does not move. `tests/test_typeset_spacing.py`: 4 failed and 8 passed before
+the fix, 12 passed after.
+
+**`ready()` knows the fonts' ImGui context is gone (P24; the builder of
+Q-CTX; commit `4f7b358`).** `ready()` is false, and a kept view's `draw()`
+raises `TypesetUnavailable` before anything is handed to the library,
+whenever the Dear ImGui context that is current is not the one
+`load_fonts()` succeeded in: none current, another current, or that one
+destroyed, with or without `unload()`. `typesetter.why_not_ready()` is the
+sentence (not on the facade). `kind()` stays `READY`. It goes by the context
+object AND by the library's last font still standing in the current atlas
+with its own byte count, because a new context made after the old was
+destroyed landed at the old address and was the same Python object in every
+first run. Cost, that builder's, 200,000 calls: `ready()` true 0.76
+microseconds where it was 0.04 as a flag. A residual is reasoned and not
+reproduced (a host font at the old font's address with the same byte count).
+
+**A host's mistake is an error at its call (the builder of PH-FIX, fixing
+what a review by reading found; the same commit).** Thirteen descriptions
+that raised `struct.error`, `OverflowError` or `UnicodeEncodeError` at the
+first draw and then drew nothing on the second are now a `TypeError` or
+`ValueError` at the call, with the view as it was; integers past 2**31 - 1
+and reals past 3.4e38 are bounded; `set_table_columns`, `set_marks`,
+`set_colours` and `load_fonts(["prose"])` likewise. **A lone surrogate
+(U+D800 to U+DFFF) is set as U+FFFD, one for one**, by every way into a
+view; the host's own objects, `source` and `selected_source()` are not
+touched; a copy gives U+FFFD and not the byte. A check nobody asked for:
+every field of the four block types given seventeen things it is not, 510
+cases: 406 refused with the view as it was, 104 taken and drawn with the
+library's texts equal to the view's, 0 anything else.
+`imtypeset.demo` is no longer on the list of names the gate requires.
+
+**The new build and gate of imtypeset `03b5cd4` (T1 to T5; the builder of
+N-IMT; commit `6e42665`).** `make typeset-lib` hands the headers choice to
+the build script (`IMTYPESET_HEADERS`; without it and without network the
+build stops at the fetch, exit 2, nothing installed), reads the library's
+file name from `LIBRARY`, carries `<library>.attestation.json`, and neither
+writes nor expects `<library>.gate`. `pairing()` gained `imtypeset_kind` and
+`imtypeset_route`; imtypeset's `wrong-platform` is advtext's
+`Kind.UNSUPPORTED`, `no-library` is `NOT_INSTALLED`, every other word
+`REFUSED`. An installed imtypeset is found by metadata or by
+`_attestation.json` beside the package. **The installed-distribution route
+met a real wheel for the first time** (that builder, outside the suite, load
+7.4; `imtypeset-0.3.0.192900+standin`, `pip install --no-index --no-deps
+--target`): alone in its directory it was refused, `imtypeset_kind`
+`layout`; with `imgui_bundle` symlinked beside it, ready, accepted by
+attestation, fonts loaded, 250 ms for the import; with its `dist-info`
+deleted by hand, the same, 283 ms. Not done there: a window, a draw, the
+suite, a real freezer.
+
+**P26 to P29 (the builder of N-HOST2; the same commit; measured on
+`c9f8902`, positions and copies only).**
+
+- *P26.* The gap after a list is the item gap: 3.2 px against 8.8 between
+  paragraphs at a 16 px body, the old core's too. `Theme.space_after_list`
+  (`None` by default, byte for byte the old description) gives the last item
+  of an outermost list another space below.
+- *P27.* `ReaderOptions(show_fence_info=True)`: a fence with an info string
+  is two blocks, a `MarkdownText` of kind `BlockKind.CODE` holding the whole
+  info string and then the code. A block and not a first line because the
+  library reads no run on a code block (measured: a coloured run on one
+  leaves all 48 vertices one colour).
+- *P28.* The library sets every run of white space in a text block as one
+  space and has no flag that keeps it (the core's; carried). What advtext
+  changed: a view records a block HANDED OVER AS A BLOCK as it is set, so
+  `texts` no longer holds spaces the screen has not. **Not done**: the same
+  for what the reader writes from a markdown string (`a ![i](p.png) b` is
+  `a  b` in `texts` and `a b` on screen), and for table cells.
+- *P29.* **A DEFAULT CHANGED: a tab in a fenced or indented block is a tab**
+  in `MarkdownCode.text`, in `texts` and in a copy, where it was expanded to
+  spaces before the library saw it. Measured over 16 lines, 9 sizes and 3
+  overflows: worst caret difference 0.0000076 px against the expanded
+  spaces, so nothing moves on screen. A host that asserted on spaces in
+  `texts` sees a tab.
+
+**Themes are sized from the library's font metrics once its fonts are
+loaded (P25; the builder of N-METRICS; commit `a541879`; `03b5cd4`).** After
+`load_fonts()` has succeeded, `Theme.at_pixel_height`,
+`em_size_for_pixel_height` and `code_size(pixel_height=)` are answered by
+imtypeset's `font_metrics` and `glyph_advance`; no font file is opened by
+advtext and neither `advtext.fontlib` nor fontTools is imported. Both names
+are required of the library at the gate. **Before `load_fonts()` has
+succeeded, or with no library, advtext's own reader answers as before**:
+the one named exception, kept because advtext's own Themes and Chat pages
+and one example size a theme before the window exists (refusing instead
+broke 57 tests and 12 more with errors in the plain gate). Cost, that
+builder's, a fresh interpreter a sample, median of 9, load 3.5: a document
+theme (one `Theme.at_pixel_height` and six `em_size_for_pixel_height`) is
+0.22 ms cold by the library against 373.5 ms by the old reader. The two
+give the same theme: 175 ems, 665 advances, 100 themes, 14 descriptions and
+25 code sizes compared, 0 differing. The font-file table moved to
+`advtext.fontfiles`, which imports no reference core.
+
+**imtypeset `v0.3.0` (T8 to T10; the builder of O-IMT2; commit `83de823`).**
+Built in a scratch bundle through the Makefile unchanged, and the whole
+suite run on it before a test was changed: 3785 passed and 1 failed in a
+file another builder was writing at that moment, 8 skipped, 4 xfailed. **No
+test, vertex count or position moved.** Six demo pages through
+`draw_to_buffers` at three origins and under one cutting clip, `03b5cd4`
+against `v0.3.0`: **at framebuffer scale 1, the same vertex and index bytes
+in 24 of 24 draws; at scale 2, all 24 differ**, document sizes and unclipped
+vertex counts the same, the count under the cutting clip differing on 3 of 6
+pages by 4 to 8 vertices. No test of advtext's sets a scale other than 1.
+From `v0.3.0` an installed imtypeset reads neither environment variable;
+`pairing()` then says `route: "distribution"` and names the variables in
+`ignored_environment`. With imtypeset's real wheel
+(`imtypeset-0.3.0.192900.dev0+standin`) importable and both variables set,
+that is what it said (once, outside the suite).
+
+**The pair is remembered (P33; the same builder, reproduced by a run
+first).** After a load by the two variables a host may remove both:
+`reset()` and the next `module()` use the pair that was loaded, and a child
+process inherits neither (tested with the real library).
+`pairing()["named_by"]` is `"environment"` or `"remembered"`;
+`typesetter.forget_pair()` ends it. Where the environment later names a
+different library, the environment wins over the memory, and a library
+already loaded stays loaded.
+
+**A view out of sight costs next to nothing (P30; the builder of O-HOST3;
+the same commit; headless frames, `03b5cd4`). A DEFAULT CHANGED: a
+`TypesetView` or `TypesetStreamView` whose rectangle is wholly outside the
+draw list's clip rectangle rests**: it leaves the same one item, of the size
+its last draw measured, and makes no call into the library. 400 one-line
+views with 26 in sight: 1,200 calls and 5.77 ms a frame before, 78 calls and
+1.67 to 1.83 ms after (load 2 to 4); a view out of sight was 14.6
+microseconds a frame and is 3.9. What a never-seen view claims is the
+library's own size from one ordinary first draw. It still draws when its
+document, width, theme, columns or overflow changed, while a `scroll_to` is
+waiting, through a drag that began in sight, and always when it hosts a
+widget. **`TypesetDiffView` does not rest** (measured out of sight: 4 calls
+and 51 microseconds a frame, 94 with a height cap; left, and said).
+Measured with it and the library's, not advtext's: in a pane of 400 views
+with every seventh a long document, the scroll range fell by 4,838 px as the
+long ones were first shown, the same with resting on and off (H47).
+
+**Backslashes as written (P32; the same builder).**
+`ReaderOptions(backslashes_as_written=True)`: `C:\_work\*.log`, `foo\.py`
+and `\\server` are set as written, settled and streamed; the escaped
+character still marks nothing. The escape rule is replaced, not switched
+off. Not reached: a backslash in a link's destination or title.
+
+**A version, and `make dist` (P31; this section's writer).**
+`advtext.__version__` is `0.2.0.dev0`, the same string as `pyproject.toml`'s
+(it was `0.1.0`, which described the Python core) and as
+`pairing()["advtext_version"]`, the seventeenth key. `make dist` runs
+`scripts/make_dist.py`: `git archive` of `HEAD` twice, each export built
+with `python -m build --no-isolation` under `SOURCE_DATE_EPOCH` = the
+commit's time, the two compared by sha256, the wheel held to `advtext/` and
+its metadata, the files and `<file>.sha256` and `BUILT-FROM` put in `dist/`,
+the requirement strings printed. **It has built nothing**: `./.venv` has
+neither `build` nor `hatchling`, and `pip download hatchling` was refused by
+the sandbox (pypi.org is not reachable). Run here, it exits 2 with one line
+before writing anything. `tests/test_dist.py` runs the script end to end
+against a stand-in builder (20 tests in that file). `README.md`, "Packaging", is the
+section a packager reads: the pins, the six font files, what a frozen
+application carries, the order a host follows, and what is not known.
+
+**The facade is still 102 names** (`__version__` is a module attribute and
+is not in `__all__`). `ReaderOptions` has six fields. `pairing()` and
+`verdict()` have seventeen keys: sixteen after O-IMT2, and `advtext_version`.
+
+### What was measured, by whom, at what load
+
+All on the one 16-core machine, by agents; other sessions were using it.
+The figures above are each from the result file of the builder named
+(`.concerns/<task>--builder--result.md`; not version-controlled).
+
+- **The gate, on the tree as it stands, nothing else writing or testing in
+  it** (this section's writer, O-REL's builder, an agent, 2026-10-12,
+  against the pinned pair from `v0.3.0`, stand-in headers). `make check`:
+  **3609 passed, 395 skipped, 4 xfailed in 199 s, load 0.33 at the start and 1.46 at the end; ruff and black clean (132 files), mypy clean over 53 files**. `make check TYPESET=1`, straight after: **3996 passed, 8 skipped, 4 xfailed in 289 s, load 1.91 and 3.08; ruff, black and mypy clean again. 4,008 tests each way (3,988 before this task: its 20 are `tests/test_dist.py`); no failure and no error**.
+  Each once. The counts were written into this paragraph after the runs;
+  `tests/test_docs.py`, `tests/test_ci_workflow.py`, `tests/test_facade.py`
+  and `tests/test_dist.py` were run again afterwards and passed.
+- **The lead's gates at `5939683`, before that writer's work** (the lead's
+  account, an agent's; load not given): `make check` 3589 passed, 395
+  skipped, 4 xfailed; `make check TYPESET=1` 3976 passed, 8 skipped, 4
+  xfailed, against the pair from `v0.3.0`.
+- **The builders' gates, in order.** Q-CTX, alone on the tree, `c9f8902`:
+  3328 passed, 320 skipped, 4 xfailed (load 2.7 to 3.2); 3640 passed, 8
+  skipped, 4 xfailed (load 3.6). PH-FIX, `c9f8902`: 3362 passed, 333
+  skipped, 4 xfailed (load 3.8 to 6.8); 3687 passed, 8 skipped, 4 xfailed
+  (load 6.9 to 5.4). N-HOST2, over another builder's unstaged work,
+  `c9f8902`: 3432 passed, 347 skipped, 4 xfailed (load 9.4 to 6.7); 3770
+  passed, 9 skipped, 4 xfailed (load 7.7 to 9.8). **N-IMT had no wholly
+  green gate**: 3 to 5 failures in each of three runs, every one in a file
+  N-HOST2 was writing, the set changing from run to run. N-METRICS, alone
+  on the tree, `03b5cd4`: 3445 passed, 349 skipped, 4 xfailed (load 4.72 and
+  1.62); 3786 passed, 8 skipped, 4 xfailed (load 1.62 and 5.05). O-HOST3,
+  with O-IMT2's unstaged work in the tree, `03b5cd4`: 3589 passed, 395
+  skipped, 4 xfailed (load 1.2 to 1.6); 3976 passed, 8 skipped, 4 xfailed
+  (load 1.5 to 5.1). **O-IMT2 had no gate green end to end**: tests green in
+  all three of its runs (the third on `v0.3.0`: 3934 passed, 8 skipped, 4
+  xfailed, load 4.6 to 4.8), lint red in two on a file of O-HOST3's.
+- **A `git stash` and `git stash pop` on the shared tree** by O-HOST3's
+  builder took O-IMT2's two unstaged files back to `HEAD` for about 25
+  seconds; they came back whole (both result files say so).
+- Every other figure in "What is true of the tree now" names its builder
+  and load where it stands.
+
+### What nobody has looked at, or run
+
+- Everything in 0f's, 0e's and 0d's lists of the same name, still.
+- **`make dist` with a real builder**: whether hatchling's two builds are
+  the same bytes, what its wheel holds, whether an unpacked sdist's tests
+  pass. `pip install` of advtext from anything.
+- **macOS**: no build, import or window. **A frozen application**: nothing
+  was frozen by either project; imtypeset's "frozen shape" is an imitation
+  of a frozen interpreter's properties, and advtext's is a `dist-info`
+  deleted by hand and `sys.frozen` set in a test.
+- **A GPU. A display density other than 1**: one headless comparison of
+  vertex bytes at a framebuffer scale of 2 (above), no pixel, no window.
+- **Anything against GitHub; the CI workflow.** imtypeset's `v0.3.0` tag and
+  its commit are, by imtypeset's file, not pushed, so the workflow's fetch
+  of the ref in `imtypeset.ref` cannot succeed until the user pushes; and on
+  a runner the build would fetch the wheel's own Dear ImGui headers, which
+  nobody has compiled the library against.
+- **The monospace measurement at `v0.3.0`.**
+- P30 and P32 in a real window; a clip rectangle pushed by a host (believed
+  by the resting rule, no test of its own).
+- That `_written_backslashes` equals pptmstr's `_written_escapes`: read, not
+  run.
+
+### Open
+
+- **Columns at a pixel height** (P21, P22; H34, H35): the core's. Until it
+  is answered, code set through advtext lines up only at an em whose half is
+  a whole pixel.
+- **Publishing**: the name `advtext` on an index, a tag, a GitHub release.
+  The user's. Until one exists a host requires advtext by a git reference
+  and a commit.
+- **`imtypeset==0.3.*` in advtext's metadata**: not stated, because nothing
+  can resolve it (T5, T7).
+- **A density taken from the host** (P5): still not built; advtext assumes
+  96 px per inch.
+- **`TypesetDiffView` out of sight** (P30): unchanged.
+- **Holding the reader's place when a view above the pane changes height**
+  (H47): not built; the library's estimate settles as long documents are
+  first shown.
+- **P28 for what the reader writes, and for table cells.**
+- **Whether replacing a lone surrogate silently is what a host wants for a
+  file name in a diff header** (PH-FIX's builder's least sure).
+- **The optional clean-up of the CI workflow's neighbour fetch** (N-IMT's
+  builder): still there, harmless, never run.
+- **The list of what wakes a resting view** rests on every public setter
+  being named in one test, which cannot notice a method nobody added to it
+  (O-HOST3's builder's least sure).
+- 0f's open list, but for P21 to P24.
+
 ## 0f. Revision of 2026-10-12, later the same day: what the first host asked for. Thirteen of pptmstr's requests built, two of them only partly; nobody has looked at any of it
 
 The newest revision, put first. Section 0e below was the newest when it was

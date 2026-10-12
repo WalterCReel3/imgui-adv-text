@@ -1500,6 +1500,132 @@ were run again afterwards.
 
 ---
 
+## Host requests, second round (2026-10-12, later)
+
+Added 2026-10-12 by the builder of the task O-REL, an agent, before its
+gate; the gate's counts are in `docs/status.md`, section 0g, which says what
+exists and what was measured. The section above is hours older and is not
+changed. **One row of it is overtaken**: PH-MD's "Nothing beyond the four
+fields ... a fence's info string is the host's to draw" held until pptmstr
+asked for the info string (P27); `ReaderOptions` has six fields now. This
+section keeps who decided what for pptmstr's P21 to P33 and imtypeset's T1
+to T10.
+
+`HEAD` was `5939683`; everything in this section but O-REL's own rows (the
+next section) was committed.
+
+### What the user said, in the user's words
+
+Nothing new. The sentence this work answers to is the one quoted above
+("The goal now is initial stability and deliverability ..."). **The user
+took none of the decisions below.** One was put to the user and is not
+answered: whether code should be moved to an even em to buy columns
+(pptmstr's decision awaiting the user, repeated from this side in
+`HANDOFF-pptmstr.md`).
+
+### The lead's decisions — agent decisions, awaiting the user
+
+From `.concerns/lead--tranche-N.md`, `.concerns/lead--tranche-O.md` and the
+lead's answers in the two handoff files.
+
+| decision | reason given |
+|---|---|
+| **No silent even-em rule for code.** A view does not choose, by itself, an em whose half is a whole pixel for its code blocks, though columns hold there and nowhere else (Q-MONO's measurement) | "it would silently change sizes a host stated" (`HANDOFF-pptmstr.md`, P21 to P23 measured). Q-MONO's builder, who measured it, did not build it either: it is particular to a face whose advance is exactly half an em, it changes the size of code, and it does not answer alignment with a host font at another height |
+| **Measure pptmstr's P21 to P23 here before answering** | "what advtext said earlier about advances was wrong once already" |
+| **The pin moves only after both gates on the pair it moves to**, and it moved twice: `c9f8902` to `03b5cd4` to `v0.3.0` (`2fd705e`), each built with stand-in headers | no network in any session, so the wheel's own headers cannot be fetched; the other team names the ref |
+| **`imtypeset==0.3.*` is not in advtext's metadata** | it is on no index and no session can fetch; a requirement that cannot be resolved breaks `pip install` for everyone |
+| **`imtypeset.demo` is off the gate** (`_SUBMODULES = ()`; decided by the lead on the review's finding, done by PH-FIX's builder) | a host with no gallery was being held to a module only three demo pages call; a package without `demo` now has `missing() == []` |
+| **P31 is accepted in part**: a version, a recipe for a wheel and an sdist with hashes; not a name on an index, a tag or a release | those need the network and the user |
+| **Standing for both tranches**: defaults do not change unless the task says so and the result says so loudly; a host's mistake is a `TypeError` or `ValueError` at the host's call; reproduce what another session reports before building on it | the lead's rules; the first was departed from twice, below, each time by a builder and each time said |
+
+### Builders' decisions — agent decisions, awaiting the user
+
+Accepted by the lead or never ruled on. The files are
+`.concerns/<task>--builder--result.md` (not version-controlled); each has
+more than is here.
+
+| who | decision | reason given |
+|---|---|---|
+| Q-CTX (P24) | **`kind()` stays `READY` when the fonts' ImGui context is gone**; `ready()` is what goes false. Not `FAILED`, which the task leaned to, and not a new member | P24 asks for the same behaviour with or without `unload()`, and after `unload()` it is `READY` with `ready()` false; `Kind` says of `READY` "it says nothing of fonts"; `FAILED` means `module()` is `None` and only `reset()` comes back, where here `load_fonts()` alone does; with two contexts alive `kind()`, `pairing()` and the command line's exit code would flip at every switch |
+| | The context is told by the context object AND the library's last font in the current atlas with its byte count; **the library is not asked**, though its `font_atlas_index` is exact | a library call on every draw of every view breaks the exact list of library calls a frame is held to in five test files. "A five-line change" if exactness is preferred |
+| PH-FIX (the review's findings) | **A lone surrogate is set as U+FFFD, one for one, by every way into a view**; not refused | one undecodable byte in a long tool output would otherwise be a view that shows nothing; one character for one moves no offset; it is what pptmstr does elsewhere and the diff view's own rule for what cannot be shown. **Cost: a copy gives U+FFFD and not the byte. Its least sure**: a file name in a diff header |
+| | **After an edit that raises, the view has no document and its record is the new one**; "build then swap" only for a new document | restoring some twenty fields was judged likelier to be wrong than closing the document; a host's mistake no longer reaches that point |
+| N-IMT (T1 to T5) | Two keys, `imtypeset_kind` and `imtypeset_route`: the other team's words beside advtext's `kind` and `route` | their words unchanged; `checked_in` and a refusal's detail lines are not added |
+| | `wrong-platform` is `Kind.UNSUPPORTED` by either route; `no-library` is `NOT_INSTALLED`; every other word, one never heard included, is `REFUSED` | the other team's answer to H26 used as written |
+| | **Metadata still counts by itself** for an installed imtypeset, though T5 says "not by metadata alone" | read as "metadata must not be REQUIRED" (freezers drop it); a distribution with metadata and no attestation is still imported and what it says decides |
+| | The CI workflow's fetch of the two neighbour repositories is kept | the pin was still `c9f8902` then, whose script needs it. It can go now; nobody removed it |
+| N-HOST2 (P26 to P29) | **P29 changes a default: a tab in a fence is a tab** in `MarkdownCode.text`, `texts` and a copy, **against the standing "defaults do not change"** | the task said to hand tabs through if the stops agree; the screen is identical to 0.00001 px; the old value was the defect. A host that asserted on spaces in `texts` sees a tab. **Its least sure: that the user wants it, rather than only the task's wording** |
+| | P27 shows the WHOLE info string, language included, as a block of its own | it is what was written; the library reads no run on a code block, and a copy of the code should be the code |
+| | **P28 is scoped to blocks handed over as blocks.** Normalising what the reader writes was built first and withdrawn | 37 cases of the frozen oracle changed text, run offsets and link rows: a change to what the frozen core pins, left for the lead. Open |
+| | P26 is a theme field (`space_after_list`), not a reader option | it is spacing, and the theme is where spacing is |
+| N-METRICS (P25) | **`font_metrics` and `glyph_advance` are REQUIRED of the library** (an imtypeset before `74f5116` is refused at the gate), **and the old fontTools reader is kept for one case**: a theme sized before `load_fonts()` has succeeded, or with no library | no fallback for a library that lacks the calls keeps one code path; refusing to size a theme before the fonts are loaded broke advtext's own Themes and Chat pages and an example (57 failed and 12 errors in the plain gate); the two readers give the same theme (0 of 175 ems differing) |
+| | A file registered after `load_fonts()` is not what a theme is sized from until the next `load_fonts()` | the theme is sized from the file the library is drawing with. A behaviour change, listed in its result |
+| O-IMT2 (T8 to T10, P33) | **When the environment later names a different library, the environment wins over the remembered pair** | the variable is the developer's explicit, most recent word and what every version before did; memory first would make a variable set later silently do nothing. It cannot replace a library already mapped, and `trouble()` says so |
+| | `named_by` is a new key and `route` stays `"environment"` for a remembered pair | a host that branches on `route` sees no new value |
+| | `forget_pair()` is public and not on the facade | as `module` and `unload` are |
+| O-HOST3 (P30, P32) | **P30 changes a default: a view out of sight rests** with no option to turn it off | the request is a cost fix and a resting view claims exactly what it claimed before (the library's own size from one ordinary draw), so nothing about a pane's scroll range changes |
+| | A view that hosts a widget never rests; `ready()` is still asked by a resting draw; any read of `native_document` forgets the last draw | `height_for` is the host's code and may answer differently on any frame; a destroyed ImGui context must be noticed out of sight too; the view cannot know what a host does with the document |
+| | **The diff view is left alone** | its claim was already exact and skipping its four calls would save about 7 microseconds of 51; its state is not behind one counter |
+| | **P32: the escape rule is REPLACED, not switched off, against the task's wording** | with no rule `\*not emphasis\*` would be an italic after a backslash: the writer's stars gone and their meaning changed is worse than what was reported |
+| | `\|` in a table cell is put back, beyond what pptmstr listed; the entity rule is not switched off | without the first the option would be false exactly where a regular expression is likeliest to sit; the second was not asked |
+| | No escaping scheme for "punctuation a host wants literal" | a host-made `MarkdownText` is never read as markdown; nothing measured asked for more |
+
+### What review was, and what it found
+
+One review by reading (the task PH-R) of the first round's code found what
+PH-FIX then reproduced item by item and fixed; one inference of the
+reviewer's did not reproduce (`scroll_to` on the empty document). **No
+reviewer read the code of Q-CTX, N-IMT, N-HOST2, N-METRICS, O-IMT2, O-HOST3
+or O-REL.** Each builder tested its own work.
+
+### Premises of this work that did not hold
+
+- **"Nothing in advtext can make those agree"** (the lead's first answer to
+  P21, of layout and the rasteriser): at an em whose half is a whole pixel
+  they agree to 0.00 px; advtext could offer such an em and declined to.
+- **"It may be the library's"** (P23): it was advtext not setting
+  `Style.Spacing`.
+- **"The imtypeset team has NOT named a newer ref"** (the tranche N brief):
+  its status file named `03b5cd4` in one of two places.
+- **"`imtypeset-0.3.0.192900-cp311-none-manylinux_2_28_x86_64.whl`"** as the
+  wheel to try: that file is 1089 bytes and holds no package; the real ones
+  are named `+standin`.
+- **"their HEAD `4c0b6e4`"** as `v0.3.0` (the tranche O brief): the tag is
+  commit `2fd705e`, one before it.
+- **"`font_metrics` needs no ImGui context"** (imtypeset's docstring): the
+  library context it needs cannot be made without one.
+- **"the build backend is hatchling ... is it in ./.venv? (an earlier
+  builder said not)"** (O-REL's task): it is not; and `find_spec("build")`
+  answered yes because this repository has a directory named `build/`.
+
+---
+
+## A release artefact (2026-10-12)
+
+Added by the builder of the task O-REL, an agent, with the section above.
+All of it was uncommitted in the working tree when written. **Every row is
+that builder's decision, an agent's, awaiting the user; nobody reviewed it.**
+`README.md`, "Packaging", is what a packager reads; this keeps why.
+
+| decision | reason |
+|---|---|
+| **The version is `0.2.0.dev0`.** `0.2`: advtext that draws through imtypeset; a host of `0.1.0` (the Python core) does not run on it. `.dev0`: no release exists | `0.1.0` was still in `pyproject.toml` two days after the thing it described was deleted. A final `0.2.0` would say a release was made, which is the user's act |
+| **A `.devN` version promises nothing between commits; N goes up when an artefact is cut for a host to pin** | the branch moves several times a day and a version bumped per commit by hand would be wrong within the hour; what identifies a build is the commit or the file's sha256, and the requirement strings carry one of the two |
+| **After a release, until 1.0: the middle number changes when a name of `advtext.__all__` is removed or changes meaning, or when the imgui-bundle pin or the imtypeset line changes; the last number for anything else** | the facade is the surface `tests/test_facade.py` holds, and the two pins are what a host must move with advtext; it is imtypeset's own rule (`docs/versioning.md` there) turned to advtext's surface. **Not yet in force: there is no release** |
+| **`advtext.__version__` is a literal, held equal to `pyproject.toml` by a test; it is not read from installed metadata, and the build does not read it from the package** | `./.venv`'s editable install still says `advtext 0.1.0` and `imgui-bundle>=1.92`: metadata is as old as the last install, and a frozen application may have none. A dynamic version would be one string; it would also be a change to a build nobody could run that day |
+| `__version__` is not in `__all__`; the facade stays 102 | it is not a name of the surface; the count is the thing three documents and a test state |
+| `pairing()` and `verdict()` gain `advtext_version`, the first key; in an answer no child gave, it is the asking process's | an About box and an updater's staging check read one dict. **Code that compares the whole set of keys changes again** (17; it was 16 for one commit). One existing assertion changed with it and says so: `tests/test_typesetter_kinds.py`, a frozen verdict's keys that are `None` |
+| **`make dist` builds the commit, never the working tree**, and says how many paths were uncommitted | an artefact with a hash must be reproducible from something that has a name; the working tree of this repository is shared by several agents |
+| **It builds twice, from two exports with different directory names, and refuses to install two builds that differ** | "reproducible" asserted in a document is worth nothing; a path leaking into the output is how imtypeset's library fails it (H45). Cost: the build runs twice |
+| **It refuses a wheel that holds anything but `advtext/` and its metadata**, or lacks `py.typed`; and an sdist without `examples/`, `tests/`, `demo/`, `docs/` and the two handoff files | the configuration is three lines that nobody had ever run; the check is where a wrong one is found |
+| `build` and `hatchling` join the `dev` extra, and the build runs with `--no-isolation` | no network at build time, and the tools that built an artefact are the ones `./.venv` holds and `BUILT-FROM` names |
+| **hatchling was not borrowed.** It exists on this machine in another project's virtualenv; `make dist` was left unrun instead | the Makefile's header says why a build must not reach into the project that depends on it, and the session's writes and commands are bounded to this directory. **So the builder has never been run and every claim about its output is a guess** |
+| The sdist's list gains `/demo` and `/HANDOFF-pptmstr.md` | `tests/` reads `demo/` in 39 places and the list left it out; the other handoff file was already there. Whether the suite passes from an unpacked sdist was not run |
+| The release URL in the printed requirement is `<repository>/releases/download/v<version>/<file>` | GitHub's own shape for a release asset; nothing exists at it, and the line printed above it says so |
+| Stale lines in older sections of `docs/status.md` and in the section above are not edited; the newest section names each | the file's own rule: a dated section is a record |
+
+---
+
 ## Correcting the brief
 
 The research brief asked for "the 4/5 and 1/5 x-height clamps" in

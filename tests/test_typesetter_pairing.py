@@ -51,11 +51,13 @@ from typing import Any
 
 import pytest
 
+import advtext
 from advtext import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
 _KEYS = {
+    "advtext_version",
     "route",
     "reason",
     "kind",
@@ -210,6 +212,8 @@ def test_with_nothing_to_find_the_pairing_is_all_none_and_nothing_is_imported() 
     assert report["pairing"].pop("route") == typesetter.ROUTE_NONE
     assert report["pairing"].pop("reason") == "IMTYPESET_LIBRARY is not set"
     assert report["pairing"].pop("kind") == typesetter.Kind.NOT_INSTALLED.value
+    # The one key that is about advtext and not about what was found.
+    assert report["pairing"].pop("advtext_version") == advtext.__version__
     assert set(report["pairing"].values()) == {None}, report["pairing"]
     assert report["imtypeset"] == [] and report["imgui"] is False
     assert report["trouble"] == ""
@@ -249,6 +253,7 @@ def test_an_installed_distribution_is_loaded_with_no_variable_set(tmp_path: Path
     assert report["imtypeset"] == ["imtypeset"]
     assert report["path"] == [], "sys.path was touched on the distribution route"
     assert report["pairing"] == {
+        "advtext_version": advtext.__version__,
         "route": typesetter.ROUTE_DISTRIBUTION,
         "reason": "",
         "kind": typesetter.Kind.READY.value,
@@ -424,6 +429,7 @@ def test_a_package_that_carries_an_attestation_is_a_distribution_without_metadat
     assert report["module"] is True and report["reason"] == ""
     assert report["path"] == [] and report["trouble"] == ""
     assert report["pairing"] == {
+        "advtext_version": advtext.__version__,
         "route": typesetter.ROUTE_DISTRIBUTION,
         "reason": "",
         "kind": typesetter.Kind.READY.value,

@@ -58,6 +58,7 @@ Whether the experiment's environment currently imports is not known here.
 | find | `Finder`, `FindIndex`, `Match`; marks through `view.set_marks(finder.marks())` |
 | your own blocks instead of advtext's markdown | **Changed 2026-10-12 (P8, below).** A view takes a sequence of `MarkdownText` / `MarkdownCode` / `MarkdownRule` / `MarkdownTable` a host made, or a `Description` a host made (`advtext.description.description_of`); anything else is a `TypeError` at the call. This row said "has not been checked" until then |
 | the library gate | `advtext.typesetter`: `module()`, `load_fonts()` (call at the end of hello_imgui's `load_additional_fonts`, never `post_init`), `ready()`, `reason()`, `unload()` before the ImGui context goes. A view raises `TypesetUnavailable` when the library cannot draw; any other exception is a bug. **Added 2026-10-12** (P1, P2, P3, P14, P17, P18, below): `Kind` and `kind()`, `unsupported(why)`, `reset()`, `verdict()`, `python -m advtext.typesetter`, `font(face)`, `REQUIRED` and `missing()` |
+| the version | **Added 2026-10-12 (P31).** `advtext.__version__`, `0.2.0.dev0`: not in `__all__`; also `pairing()["advtext_version"]`. What it promises is at the end of this file |
 | the facade | **102 names since 2026-10-12** (89 before), `advtext.__all__`; `tests/test_facade.py` holds the list. The 13 added, all for requests below: `Kind`, `kind`, `reset`, `pairing`, `verdict`; `ReaderOptions`; `MarkdownText`, `MarkdownCode`, `MarkdownRule`, `MarkdownTable`, with `MarkdownCell` and `ColumnAlign` (a table cannot be constructed without them); `DiffHeader`. Still reached through their modules, with no promise attached: `advtext.typesetter.font`, `unsupported`, `missing`, `REQUIRED`, `EXIT_CODES`, `module`, `unload`, `trouble`; `advtext.description.description_of` and `check_description`; `advtext.typeset_markdown.reader_options` |
 | examples | `examples/typeset_minimal.py`, `stream_replay.py`, `chat_transcript.py`, `diff_minimal.py` |
 | the record | `docs/status.md` section 0d and what is above it; `docs/decisions.md`, "The swap" |
@@ -155,6 +156,13 @@ pptmstr" when it exists. Nothing below has run against GitHub or on macOS.
 - The full open list: `docs/status.md` 0d.
 
 ### For packaging (added 2026-10-11, from advtext's read-only audit)
+
+**Overtaken in two places on 2026-10-12; read "P31, and what a packager
+holds together" at the end of this file first.** The first bullet below is
+no longer true of an installed imtypeset from `03b5cd4` on (accepted by a
+shipped attestation: no child, nothing written; run on Linux by imtypeset's
+session and by advtext's N-IMT builder, never on macOS, never frozen). The
+other three stand.
 
 From reading, nothing run, no Mac; inference about macOS is marked as such in
 `HANDOFF-imtypeset.md`, requests H15 to H20, which is where these are being
@@ -1327,12 +1335,14 @@ imtypeset's new gate), `04a51c8` (the pin moved to imtypeset `03b5cd4`),
 
 ### P30 to P33 (read at pptmstr's commit `a28d6e1`; answered 2026-10-12 by advtext's lead, an agent)
 
-None is built yet.
+When this table was written none was built. P30, P32 and P33 are built
+(the next section); P31 is built as far as advtext goes alone and **its
+artefact has not been built** (the section after that).
 
 | # | answer | where it goes |
 |---|---|---|
 | P30 | **Accepted.** A view wholly outside the window's clip rectangle should cost a claim of its height and nothing else: no layout call, no draw call, no hit test. Your figure (0.03 to 0.04 ms for each of about 370 views out of sight, 11 to 17 ms a frame) will be reproduced here first and the result stated as calls and microseconds per hidden view. | advtext, the views |
-| P31 | **Accepted in part; the rest is the user's.** What advtext can do alone: a version that means something, a wheel and an sdist built reproducibly by one make target with their hashes written beside them, and a tag per release, so a requirement string can name a release artefact by URL and hash. What it cannot: claim the name `advtext` on PyPI, publish a release on GitHub, or push a tag; this session reaches no network. Whether the name is claimed on an index, and under what name, is asked of the user. imtypeset's side of it is their H3 (they have reached a tagged `v0.3.0` and a wheel per imgui-bundle line). | advtext for the artefact; the user for publishing |
+| P31 | **Built as far as advtext goes alone; the artefact itself has NOT been built (below).** As first answered: **Accepted in part; the rest is the user's.** What advtext can do alone: a version that means something, a wheel and an sdist built reproducibly by one make target with their hashes written beside them, and a tag per release, so a requirement string can name a release artefact by URL and hash. What it cannot: claim the name `advtext` on PyPI, publish a release on GitHub, or push a tag; this session reaches no network. Whether the name is claimed on an index, and under what name, is asked of the user. imtypeset's side of it is their H3 (they have reached a tagged `v0.3.0` and a wheel per imgui-bundle line). | advtext for the artefact; the user for publishing |
 | P32 | **Accepted, with P7's options.** A reader option that sets backslash escapes as written (`C:\_work\*.log`, `foo\.py`, `\\server`), the same settled and streamed. The second half, a supported way for a host to mark punctuation it wants literal, will be answered by saying what a host-made `MarkdownText` already gives (it is not read as markdown at all) and adding only what that leaves out. | advtext, `ReaderOptions` |
 | P33 | **Accepted.** `reset()` and the next `module()` will use the pairing the first load found (library path and package directory, remembered by advtext), so a host can remove `IMTYPESET_LIBRARY` and `IMTYPESET_PYTHON` from its environment after the first load and child processes do not inherit them. `verdict()` will be given the same remembered pair explicitly instead of the environment. | advtext, `advtext.typesetter` |
 
@@ -1420,3 +1430,127 @@ commit is named at the end. The sentences are the builders'.
   ignored by it; `pairing()['route']` is then `'distribution'` and
   `ignored_environment` names them. The variables work only with a package
   directory that holds no library."
+
+**Commits, on `experimental/imtypeset-adoption`, not pushed when this was
+written:** `83de823` (P30, P32, P33, and the loader level with imtypeset
+`v0.3.0`), `5939683` (the pin moved to imtypeset `v0.3.0`, commit `2fd705e`,
+built here with stand-in headers). Your `imtypeset.ref` should move with it.
+
+### P31, and what a packager holds together (2026-10-12)
+
+By the builder of advtext's task O-REL, an agent. **In advtext's working
+tree and not a commit when this was written; the lead commits and names it.**
+The same facts, at more length and for a packager who has not read this
+file, are in advtext's `README.md`, "Packaging".
+
+**What you asked for is not there yet, and here is exactly how far it is.**
+You asked for a requirement string an installer resolves without a clone at
+a mutable place. advtext now has the recipe for the file and has not made
+the file:
+
+- **A version.** `advtext.__version__` is `0.2.0.dev0`; the same string is
+  in `pyproject.toml` and in `pairing()["advtext_version"]` (so `pairing()`
+  and `verdict()` have **seventeen keys**; code that compares the whole set
+  changes once more). `0.2` is advtext drawing through imtypeset. `.devN`
+  means no release exists and **nothing is promised between commits**: two
+  commits can carry the same string. N goes up when an artefact is cut for
+  you to pin. Do not read it from `importlib.metadata` in an editable
+  install: that is as old as the install (advtext's own `./.venv` still says
+  `0.1.0`).
+- **`make dist`** builds a wheel and an sdist of the commit `HEAD` (never
+  the working tree; `DIST_REV=<rev>` for another commit) into `dist/`,
+  twice from two exports, refuses to install two builds that differ or a
+  wheel holding anything but `advtext/` and its metadata, writes
+  `<file>.sha256` beside each and `BUILT-FROM` naming the commit, and prints
+  three requirement strings:
+
+      advtext @ git+https://github.com/WalterCReel3/imgui-adv-text.git@<full commit>
+      advtext @ https://github.com/WalterCReel3/imgui-adv-text/releases/download/v<version>/<wheel>#sha256=<hash>
+      advtext==<version> --hash=sha256:<wheel> --hash=sha256:<sdist>
+
+- **It has never built anything.** advtext's `./.venv` has neither `build`
+  nor `hatchling` and the session reached no index (`pip download hatchling`:
+  refused by the sandbox). Run there, `make dist` exits 2 with one line and
+  writes nothing. The script was run end to end against a stand-in builder
+  (20 tests, `tests/test_dist.py`): the commit and not the working tree, two
+  builds compared, contents checked, hashes, strings. **Not known: whether
+  hatchling's two builds are the same bytes, what its wheel holds, whether
+  the sdist's tests pass unpacked.** Whoever has a network runs
+  `make bootstrap` (the two tools are in the `dev` extra now) and then
+  `make dist`; if the two builds differ it says which members and how.
+- **So, today, the only string that resolves is the first**, the git
+  reference with a full commit, once that commit is pushed: which is the
+  shape you said does not serve (pip clones again; an offline or mirrored
+  install fails). The second needs the user to publish a release holding
+  the file; the third needs the files in a directory or a mirror you
+  control, which you could do yourself from a `dist/` built on a machine
+  with network: `pip install --require-hashes --no-index --find-links <dir>`
+  with the third line (in that mode pip wants a hash for every requirement,
+  dependencies included). **That third route is the nearest thing to what
+  you asked for that needs nobody's publication**, and nobody has run it.
+- **Not advtext's to do**: the name `advtext` on PyPI (unclaimed, and not
+  claimed by this), a tag, a GitHub release. Asked of the user; not answered.
+
+**The pins to hold together (imtypeset's T7, its `docs/sidecar.md` section
+11).** Your lock names, exactly, and moves together:
+
+- `imgui-bundle==1.92.900` (advtext's metadata states this one);
+- `imtypeset==0.3.0.192900`: the fourth number is the imgui-bundle line the
+  wheel was built for. `imtypeset==0.3.0` matches nothing. **Never upgrade
+  imtypeset alone**: `pip install -U imtypeset` takes the newest line and
+  replaces your imgui-bundle. The only wheels that exist are stand-in builds,
+  `0.3.0.192900.dev0+standin`, which that pin does not match (a development
+  release; `--pre`, or name it exactly), unpublished, with no licence chosen;
+- advtext by commit or by file hash, as above.
+
+advtext's metadata does not list imtypeset: nothing can resolve it. When it
+can, advtext states `imtypeset==0.3.*` and you keep the exact pin.
+
+**`imtypeset/` and `imgui_bundle/` in one directory.** advtext's N-IMT
+builder, a real imtypeset wheel, `pip install --no-index --no-deps
+--target`, load 7.4: alone in its own directory it was refused
+(`pairing()["imtypeset_kind"]` `layout`); with `imgui_bundle` beside it (a
+symlink) it was ready. An updater that copies files replaces `imtypeset/`,
+`imgui_bundle/` and `imgui_bundle.libs/` in one step (imtypeset's sentence).
+
+**The six font files (imtypeset's T6).** All under
+`imgui_bundle/assets/fonts` unless you register your own per role with
+`advtext.register_font`: `Roboto/Roboto-Regular.ttf`,
+`Roboto/Roboto-Bold.ttf`, `Roboto/Roboto-RegularItalic.ttf`,
+`Roboto/Roboto-BoldItalic.ttf`, `Inconsolata-Medium.ttf`,
+`latex/latinmodern-math.otf` (and `Roboto/LICENSE.txt`). imtypeset looks for
+no font and, installed, its gate reads none. Bold code has no file and is
+Roboto Bold until you register a bold monospace face (Q-MONO's builder: on
+an all-mono theme bold text is proportional, its spaces 3.5 px beside 7).
+
+**What a frozen application must carry.** Nothing has been frozen by anyone.
+From imtypeset's `docs/sidecar.md` section 10 and advtext's builders:
+`imtypeset/` with its modules, the library and `imtypeset/_attestation.json`
+in the package's own directory (the last two collected explicitly; with the
+attestation, `dist-info` is not needed: "Measured with a real wheel whose
+`dist-info` was deleted: found, accepted, fonts loaded", N-IMT's builder);
+`imgui_bundle/` beside it with the six files; and of advtext, the whole
+package or at least `advtext.fontfiles` and `advtext.typeset_metrics`
+(N-METRICS's builder) with the modules you call, since `import advtext`
+imports nothing and every facade name is resolved from a string at first
+use (from reading; no freezer was run). The demo application
+(`advtext.ui.app`, `advtext.ui.pages`) and `imtypeset.demo` are optional.
+
+**For your About box and your updater.** `advtext.pairing()` is the About
+box. For a staged environment, that environment's
+`python -m advtext.typesetter`: one line of JSON, exit 0 ready, 3 not
+installed, 4 refused, 5 failed, 6 unsupported, 7 unchecked; on a refusal
+`imtypeset_kind` says which partial update it is. `advtext_version` in it is
+the staged advtext's.
+
+**The order, unchanged from P25:** a Dear ImGui context, `register_font`,
+`load_fonts()`, then the themes.
+
+**Not known, by anyone on advtext's side:** macOS (H1 has never run);
+anything frozen; a GPU; a display density other than 1 (one headless
+comparison of vertex bytes at a framebuffer scale of 2, by O-IMT2's builder,
+apart); anything against GitHub; the CI workflow.
+
+**Gates with this in the tree, alone on it, against imtypeset `v0.3.0`**
+(O-REL's builder): `make check` 3609 passed, 395 skipped, 4 xfailed (199 s, load 0.33 to 1.46); `make check TYPESET=1`
+3996 passed, 8 skipped, 4 xfailed (289 s, load 1.91 to 3.08).

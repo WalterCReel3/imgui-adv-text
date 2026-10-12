@@ -238,6 +238,38 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers; see the module docstr
     from advtext.ui.typeset_stream_view import TypesetStreamView
     from advtext.ui.typeset_view import Hosted, HostFor, SetLine, TypesetUnavailable, TypesetView
 
+__version__ = "0.2.0.dev0"
+"""
+This advtext's version, as a host reads it at run time.
+
+A literal, and the same string as `version` in `pyproject.toml`
+(`tests/test_dist.py` holds the two equal). It is not read from the installed
+metadata on purpose: an editable install keeps the metadata of the day it was
+installed (this tree's `./.venv` said 0.1.0 and a floor on imgui-bundle long
+after both had changed), and a frozen application may carry none.
+`typesetter.pairing()["advtext_version"]` is this string.
+
+What the number says (an agent's decision, 2026-10-12; `docs/decisions.md`):
+
+- `0.1.0` was advtext with its own Python layout core. `0.2` is advtext that
+  draws through imtypeset and through nothing else: a host of 0.1 does not
+  run on 0.2.
+- `.devN` means NO release exists and nothing is promised from one commit to
+  the next: two commits with the same string can differ in anything. That is
+  why a requirement names the commit, or a file by its sha256 (`make dist`
+  prints both), and never the version alone. `N` goes up when an artefact is
+  cut for a host to pin, so that two artefacts a host was given never share a
+  file name.
+- `0.2.0` without `.dev` is for the first tagged release, which is the
+  user's to make. From there until 1.0: the middle number changes when a
+  name in `__all__` is removed or changes what it means, or when the
+  imgui-bundle pin or the imtypeset line (`0.3.*` today) changes; the last
+  number changes for anything else.
+
+Not in `__all__`: it is not one of the names of the surface, and
+`from advtext import *` does not need it.
+"""
+
 _HOMES: dict[str, str] = {
     # === The typeset layer: what a host draws with ===
     # The library: its fonts into the host's atlas, whether it is drawing, and why not.

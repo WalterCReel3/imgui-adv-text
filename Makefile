@@ -1,5 +1,5 @@
 .PHONY: help bootstrap venv-info test lint format format-file typecheck check svg run \
-        shot shot-all shot-headless clean typeset-lib typeset-pair-is-stale
+        shot shot-all shot-headless clean typeset-lib typeset-pair-is-stale dist
 
 # ---------------------------------------------------------------------------
 # Which interpreter runs everything
@@ -667,6 +667,32 @@ shot-all: | $(NEED_VENV) $(NEED_TYPESET) $(NEED_PAIR)  ## screenshot every page 
 # window rather than the app's, so it cannot be asked for a window size.
 shot-headless: | $(NEED_VENV)  ## screenshot every tab via an Xvfb in a user namespace
 	PY=$(PY) sh scripts/shot.sh artifacts
+
+# A wheel and an sdist a host can name in a requirement (pptmstr's P31).
+#
+# Of a COMMIT, never of the working tree: scripts/make_dist.py exports HEAD
+# (DIST_REV=<rev> for another commit) with `git archive`, twice, builds each
+# export with `python -m build --no-isolation` under SOURCE_DATE_EPOCH = the
+# commit's time, and installs the pair into DIST_DIR only when the two builds
+# are the same bytes and the wheel holds advtext/ and its metadata and nothing
+# else. Beside each file goes <file>.sha256, and BUILT-FROM names the commit
+# and the tools. It ends by printing the requirement strings: a git reference
+# by commit for now, a direct URL with the hash for a release once somebody
+# publishes one. Exit 2: it could not start (no `build` or `hatchling` in the
+# interpreter -- both are in the dev extra, `make bootstrap`; not a git
+# checkout). Exit 3: it built and refused what it built; DIST_DIR is as it was.
+#
+# It publishes nothing, tags nothing and reaches no network. `-P` because this
+# directory has a build/ in it, which `import build` would otherwise find.
+#
+# NOT RUN with the real builder by the session that wrote it (2026-10-12: no
+# `build`, no `hatchling` in ./.venv, no index reachable). tests/test_dist.py
+# runs the script end to end against a stand-in builder.
+DIST_DIR ?= dist
+DIST_REV ?= HEAD
+
+dist: | $(NEED_VENV)  ## build a wheel and an sdist of HEAD (not the working tree) into dist/, twice, with sha256 and requirement strings
+	$(PY) -P scripts/make_dist.py --out "$(DIST_DIR)" --rev "$(DIST_REV)" $(ARGS)
 
 clean:             ## remove caches and generated artifacts
 	rm -rf .mypy_cache .ruff_cache .pytest_cache dist build artifacts

@@ -55,16 +55,22 @@ if we ever decide to render mermaid diagrams inline."
 
 ## What advtext consumes today
 
+Brought level 2026-10-12 by the builder of advtext's task O-REL, an agent,
+at advtext `5939683`. Until then this table described the pin of two days
+before (`c9f8902`); what it said is in the file's history.
+
 | | |
 |---|---|
-| imtypeset ref built and gated against | commit `c9f8902` (lead's run, 2026-10-11: `make check` 2875 passed; `make check TYPESET=1` 3129 passed; and on the Level 1 working tree, L1-GATE's builder, an agent, 2026-10-12, load 3.4 to 4.5: 2955 passed and 3211 passed; and on the tree with pptmstr's requests built, PH-FINAL's builder, an agent, 2026-10-12, alone on the tree, load 1.6 to 7.1: 3318 passed and 3612 passed) |
-| the ref in use | the full hash `c9f8902a67adf00a18426876d5983617b7d1408c`, in `imtypeset.ref` at advtext's root (one line; `tests/test_ci_workflow.py` holds it to a full hash and to the short hash in this table). imtypeset has no tag yet (H4). The Makefile does not read that file: a person passes the ref, and the CI workflow reads the file and passes it |
-| how it is built | Three ways, one recipe after the source is in hand (`python/host/build_bundle_library.sh`, and a snapshot of `python/imtypeset` beside the library). `make typeset-lib IMTYPESET_REF=<tag \| branch \| full hash>`: one commit fetched with `git fetch --depth 1` from `IMTYPESET_REPO` (default `https://github.com/WalterCReel3/imtypeset.git`) into a cache under `build/`, then `git archive`. `make typeset-lib IMTYPESET_COMMIT=<rev>`: `git archive` of that commit of the sibling checkout. `make typeset-lib`: the sibling's working tree. **The first has been run against a `file://` clone only (L1-PKG's builder, 2026-10-11, real compiler and gate, exit 0); nobody has run it against GitHub.** The pair the gates run against, `build/imtypeset-bundle`, was built the second way |
-| how it is found | `advtext/typesetter.py`, in this order: (1) `IMTYPESET_LIBRARY` (the shared library) with `IMTYPESET_PYTHON` (the package directory), the development override; (2) otherwise an installed `imtypeset` distribution, recognised by its metadata (`importlib.metadata.distribution("imtypeset")`), imported with no variable set; (3) otherwise not loaded, and `reason()` is `IMTYPESET_LIBRARY is not set`. `typesetter.pairing()` answers which route was taken, the library, the versions, the headers and what accepted the pair. Route 2 has met stand-ins only: there is no distribution yet (H3) |
-| headers | stand-in (upstream Dear ImGui's docking tag), accepted by the field probe |
-| interpreter | Python 3.11, `imgui-bundle==1.92.900` exactly (`pyproject.toml`; it was a floor until 2026-10-11), Linux x86-64 only |
-| CI | `.github/workflows/ci.yml`: a plain job and a job that builds the pair from the ref in `imtypeset.ref`. **Never run**: written by a session that could not reach GitHub. Its fetch-and-build steps' own text was run here against `file://` clones (L1-CI's builder) |
-| public names used | `Document` and its table, column, mark, hit-test and geometry calls; `Paragraph`; `Block`, `Run`, `Cell`, `TableColumn`, `Columns`, `Mark`, `BlockStyle`, `Style`, `DocumentOptions`; the enums; `create_context` / `destroy_context` / `add_font` / `font_atlas_index` / `face_has_glyph`; `imtypeset.demo` |
+| imtypeset ref built and gated against | your tag `v0.3.0`, commit `2fd705e` (full hash `2fd705e2bc358c7dbfda1eb60bd9b71609869e1d`). Both gates against the pair built from it, on 2026-10-12: the lead's run at advtext `5939683` (an agent; load not given): `make check` 3589 passed, 395 skipped, 4 xfailed; `make check TYPESET=1` 3976 passed, 8 skipped, 4 xfailed. And O-REL's builder (an agent), alone on the tree, with its own work added: `make check` 3609 passed, 395 skipped, 4 xfailed (199 s, load 0.33 to 1.46); `make check TYPESET=1` 3996 passed, 8 skipped, 4 xfailed (289 s, load 1.91 to 3.08). **The pin's history, all on 2026-10-12, each move after both gates on the pair moved to**: `c9f8902` (PH-FIX's builder: 3362 and 3687 passed) to `03b5cd4` (advtext commit `04a51c8`; N-METRICS's builder, alone on the tree: 3445 and 3786 passed) to `v0.3.0` (advtext commit `5939683`) |
+| the ref in use | the full hash above, in `imtypeset.ref` at advtext's root (one line; `tests/test_ci_workflow.py` holds it to a full hash and to the short hash in this table). The Makefile does not read that file: a person passes the ref, and the CI workflow reads the file and passes it. **Your file says the tag is not pushed; advtext has no way to check and has fetched nothing from GitHub** |
+| how it is built | Three ways, one recipe after the source is in hand (`python/host/build_bundle_library.sh`, and a snapshot of `python/imtypeset` beside the library). `make typeset-lib IMTYPESET_REF=<tag \| branch \| full hash>`: one commit fetched with `git fetch --depth 1` from `IMTYPESET_REPO` (default `https://github.com/WalterCReel3/imtypeset.git`) into a cache under `build/`, then `git archive`. `make typeset-lib IMTYPESET_COMMIT=<rev>`: `git archive` of that commit of the sibling checkout. `make typeset-lib`: the sibling's working tree. **The first has been run against `file://` clones only; nobody has run it against GitHub.** The headers choice is handed to your script (`IMTYPESET_HEADERS=`, passed on as `IMTYPESET_BUNDLE_HEADERS`; T1) with a header cache under advtext's `build/`; the library's file name is read from `<out>/LIBRARY`, which the recipe rewrites to the installed path (T2); `<library>.attestation.json` is carried, and nothing writes or expects `<library>.gate` (T3). **The pair the gates run against, `build/imtypeset-bundle`, was built by `make typeset-lib IMTYPESET_COMMIT=v0.3.0 IMTYPESET_HEADERS=stand-in`** (its `BUILT-FROM`: commit `2fd705e2...`, 0 uncommitted paths, 2026-10-12T07:25:19Z) |
+| how it is found | `advtext/typesetter.py`, in this order: (1) `IMTYPESET_LIBRARY` (the shared library) with `IMTYPESET_PYTHON`, a package directory with NO library in it (T8); the pair is remembered after the first accepted load, so a host may then remove both variables. (2) Otherwise an installed `imtypeset`, recognised by its metadata or by `_attestation.json` beside `find_spec("imtypeset").origin` (T5), imported with no variable set; where such a package is what gets imported although the variables are set, `pairing()` says `route: "distribution"` and names them in `ignored_environment`, from your `host_info()`. (3) Otherwise not loaded, and `reason()` is `IMTYPESET_LIBRARY is not set`. `typesetter.pairing()` answers seventeen keys, among them your own words as `imtypeset_kind` and `imtypeset_route`. Route 2 has met your real stand-in wheels twice, outside the suite, installed with `pip --target` and `imgui_bundle` symlinked beside (N-IMT's and O-IMT2's builders); the suite itself still uses stand-ins and the pinned pair laid out as a wheel |
+| headers | **stand-in** (`stand-in:ocornut-v1.92.9-docking`, as the pair's own `HEADERS` file and `host_info()` say), accepted by `probe`. No library advtext has run was compiled against the wheel's own headers: no session has had network for the fetch |
+| what the pinned pair says of itself | `python -m advtext.typesetter` against it, by O-REL's builder: `imtypeset_version` `0.3.0`, `imgui_version` `1.92.9`, `wheel_version` `1.92.900`, `imtypeset_route` `IMTYPESET_LIBRARY`, `accepted_by` `probe`, `kind` `ready`, exit 0 |
+| interpreter | Python 3.11, `imgui-bundle==1.92.900` exactly (`pyproject.toml`), Linux x86-64 only |
+| CI | `.github/workflows/ci.yml`: a plain job and a job that builds the pair from the ref in `imtypeset.ref`. **Never run**: written by sessions that could not reach GitHub. Two things known about its first run without running it: the fetch of the ref fails until `v0.3.0`'s commit is pushed; and on a runner your script fetches the wheel's own Dear ImGui headers, so that build would be the first library anyone has compiled against them. The workflow still fetches the two neighbour repositories your script needed before `03b5cd4`; unnecessary now, not removed |
+| public names used | The list advtext's gate holds a package to is `advtext.typesetter.REQUIRED` (names of the package, members of `Document`, fields of four structures, members of seven enums, leading fields of four tuples). In prose: `Document` and its table, column, mark, hit-test and geometry calls; `Paragraph`; `Block`, `Run`, `Cell`, `TableColumn`, `Columns`, `Mark`, `BlockStyle`, `Style` (with `Spacing` and `SelectionColor`), `DocumentOptions`; the enums; `create_context` / `destroy_context` / `add_font` / `font_atlas_index` / `face_has_glyph`; `font_metrics` and `glyph_advance` (so nothing before `74f5116` is accepted); `host_info()` with `route`, `ignored_environment` and `bundle`; `ImportError.kind`. `imtypeset.demo` is called by three pages of advtext's demo and is no longer required by the gate |
+| advtext's own version | `0.2.0.dev0` (`advtext.__version__`, and `pairing()["advtext_version"]`), since O-REL. It follows your rule in its own terms; it states no requirement on imtypeset in its metadata yet (T7, below) |
 
 ## Requests of imtypeset
 
@@ -459,7 +465,8 @@ consistent; not tried with Bold added and CodeBold not."
 ### Against `v0.3.0` (added 2026-10-12)
 
 advtext's O-IMT2 and O-HOST3 builders, agents; the sentences are theirs.
-advtext's pin is being moved to the full hash of `2fd705e`, your `v0.3.0`.
+advtext's pin is being moved to the full hash of `2fd705e`, your `v0.3.0`
+(moved since: advtext commit `5939683`).
 
 - "advtext built `v0.3.0` (commit `2fd705e`) with stand-in headers through
   its own Makefile, unchanged, and ran its whole suite on it before changing
@@ -534,19 +541,21 @@ a ref, as before.
 | T3 | **Accepted.** The staged pair will carry `<library>.attestation.json`, and nothing here will write, remove or expect `<library>.gate`. | to build |
 | T4 | **Accepted.** advtext's tests will be brought level against the scratch build first; any that matched a refusal's old text will use `e.kind` where advtext sees the exception (advtext turns a refusal into its own `Kind.REFUSED` and a sentence; it will carry your kind through `pairing()`). | to build |
 | T5 | **Accepted.** `imgui-bundle==1.92.900` is already exact in advtext's pyproject; `imtypeset==0.3.*` is declared when a wheel can be installed from somewhere a resolver reaches (it is on no index and this session cannot fetch). The installed-distribution route will recognise imtypeset by `_attestation.json` beside the package or by `host_info()["route"]`, not by metadata alone. | to build |
-| T6 | **Accepted.** The six files the typeset path sets text in, all under `imgui_bundle/assets/fonts` unless a host registers its own: `Roboto/Roboto-Regular.ttf`, `Roboto/Roboto-Bold.ttf`, `Roboto/Roboto-RegularItalic.ttf`, `Roboto/Roboto-BoldItalic.ttf`, `Inconsolata-Medium.ttf`, `latex/latinmodern-math.otf` (and `Roboto/LICENSE.txt` for a packager). They will be stated in advtext's README under packaging and in `HANDOFF-pptmstr.md`. | to write |
+| T6 | **Accepted.** The six files the typeset path sets text in, all under `imgui_bundle/assets/fonts` unless a host registers its own: `Roboto/Roboto-Regular.ttf`, `Roboto/Roboto-Bold.ttf`, `Roboto/Roboto-RegularItalic.ttf`, `Roboto/Roboto-BoldItalic.ttf`, `Inconsolata-Medium.ttf`, `latex/latinmodern-math.otf` (and `Roboto/LICENSE.txt` for a packager). **Written 2026-10-12** (O-REL's builder): advtext's `README.md`, "Packaging", "The six font files"; and `HANDOFF-pptmstr.md`, "P31, and what a packager holds together". Both add that bold code has no file of its own (it is Roboto Bold until a host registers one) and that a missing file leaves its role out of `load_fonts()` (from that function's docstring; not run with the files taken away). | written |
 
 **T7 to T10** (read at your commit `4c0b6e4`, your `v0.3.0`; 2026-10-12):
 
 | # | answer | state |
 |---|---|---|
-| T7 | **Accepted.** advtext's packaging notes and the handoff to pptmstr will say: pin both `imgui-bundle==X` and `imtypeset==0.3.0.<line of X>` exactly and move them together; never upgrade imtypeset alone. advtext's own metadata will state `imtypeset==0.3.*` once it can be resolved from somewhere. | to write |
+| T7 | **Written 2026-10-12** (O-REL's builder), in the same two places (`README.md`, "Packaging", "The pins to hold together"; `HANDOFF-pptmstr.md`, the same section as T6): pin both `imgui-bundle==1.92.900` and `imtypeset==0.3.0.192900` exactly and move them together; `imtypeset==0.3.0` matches nothing; never upgrade imtypeset alone; `imtypeset/` and `imgui_bundle/` in one directory; the only wheels that exist are `0.3.0.192900.dev0+standin`, which the exact pin does not match. **Not done, and said in both places: advtext's own metadata does not state `imtypeset==0.3.*`**, because nothing can resolve it (no index, and your file says nothing is to be published from `v0.3.0`). | written; the metadata line waits on a wheel a resolver can reach |
 | T8 | **Accepted.** advtext's environment route will be documented and tested as you describe (a package directory with no library in it); where an installed imtypeset is what gets imported and the variable is ignored, `pairing()` will say so from your `host_info()`. pptmstr has just asked advtext (its P33) to stop needing the variables after the first load; the two are built together. | to build |
 | T9 | **Accepted.** Tests brought level with the new route strings and with a staged library being probed before load. | to build |
 | T10 | **Accepted.** Nothing in advtext matches `+standin` at the end of a version that I know of; it will be grepped and brought level. | to check |
 
 advtext will move its pin from `03b5cd4` to `v0.3.0` when it has built and
-gated against it; say if the tag is not the ref you mean.
+gated against it; say if the tag is not the ref you mean. **Moved,
+2026-10-12, advtext commit `5939683`: the pin is the full hash of `2fd705e`,
+which your tag names** ("What advtext consumes today", at the top).
 
 On your answers: **H7 is what removes advtext's last use of its own font
 reader outside the litmus renderer**, and it answers pptmstr's P25 (sizing a
@@ -558,6 +567,14 @@ still waits on the user's push and the first run of your probe workflow.
 
 As of 2026-10-12. Built by advtext's agents, unattended; in advtext's working
 tree and **not yet committed or pushed** when this was written.
+
+**This section was written at the pin `c9f8902` and is kept as it was.**
+What has happened since is in "What advtext consumes today" at the top (the
+pin, the build, the routes, the gates), in "Answers to imtypeset" (T1 to
+T10), and in advtext's `docs/status.md`, section 0g. Its "Not done, by
+anyone" still stands in full, and one line is added to it: advtext has a
+recipe for its own wheel and sdist (`make dist`) that has never been run
+with a real build backend.
 
 Done:
 

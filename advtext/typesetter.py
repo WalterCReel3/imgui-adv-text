@@ -819,6 +819,9 @@ def pairing() -> dict[str, str | None]:
     It asks `module()` first, so the first call may be the import. Every
     value is a string or `None`, and the keys are always these:
 
+    - `advtext_version`: `advtext.__version__`, this package's own. Always a
+      string, library or no library. A `.devN` version names no one commit
+      (`advtext/__init__.py` says what the number promises).
     - `route`: `ROUTE_ENVIRONMENT`, `ROUTE_DISTRIBUTION` or `ROUTE_NONE` --
       how the package that is loaded was found. It stays what it was after
       `disable`, and it is said of a package that was imported and then
@@ -885,6 +888,7 @@ def pairing() -> dict[str, str | None]:
     found = kind()
     package = _package
     answer: dict[str, str | None] = {
+        "advtext_version": _advtext_version(),
         "route": _route if package is not None else ROUTE_NONE,
         "reason": _reason,
         "kind": found.value,
@@ -942,7 +946,21 @@ def pairing() -> dict[str, str | None]:
     return answer
 
 
+def _advtext_version() -> str:
+    """
+    `advtext.__version__`, asked for when it is wanted.
+
+    Not a module-level import: `advtext/__init__.py` has always run by the
+    time anything here is called, and reading it late keeps this module free
+    of a name bound at import to whatever the package said then.
+    """
+    import advtext
+
+    return advtext.__version__
+
+
 _PAIRING_KEYS = (
+    "advtext_version",
     "route",
     "reason",
     "kind",
@@ -1024,7 +1042,9 @@ def verdict(
     package's directory is offered only when the child finds no advtext at
     all.
 
-    The answer has `pairing()`'s keys. Its `kind` is the child's, or:
+    The answer has `pairing()`'s keys. `advtext_version` is the CHILD's
+    advtext (`None` from one that predates the key), and this process's when
+    no child answered. Its `kind` is the child's, or:
 
     - `"unchecked"` (`Kind.UNCHECKED`) when no child could be asked: a frozen
       application (`sys.frozen`), whose executable is the application and not
@@ -1066,6 +1086,8 @@ def verdict(
     def unchecked(why: str, found: Kind = Kind.UNCHECKED) -> dict[str, str | None]:
         answer: dict[str, str | None] = dict.fromkeys(_PAIRING_KEYS)
         answer.update(route=ROUTE_NONE, reason=why, kind=found.value)
+        # The one thing known without a child: the advtext that is asking.
+        answer["advtext_version"] = _advtext_version()
         return answer
 
     if getattr(sys, "frozen", False):

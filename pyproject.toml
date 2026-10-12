@@ -1,6 +1,10 @@
 [project]
 name = "advtext"
-version = "0.1.0"
+# The same string as `advtext.__version__` (`tests/test_dist.py` holds them
+# equal), which is where a host reads it at run time and where what the number
+# promises is written. `.devN`: no release exists; a requirement names a commit
+# or a file's sha256, never this alone. `make dist` builds the files.
+version = "0.2.0.dev0"
 description = "TeX-model text layout and rendering for Dear ImGui"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -62,12 +66,25 @@ dev = [
     # a layout engine that made every installer take it would be paying for a
     # screenshot script.
     "numpy>=1.24",
+    # `make dist`. The front end and the backend named under [build-system],
+    # installed so that the build runs without network and without an isolated
+    # environment (`python -m build --no-isolation`): what builds an artefact
+    # is then what `./.venv` holds, and `dist/BUILT-FROM` records the versions.
+    # Added 2026-10-12 by a session with no index: neither was in `./.venv`
+    # then, and `make dist` had not built anything when this line was written.
+    "build>=1.2",
+    "hatchling>=1.26",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# The wheel is `advtext/` and its metadata: no tests, no `demo/` sources, no
+# examples, no handoff files. `advtext/py.typed` goes with the package. The
+# demo application's pages are inside the package (`advtext.ui.pages`) and say
+# so themselves when `demo/` is absent. `scripts/make_dist.py` refuses a wheel
+# that holds anything else.
 [tool.hatch.build.targets.wheel]
 packages = ["advtext"]
 
@@ -78,8 +95,13 @@ packages = ["advtext"]
 include = [
     "/advtext", "/scripts", "/examples", "/tests", "/docs", "/README.md", "/Makefile",
     "/pyproject.toml",
-    # Read by tests/test_ci_workflow.py (2026-10-12). Not built: no hatchling here.
+    # Read by tests/test_ci_workflow.py (2026-10-12).
     "/imtypeset.ref", "/.github", "/HANDOFF-imtypeset.md",
+    # The other half of the same record, and what the suite reads its sources
+    # from (`demo/`, which tests/ names in 39 places and the list above left
+    # out; the suite has not been run from an unpacked sdist). Both in the
+    # sdist ONLY: the wheel is the package and nothing else.
+    "/HANDOFF-pptmstr.md", "/demo",
 ]
 exclude = ["**/__pycache__", "**/*.pyc"]
 

@@ -15,14 +15,31 @@ attribute of its package. `advtext.mathtext` was deleted in tranche 5 and the
 name is free; this module keeps the one it has.
 
 **Loading, gated.** imtypeset is a sidecar library built for ONE installed
-imgui-bundle wheel, with a ctypes package in front of it. It is looked for only
-when `IMTYPESET_LIBRARY` names the library. The package is found on
-`sys.path`, or in the directory `IMTYPESET_PYTHON` names (`<imtypeset>/python`),
-which is added to the END of `sys.path` at that moment and not before; `make ...
-TYPESET=1` sets both variables. A variable of its own rather than `PYTHONPATH`
-because a child process that is given a `PYTHONPATH` of its own -- every script
-`tests/conftest.py`'s `window` runs -- would lose the package and keep the
-library, and then quietly draw the old way. `import imtypeset` checks the
+imgui-bundle wheel, with a ctypes package in front of it. It is looked for in
+this order, and `pairing()` says which was taken:
+
+1.  **The environment** (`ROUTE_ENVIRONMENT`), when `IMTYPESET_LIBRARY` names
+    the library: the development override, and until imtypeset can be
+    installed the only route there is. The package is found on `sys.path`, or
+    in the directory `IMTYPESET_PYTHON` names (`<imtypeset>/python`), which is
+    added to the END of `sys.path` at that moment and not before; `make ...
+    TYPESET=1` sets both variables. A variable of its own rather than
+    `PYTHONPATH` because a child process that is given a `PYTHONPATH` of its
+    own -- every script `tests/conftest.py`'s `window` runs -- would lose the
+    package and keep the library, and then quietly draw the old way.
+2.  **An installed distribution** (`ROUTE_DISTRIBUTION`), when the variable is
+    not set and `importlib.metadata` finds a distribution named `imtypeset`.
+    It is then imported with no variable set, and is expected to find the
+    library it carries by itself. No such distribution exists yet (2026-10-11,
+    HANDOFF-imtypeset.md, request H3); the route is tested with stand-ins
+    (`tests/test_typesetter_pairing.py`). Metadata, and not merely a package
+    that can be imported, because a source directory of imtypeset on the path
+    -- which is what route 1 leaves behind in a process -- is importable too
+    and carries no library. An application frozen without package metadata
+    therefore names its library by the variable.
+3.  **Neither**: not loaded, and `reason()` says `IMTYPESET_LIBRARY is not set`.
+
+`import imtypeset` checks the
 library against the wheel that is running and raises `ImportError` with a
 sentence when it refuses. `module()` is where that import
 happens, once; whatever goes wrong, it answers `None` and `reason()` keeps the
@@ -131,6 +148,9 @@ __all__ = [
     "KIND_TABLE",
     "LIBRARY_VARIABLE",
     "PACKAGE_VARIABLE",
+    "ROUTE_DISTRIBUTION",
+    "ROUTE_ENVIRONMENT",
+    "ROUTE_NONE",
     "LinkRow",
     "RUN_DISPLAY_FORMULA",
     "RUN_FORMULA",
@@ -144,6 +164,7 @@ __all__ = [
     "load_fonts",
     "module",
     "note",
+    "pairing",
     "ready",
     "reason",
     "table_text",
@@ -158,6 +179,13 @@ _with_tags = with_tags
 
 LIBRARY_VARIABLE = "IMTYPESET_LIBRARY"
 PACKAGE_VARIABLE = "IMTYPESET_PYTHON"
+
+# How the package was found: `pairing()["route"]`.
+ROUTE_ENVIRONMENT = "environment"
+ROUTE_DISTRIBUTION = "distribution"
+ROUTE_NONE = "none"
+
+_DISTRIBUTION = "imtypeset"
 
 
 def __getattr__(name: str) -> Any:
@@ -200,6 +228,11 @@ _ts: Any = None
 # when it no longer is.
 _package: Any = None
 _tried = False
+_route = ROUTE_NONE
+# The installed distribution as "imtypeset <version>", "" when there is none,
+# `None` until it has been looked for. Looked for once: a view asks `module()`
+# every frame, and the answer is a walk over `sys.path`.
+_installed: str | None = None
 _reason = _NOT_SET
 _disabled = False
 _ready = False
@@ -212,27 +245,34 @@ def module() -> Any:
     """
     The imtypeset package, or `None` when advtext should draw as it always has.
 
-    The first call with `IMTYPESET_LIBRARY` set is the import, and with it the
-    library's gate (a child interpreter the first time a library meets a
-    wheel, about a third of a second; in-process afterwards). It is tried
-    once: a refusal is remembered and `reason()` holds it. While the variable
-    is unset nothing is imported and nothing is remembered, so setting it
-    later in the same process still works.
+    The first call with `IMTYPESET_LIBRARY` set, or with an `imtypeset`
+    distribution installed, is the import, and with it the library's gate (a
+    child interpreter the first time a library meets a wheel, about a third
+    of a second; in-process afterwards). It is tried once: a refusal is
+    remembered and `reason()` holds it. While the variable is unset and no
+    distribution is installed nothing is imported, and nothing is remembered
+    but that no distribution was found, so setting the variable later in the
+    same process still works. (Installing one later in the same process does
+    not: it is looked for once.)
+
+    The variable wins over an installed distribution; the module docstring
+    has the order and why.
 
     Not `None` means the package is imported and accepted. It does not mean
     there is a context or a font: `ready()` says that.
     """
-    global _ts, _package, _tried, _reason
+    global _ts, _package, _tried, _route, _reason
     if _ts is not None or _disabled or _tried:
         return _ts
-    if not os.environ.get(LIBRARY_VARIABLE):
+    named = bool(os.environ.get(LIBRARY_VARIABLE))
+    if not named and not _distribution():
         _reason = _NOT_SET
         return None
     _tried = True
     try:
         # Last on the path, so the directory can add a package and can never
         # stand in front of one advtext or its host already imports.
-        where = os.environ.get(PACKAGE_VARIABLE)
+        where = os.environ.get(PACKAGE_VARIABLE) if named else None
         if where and where not in sys.path:
             sys.path.append(where)
         # By name, so that neither a type checker nor a reader looks for the
@@ -241,11 +281,110 @@ def module() -> Any:
         loaded = importlib.import_module("imtypeset")
     except Exception as exc:  # noqa: BLE001 -- any failure here means "draw as before"
         _reason = f"{type(exc).__name__}: {exc}"
+        if not named:
+            _reason = f"the installed {_distribution()} did not load: {_reason}"
         _say(f"imtypeset is not in use: {_reason}")
         return None
     _reason = ""
+    _route = ROUTE_ENVIRONMENT if named else ROUTE_DISTRIBUTION
     _ts = _package = loaded
     return _ts
+
+
+def _distribution() -> str:
+    """
+    The installed `imtypeset` distribution as `imtypeset <version>`; empty when there is none.
+
+    Asked of `importlib.metadata`, which imports nothing of the package. Any
+    failure to read the metadata is "there is none".
+    """
+    global _installed
+    if _installed is None:
+        try:
+            from importlib import metadata
+
+            found = metadata.distribution(_DISTRIBUTION)
+            _installed = f"{_DISTRIBUTION} {found.version or ''}".strip()
+        except Exception:  # noqa: BLE001 -- not installed, or not readable: the same answer
+            _installed = ""
+    return _installed
+
+
+def pairing() -> dict[str, str | None]:
+    """
+    Which imtypeset is paired with which imgui-bundle, for an About box and a bug report.
+
+    It asks `module()` first, so the first call may be the import. Every
+    value is a string or `None`, and the keys are always these:
+
+    - `route`: `ROUTE_ENVIRONMENT`, `ROUTE_DISTRIBUTION` or `ROUTE_NONE` --
+      how the package that is loaded was found. It stays what it was after
+      `disable`: the pairing is still what is in the process.
+    - `reason`: `reason()`. Empty while the library is in use.
+    - `library`: the shared library's path.
+    - `package`: the directory of the Python package that loaded it. Under
+      `ROUTE_ENVIRONMENT` with a distribution also installed this is where to
+      see which of the two packages met the library.
+    - `distribution`: `imtypeset <version>` when one is installed, whichever
+      route was taken.
+    - `imtypeset_version`: the library's own version.
+    - `imgui_version`: the Dear ImGui the library was compiled against.
+    - `wheel_version`: the imgui-bundle that is running, which the library's
+      import gate accepted it against.
+    - `built_for`: the imgui-bundle the distribution DECLARES it was built
+      for (its `Requires-Dist`, e.g. `imgui-bundle==1.92.900`), under
+      `ROUTE_DISTRIBUTION` only. `None` under `ROUTE_ENVIRONMENT`: a library
+      built by `make typeset-lib` does not record the wheel version it was
+      linked against, only accepts or refuses the one it meets.
+    - `headers`: `fork:<commit>` when the library was compiled against the
+      wheel's own Dear ImGui headers, `stand-in:...` when against upstream's.
+    - `accepted_by`: `imgui-check+probe` or `probe`, how the gate accepted it.
+
+    Whatever the package cannot tell is `None`, and a package that raises
+    when asked is a `trouble()`, never an exception here.
+    """
+    module()
+    package = _package
+    answer: dict[str, str | None] = {
+        "route": _route if package is not None else ROUTE_NONE,
+        "reason": _reason,
+        "library": None,
+        "package": None,
+        "distribution": _distribution() or None,
+        "imtypeset_version": None,
+        "imgui_version": None,
+        "wheel_version": None,
+        "built_for": None,
+        "headers": None,
+        "accepted_by": None,
+    }
+    if package is None:
+        return answer
+
+    def said(value: Any) -> str | None:
+        return None if value is None or value == "" else str(value)
+
+    try:
+        answer["package"] = said(os.path.dirname(getattr(package, "__file__", None) or ""))
+        info = dict(package.host_info())
+        gate = dict(info.get("bundle") or {})
+        answer["library"] = said(info.get("library"))
+        answer["imtypeset_version"] = said(info.get("imtypeset_version"))
+        answer["imgui_version"] = said(info.get("imgui_version"))
+        answer["wheel_version"] = said(gate.get("wheel_version"))
+        answer["headers"] = said(gate.get("headers"))
+        answer["accepted_by"] = said(gate.get("accepted_by"))
+        if _route == ROUTE_DISTRIBUTION:
+            from importlib import metadata
+
+            for requirement in metadata.requires(_DISTRIBUTION) or ():
+                name = requirement.split(";")[0].strip()
+                if name.lower().replace("_", "-").replace(".", "-").startswith("imgui-bundle"):
+                    answer["built_for"] = name
+                    break
+    except Exception as exc:  # noqa: BLE001 -- a report must not be what fails
+        note(f"pairing: {type(exc).__name__}: {exc}")
+    return answer
 
 
 def reason() -> str:
@@ -253,7 +392,9 @@ def reason() -> str:
     Why `module()` is `None`, as one sentence; empty when it is not.
 
     Meaningful after `module()` has been asked. Before that it says the
-    variable is not set, which may no longer be true.
+    variable is not set, which may no longer be true. It does not say which
+    route a loaded package came by -- it is empty then, and views test it for
+    that; `pairing()["route"]` does.
     """
     return _reason
 
@@ -437,10 +578,12 @@ def _forget() -> None:
     It forgets what this module knows, not what the process did: an imported
     imtypeset stays in `sys.modules` and its context stays made.
     """
-    global _ts, _package, _tried, _reason, _disabled, _ready, _trouble
+    global _ts, _package, _tried, _route, _installed, _reason, _disabled, _ready, _trouble
     _ts = None
     _package = None
     _tried = False
+    _route = ROUTE_NONE
+    _installed = None
     _reason = _NOT_SET
     _disabled = False
     _ready = False

@@ -1,0 +1,60 @@
+# macOS: NOT A RUNNABLE WORKFLOW. A placeholder that says what is waited for.
+#
+# It has no push or pull_request trigger and its one job is switched off
+# (`if: false`), so starting it by hand does nothing either. It is a file and
+# not a comment in ci.yml so that turning it on is a diff of this file alone.
+#
+# What it waits on:
+#
+#   H1 of HANDOFF-imtypeset.md   does the sidecar work on macOS at all: are the
+#                                Dear ImGui symbols exported from the macOS
+#                                imgui-bundle wheel's module, and does a .dylib
+#                                built with undefined dynamic lookup bind to
+#                                them. Asked of the imtypeset team; nobody on
+#                                either side has run anything on a Mac.
+#   advtext's own Linux audit    task L1-MAC of 2026-10-11 (what in advtext
+#                                assumes Linux); its findings are to be in
+#                                docs/status.md.
+#
+# Known from reading, before either answer, to be Linux-only in what ci.yml
+# does: `xvfb-run`, `unshare -rm` and the apt packages; the Makefile's library
+# name `libimtypeset_bundle.so`; imtypeset's build script (g++, `-shared`,
+# `-Wl,--version-script`, `-Wl,--no-undefined`). Not known: whether a GLFW
+# window opens on a hosted macOS runner at all, which the tests that
+# photograph the app need.
+#
+# The steps below are the plain gate only and are a guess at a starting point,
+# never run anywhere.
+
+name: "macOS (disabled; waits on H1)"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plain-macos:
+    name: "make check on macOS (switched off)"
+    if: false
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: "Check out advtext"
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: "make bootstrap"
+        run: make bootstrap
+
+      - name: "make check"
+        run: make check

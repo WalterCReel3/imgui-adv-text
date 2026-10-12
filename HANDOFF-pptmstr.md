@@ -88,6 +88,41 @@ Today, for an interpreter with `imgui-bundle` 1.92.900 exactly:
 Linux x86-64 only so far. Whether the sidecar works on macOS at all is
 request H1 to imtypeset and is open.
 
+### Added 2026-10-12: the pin, a second route, and what a host can show
+
+Built by advtext's agents, unattended. **In advtext's working tree and not
+yet a commit** when this was written; the commit is named under "Answers to
+pptmstr" when it exists. Nothing below has run against GitHub or on macOS.
+
+- **The pin.** advtext's `pyproject.toml` now says `imgui-bundle==1.92.900`,
+  exactly, where it had a floor. A bump is three acts in order: the pin, a
+  rebuilt library, the gate.
+- **A second route to the library.** `advtext.typesetter.module()` looks in
+  this order: `IMTYPESET_LIBRARY` when set (step 3 above, unchanged);
+  otherwise an installed `imtypeset` distribution, imported with no variable
+  set; otherwise not loaded. The second route is recognised by the
+  distribution's metadata and **has met stand-in packages only**: no such
+  distribution exists (H3). An application frozen without `dist-info` would
+  not be found by it (from reading; no freezer was run) and sets
+  `IMTYPESET_LIBRARY`, which is a supported route and not only a developer's.
+- **`advtext.typesetter.pairing()`**: what a host shows in an About box or
+  puts in a bug report. A `dict` that always has the keys `route`
+  (`"environment"`, `"distribution"` or `"none"`), `reason`, `library`,
+  `package`, `distribution`, `imtypeset_version`, `imgui_version`,
+  `wheel_version`, `built_for`, `headers`, `accepted_by`. It calls `module()`
+  and does not raise. It is not on the facade (`advtext.__all__` is still 89
+  names): reach it as `advtext.typesetter.pairing`. `reason()` still says only
+  why the library is not loaded and does not name the route.
+- **Building from GitHub.** `make typeset-lib IMTYPESET_REF=<tag | branch |
+  full 40-character hash>` fetches that one commit of imtypeset from
+  `IMTYPESET_REPO` (default `https://github.com/WalterCReel3/imtypeset.git`)
+  and builds as step 2 does, with no sibling checkout of imtypeset. It still
+  needs the two neighbours the build script reads (`pthom/imgui_bundle` and
+  `ocornut/imgui` clones holding the wheel's tags;
+  `IMGUI_BUNDLE_CHECKOUT=`, `IMTYPESET_IMGUI_CLONE=`). The ref advtext builds
+  is the full hash in `imtypeset.ref`. Run by L1-PKG's builder against a
+  `file://` clone; **not run against GitHub by anyone.**
+
 ## Known and open, as it bears on pptmstr
 
 - Text set by imtypeset advances by the font's own metrics, not ImGui's
@@ -138,3 +173,14 @@ taken up.
 ## Answers to pptmstr
 
 Nothing asked yet.
+
+That sentence was true when it was written (2026-10-11). **Since then
+pptmstr's file has P1 to P6, all open** (read in the worktree on 2026-10-12
+by advtext's last builder, an agent). None is answered here yet; they are
+with advtext's lead.
+
+Acknowledgement (2026-10-12, the lead): A1 is answered, and the two pins
+agree at `imgui-bundle==1.92.900`. The commit that carries advtext's pin, the
+three routes and `pairing()` will be named here when it exists and is pushed.
+
+advtext commit: (named by the lead after the Level 1 commit)

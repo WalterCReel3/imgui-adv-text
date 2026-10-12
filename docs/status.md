@@ -6,6 +6,278 @@ before `README.md` if you are deciding whether to trust anything here.
 It is written to be useful rather than flattering. Section 4 is the longest on
 purpose.
 
+## 0e. Revision of 2026-10-12: Level 1. The pairing with imtypeset is pinned, found three ways, and buildable from GitHub; none of it has run there
+
+The newest revision, put first. Section 0d below was the newest when it was
+written and says so; it is one day older and is not changed. **Where 0d says
+"nothing on it is committed" and "`HEAD` is still 30496e1", that was true
+then**: the branch has five commits on `main` now and `HEAD` was `f34f6c8`
+when this was written. **Where 0d says `make typeset-lib` "needs
+`../imtypeset`" and names `7a7bc36`, read this section instead.** What this
+section describes was in the working tree, uncommitted, when its writer (the
+builder of the task L1-GATE, an agent) wrote it; the lead commits.
+
+**Three things have not happened, and every paragraph below should be read
+with them in mind:**
+
+- **Nothing here has run against GitHub.** The sandbox these sessions ran in
+  reaches neither `github.com` nor a package index. Every fetch below was run
+  against a `file://` clone of a sibling checkout on this machine.
+- **Nothing here has run on macOS.** The Mac audit below is from reading.
+- **The CI workflow has never run.** GitHub has never loaded the file.
+
+And, as in 0d: no person has looked at any page in a window because of this
+work, and nothing below changes a pixel.
+
+### What the user asked
+
+The user's words are in `HANDOFF-imtypeset.md`, "Direction", quoted there in
+full. The two that set this work: "Let's target Level 1", and "The goal now
+is initial stability and deliverability for a full pptmstr adoption and
+product packaging (goal of a Mac supported install with automatic updates)."
+And on builds: "each project should know that the other is now hosted
+publicly on github so any build systems that need referential access should
+lean on that." "Level 1" is the lead's phrase, which the user took as the
+target: keep imtypeset as a library loaded beside an unmodified
+`imgui-bundle` wheel, and make that reliable. Everything else in this
+section is an agent's decision or an agent's measurement, and
+`docs/decisions.md`, "Level 1", marks each decision as one.
+
+### What is true of the tree now
+
+**`imgui-bundle` is pinned exactly: `imgui-bundle==1.92.900` in
+`pyproject.toml`.** It was the floor `>=1.92.900`. 1.92.900 is the version
+installed for every run this branch records. Why exact: the
+library is linked against one wheel's extension module and its import gate
+refuses any other, so a range promised versions the library was never built
+for, and the failure would arrive as a page that draws one line, not at
+install. An upgrade is three acts: the pin, `make typeset-lib` against the
+new wheel, `make check TYPESET=1`.
+`tests/test_makefile_env.py` holds the pin to `==` one version and the
+installed wheel to that version. **`pip install` with the pin has not been
+run by anyone**; what pip does on a machine holding another `imgui-bundle` is
+in L1-PKG's result file as reasoning, not as a run. Whether a 1.92.900 wheel
+exists for a given Mac and Python is part of the audit below.
+
+**The imtypeset commit in use is `c9f8902`**, in full
+`c9f8902a67adf00a18426876d5983617b7d1408c`, the one line of `imtypeset.ref`
+at the root. `build/imtypeset-bundle/BUILT-FROM` says that commit (built
+2026-10-11T13:01:08Z by `make typeset-lib IMTYPESET_COMMIT=c9f8902`, 0
+uncommitted paths). imtypeset has no tags, so the ref is a hash; it must be
+reachable from a branch on GitHub to be fetched, and that has been checked
+only against what the sibling checkout last saw of its remote (L1-PKG's and
+L1-CI's builders: an ancestor of `origin/main` there).
+
+**The library is found by one of three routes, in this order**
+(`advtext.typesetter.module()`, L1-PKG's builder):
+
+1. `IMTYPESET_LIBRARY` set (with `IMTYPESET_PYTHON`): exactly as before. It
+   is what `make ... TYPESET=1` sets, and the only route any page, example or
+   gate has drawn through.
+2. Otherwise an installed `imtypeset` distribution, when
+   `importlib.metadata.distribution("imtypeset")` finds one: `import
+   imtypeset` with no variable set. **There is no such distribution** (it is
+   request H3 of `HANDOFF-imtypeset.md`). The route is tested with two
+   stand-ins built in a temporary directory: a two-function package with a
+   `dist-info`, and the pinned pair wrapped as a distribution, which went the
+   whole way with neither variable set (import gate, `load_fonts()` True,
+   `ready()` True; the builder's run).
+3. Otherwise not loaded. `reason()` is `IMTYPESET_LIBRARY is not set`, to the
+   character, as before.
+
+`typesetter.pairing()` answers which route was taken and with what: a `dict`
+with the keys `route` (`"environment"`, `"distribution"`, `"none"`),
+`reason`, `library`, `package`, `distribution`, `imtypeset_version`,
+`imgui_version`, `wheel_version`, `built_for`, `headers`, `accepted_by`. Run
+by this section's writer against the pinned pair: `route` `environment`,
+`imtypeset_version` `0.2.0`, `imgui_version` `1.92.9`, `wheel_version`
+`1.92.900`, `headers` `stand-in:ocornut-v1.92.9-docking`, `accepted_by`
+`probe`, `built_for` `None`; and with no variable set, `route` `none` and
+every other key `None` but the reason. **`reason()` does not name the
+route**, though the lead's decision asked for it there; `pairing()["route"]`
+does. `pairing` is `advtext.typesetter.pairing` and is not on the facade,
+which is still 89 names.
+
+**To build the library:**
+
+    make typeset-lib IMTYPESET_COMMIT=c9f8902   # that commit of the sibling ../imtypeset
+    make typeset-lib                            # the sibling's working tree
+    make typeset-lib IMTYPESET_REF=c9f8902a67adf00a18426876d5983617b7d1408c   # fetched from IMTYPESET_REPO
+
+The first two are unchanged. The third is new: `IMTYPESET_REF` is a tag, a
+branch or a full 40-character hash; one commit is fetched with `git fetch
+--depth 1` from `IMTYPESET_REPO` (default
+`https://github.com/WalterCReel3/imtypeset.git`) into a bare cache under
+`build/`, and the build from there is `IMTYPESET_COMMIT`'s. No network, an
+unknown ref, an abbreviated hash, or both variables given stop at the
+recipe's first step with exit 2 and one line. **`IMTYPESET_REF` has no
+default, and the Makefile does not read `imtypeset.ref`**: a plain `make
+typeset-lib` builds the sibling's working tree as it always did. The lead's
+decision 4 said the default source "becomes the GitHub URL at a named ref";
+what was built is a default repository and no default ref
+(`docs/decisions.md` says why it was left so). All three forms still need
+the two neighbours the other team's build script reads, as clones on this
+machine: `pthom/imgui_bundle` holding the tag `v1.92.900`, and for stand-in
+headers `ocornut/imgui` holding `v1.92.9-docking`. Nothing in the Makefile
+fetches those; the CI workflow fetches both itself.
+
+**There is a CI workflow, and it has never run.**
+`.github/workflows/ci.yml` (L1-CI's builder) has two jobs on `ubuntu-24.04`
+with Python 3.11, each under `xvfb-run` with a software rasteriser: `plain`
+fails if imtypeset is anywhere on the runner and then runs `make check`;
+`typeset` reads the ref from `imtypeset.ref`, fetches the two neighbours'
+tags, runs `make typeset-lib IMTYPESET_REF=...`, photographs one page as a
+check that the library draws, and runs `make check TYPESET=1`.
+`.github/workflows/macos.yml` is a placeholder that cannot start by itself.
+`tests/test_ci_workflow.py` (40 tests) holds the files to the Makefile's
+targets and variables, with a YAML reader of its own for a stated subset:
+the virtualenv has no YAML parser. Its builder's list of 25 things not run,
+each with the symptom that would show it wrong, is in
+`.concerns/L1-CI--builder--result.md` (not version-controlled); its own
+ranking of the likeliest first red is newer lint tools than the ones here
+(the dev tools are floors, not pins), then the user-namespace Xvfb on a 24.04
+runner, then the apt package list.
+
+**The gallery pages' size control** (T6-SIZE, the commit `98d6526`) is in
+section 0d's "What nobody has looked at" and in `docs/decisions.md`, "The
+swap", last row: Specimen, Formula and Math in text have a combo of 14, 16,
+19, 23 and 28 px and open at 23. Nothing about it changed here.
+
+### What was measured, by whom, at what load
+
+All on the one 16-core machine, by agents. No window was looked at.
+
+- **The gate, on the tree as it stands, nothing else running** (this
+  section's writer, L1-GATE's builder, an agent, 2026-10-12, against the
+  pinned pair from `c9f8902`). `make check`:
+  **2955 passed, 264 skipped, 4 xfailed** in 150 s, load 3.36 at the start
+  and 4.40 at the end. `make check TYPESET=1`, straight after: **3211
+  passed, 8 skipped, 4 xfailed** in 236 s, load 4.53 and 4.49. Ruff and
+  black clean, mypy clean over 51 files, both times. 3,223 tests each way
+  (3,141 in section 0d; of the 82 more, 66 are this work's and 16
+  T6-SIZE's); no failure and no error. Each gate once. The load was not
+  this tree's: nothing else was writing or testing in it, and other
+  sessions share the machine. These counts were written into this paragraph
+  after the runs; `tests/test_docs.py` was run again afterwards and passed.
+- **The gate while the tree was in motion** (L1-PKG's builder, each once):
+  `make check` 2955 passed, 264 skipped, 4 xfailed, load 14.1 at the start
+  and 8.3 at the end; `make check TYPESET=1` 3211 passed, 8 skipped, 4
+  xfailed, load 8.3 and 5.3. L1-CI's test file was being written under those
+  runs.
+- **`make typeset-lib IMTYPESET_REF=<the full hash>` from a `file://` clone
+  of the sibling**, into a scratch bundle (L1-PKG's builder, load 2.7): exit
+  0, 24 probes, 45 s; `diff -rq` of its `src` against the pinned bundle's
+  prints nothing. With `IMTYPESET_REF=v9.9.9`, with the abbreviated
+  `c9f8902`, and against the default GitHub URL (the real no-network case,
+  `CONNECT tunnel failed, response 403`): exit 2 each, the one line, nothing
+  created.
+- **The workflow's own step texts, run here** (L1-CI's builder, load 3.1 to
+  4.6): "What the pair is", "Fetch what the build script reads" and "make
+  typeset-lib", through `bash -e -o pipefail -c`, with `file://` URLs of the
+  three siblings: exit 0, each neighbour one shallow commit with no worktree,
+  the pair gated by the probe. Then `make check TYPESET=1` against that pair
+  with `PYTEST_ADDOPTS=-rs`: 3199 passed, 8 skipped, 4 xfailed in 332 s (load
+  13.5 at the end, tree in motion); the 8 skips are one `ADVTEXT_SLOW` and
+  seven "DiffView is gone", no window test among them. **`xvfb-run` itself
+  did not start in the sandbox**, so nothing ran under it.
+- **The same commit built twice is not the same bytes** (L1-CI's builder,
+  measured and not investigated): the scratch library's cksum is `3759793072
+  14151720`, the pinned one's `862594398 14151760`. Paths are embedded with
+  `-g`.
+- **Mutation tests** (L1-PKG's builder, on copies): 12 mutants of the
+  Makefile's new recipe, 10 killed; 9 of `typesetter.py`, 9 killed after one
+  test was added for the survivor. The two Makefile survivors are named in
+  its result file with why each was left.
+
+### The Mac audit, in summary. From reading; nothing was run and there was no Mac
+
+By advtext's reviewer (the task L1-MAC, an agent with no shell), written down
+by the lead in `.concerns/L1-MAC--reviewer--result.md` (not
+version-controlled). **Every statement about Apple's linker, dyld, freezers
+and code signing is inference from general knowledge.** One fact came from
+outside the tree: PyPI's listing for `imgui-bundle` 1.92.900, read through a
+fetch tool's summariser and not as raw data.
+
+Blockers for a Mac install, in the reviewer's order:
+
+1. **The library cannot be built on macOS as written, and the pinned wheel is
+   Apple Silicon only.** The other team's link line (`-shared`, the wheel's
+   module as an input, `-Wl,--no-undefined`, `-Wl,--version-script=`) is GNU
+   ld's. advtext's Makefile names `libimtypeset_bundle.so` throughout;
+   `advtext/typesetter.py` hard-codes no suffix and reads nothing
+   Linux-specific. From PyPI: the only macOS wheels of 1.92.900 are
+   `macosx_14_0_arm64` for CPython 3.11 to 3.14, so with an exact pin "Mac
+   supported" means Apple Silicon on macOS 14 or later. Requests H1, H16, H17.
+2. **The import gate cannot work in a packaged application, on any
+   platform.** imtypeset's gate runs a child through `sys.executable` when
+   its stamp is absent or stale, keys the verdict on absolute path, size and
+   modification time, and writes the stamp beside the library. Inferred: in a
+   frozen application `sys.executable` is the application; a signed bundle
+   cannot be written into; every update is a new path. advtext would turn the
+   refusal into `reason()`: nothing crashes and nothing draws. **advtext's
+   suite cannot meet this**: the stand-in distribution it tests route 2 with
+   has no gate. Request H15.
+3. **Every font the text is set in is a file inside the `imgui-bundle`
+   wheel** (`imgui_bundle/assets/fonts`: four Roboto faces, Inconsolata
+   Medium, Latin Modern Math), unless a host registers its own per role.
+   advtext ships no font; the gate's probe needs one there too. A freezer
+   that takes the compiled module without `assets/` would be refused at
+   import. Request H20.
+
+Blocking only the test suite on a Mac: every real-window test skips there
+(the `window` fixture knows a reachable `DISPLAY`, Xvfb, or `unshare -rm`),
+so a macOS `make check` can be green having opened no window, and `make run`
+needs `ARGS=--force`.
+
+To verify at a Mac, not blockers: the copy shortcut reads `io.key_ctrl` and
+the pages say "Ctrl+C"; 96 px per inch is assumed in five places and the app
+never asks the runner for a scale; the library adds its faces at
+`RasterizerDensity` 1.0, so what a retina screen shows is unknown (H19);
+`DEMO_DIR` points outside the package in an installed wheel, and `pip
+install advtext` installs the package and `py.typed` only.
+
+### What nobody has looked at, or run
+
+- Everything in 0d's list of the same name, still.
+- `git fetch` of imtypeset from GitHub by tag, by branch, or by full hash;
+  and whether `c9f8902` is on GitHub at all.
+- The workflow, on a runner. Its expressions, its action versions, the apt
+  package names on Ubuntu 24.04, a restored cache (the pair holds absolute
+  paths), `xvfb-run`.
+- Route 2 against a real distribution of imtypeset.
+- `pip install -e .[dev]` with the exact pin.
+- macOS: anything.
+- An sdist. `pyproject.toml`'s sdist list gained `imtypeset.ref`, `.github`
+  and `HANDOFF-imtypeset.md` (this section's writer; `tests/test_ci_workflow.py`
+  reads all three), and nothing was built: the virtualenv has no `hatchling`.
+  The list still has no `demo/`, which sixteen test files name, so the suite
+  is not expected to pass from an unpacked sdist (from reading).
+
+### Open
+
+- **The freezer and the metadata rule.** Route 2 knows a distribution by its
+  `dist-info`, and the common freezers drop that unless told to keep it. In
+  such an application the page would say `IMTYPESET_LIBRARY is not set` and
+  point its reader at the wrong thing. Either the product sets the variable,
+  or the rule widens once the other team says how its distribution finds its
+  library. **L1-PKG's builder's least sure decision.**
+- **With the variable set AND a distribution installed, the installed
+  package is imported and handed the variable's library** (`IMTYPESET_PYTHON`
+  goes at the end of `sys.path`, as before). A test pins it;
+  `pairing()["package"]` shows it.
+- **`built_for` is `None` for every library `make typeset-lib` builds**: the
+  library does not record the wheel it was linked against. Request H21.
+- `pairing` is not on the facade. Nobody decided it should or should not be;
+  the facade's file was outside the builder's task.
+- The Makefile's default ref (above). The other team has named no tag (H4).
+- The CI workflow builds with stand-in headers, as every build here has (H2).
+- pptmstr's handoff file has six requests of advtext, P1 to P6, read on
+  2026-10-12 and not answered. `HANDOFF-pptmstr.md` says so.
+- Stale and left, because the documents are dated records: `docs/imgui-risks.md`
+  has a dated note beside the sentence about the dependency floor and is
+  otherwise as it was; 0d and 0c below name `7a7bc36` and the sibling as the
+  only source.
+
 ## 0d. Revision of 2026-10-11: the swap. advtext draws through imtypeset and through nothing else
 
 The newest revision, put first. Section 0c below was the newest when it was

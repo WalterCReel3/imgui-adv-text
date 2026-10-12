@@ -58,9 +58,27 @@ person has looked at any page in a window. Every review was by reading.**
 Everything below this paragraph was brought level with that tree by the last
 task's builder, an agent; the paragraphs above it are records.
 
+**On 2026-10-11 and 12 the pairing with imtypeset was made into something
+that can be stated and shipped.** The user's direction, as
+`HANDOFF-imtypeset.md` quotes it: "Let's target Level 1", and "The goal now
+is initial stability and deliverability for a full pptmstr adoption and
+product packaging (goal of a Mac supported install with automatic updates)."
+What agents then built, unattended: `imgui-bundle` pinned to exactly
+`1.92.900`; three routes by which the library is found, and
+`advtext.typesetter.pairing()` to say which was taken; `make typeset-lib
+IMTYPESET_REF=...`, which fetches imtypeset from GitHub at a named ref; a CI
+workflow; and an audit, from reading, of what stands between this tree and a
+Mac. **Nothing of it has run against GitHub. Nothing of it has run on macOS.
+The CI workflow has never run.** The branch is committed since the paragraph
+above was written (`HEAD` was `f34f6c8` when this one was), and this work
+was in the working tree, uncommitted, when its builder wrote this.
+[`docs/status.md`](docs/status.md) section 0e is the account, and it is the
+newest; the sections below this paragraph were brought level with it by that
+builder, an agent.
+
 ## Thirty seconds
 
-    make typeset-lib IMTYPESET_COMMIT=7a7bc36   # once: build the library the text is set by
+    make typeset-lib IMTYPESET_COMMIT=c9f8902   # once: build the library the text is set by
     make run TYPESET=1      # the ImGui demo: a sidebar of fourteen pages
     make shot TYPESET=1     # one page of it as a PNG, without watching a window open
     make check TYPESET=1    # ruff + black --check, mypy --strict, pytest with the library
@@ -68,12 +86,30 @@ task's builder, an agent; the paragraphs above it are records.
     make svg                # the reference layout with no GPU, no display and no ImGui
     make help               # every target, and which interpreter it will use
 
-**`TYPESET=1` is not optional if you want to see text.** `make typeset-lib`
-needs the sibling checkouts `../imtypeset` and `../imgui_bundle` and builds
-into `build/imtypeset-bundle/`; `7a7bc36` is the commit this tree was built
-and tested against (`docs/status.md` section 0d says where the other team
-names it, and that they now name a later one). Without `TYPESET=1` the demo
+**`TYPESET=1` is not optional if you want to see text.** Without it the demo
 opens and every page is one line: `imtypeset is not drawing: ` and the reason.
+
+`make typeset-lib` builds into `build/imtypeset-bundle/`, and takes
+imtypeset's source one of three ways:
+
+    make typeset-lib IMTYPESET_COMMIT=c9f8902   # that commit of the sibling checkout ../imtypeset
+    make typeset-lib                            # the sibling's working tree, as it is
+    make typeset-lib IMTYPESET_REF=c9f8902a67adf00a18426876d5983617b7d1408c   # that commit, fetched from GitHub
+
+`c9f8902` is the commit this tree is built and gated against; its full hash
+is the one line of `imtypeset.ref`, which the CI workflow reads. The Makefile
+does not read that file: `IMTYPESET_REF` has no default, and a plain
+`make typeset-lib` fetches nothing. `IMTYPESET_REF` is a tag, a branch or a
+FULL 40-character hash (an abbreviated one cannot be fetched), taken from
+`IMTYPESET_REPO`, which defaults to
+`https://github.com/WalterCReel3/imtypeset.git`. imtypeset has no tags yet.
+**The third form has been run against a `file://` clone of the sibling and
+never against GitHub**: the sessions that wrote and tested it had no network.
+All three forms also need two neighbours the other team's build script reads:
+a clone of `pthom/imgui_bundle` holding the tag of the installed wheel
+(`../imgui_bundle`, or `IMGUI_BUNDLE_CHECKOUT=`) and, for the stand-in
+headers every build here has used, a clone of `ocornut/imgui`
+(`../imgui`, or `IMTYPESET_IMGUI_CLONE=`). Nothing fetches those two.
 
 `make shot` is the one to reach for when you want to *see* something and cannot
 sit in front of a window — it drives the real app through the real `immapp.run`,
@@ -118,7 +154,25 @@ package except the module `advtext.typesetter`:
 Each needs `IMTYPESET_LIBRARY` and `IMTYPESET_PYTHON` in the environment (what
 `make ... TYPESET=1` sets; `build/imtypeset-bundle/libimtypeset_bundle.so` and
 `build/imtypeset-bundle/pysnap`). Without them an example says why on
-standard error and exits 1 before any window opens. Each takes `--frames N`
+standard error and exits 1 before any window opens.
+
+**How the library is found** (`advtext.typesetter.module()`, since
+2026-10-11), in this order:
+
+1. `IMTYPESET_LIBRARY` set, with `IMTYPESET_PYTHON`: the development
+   override, and the only route anything here has drawn through.
+2. Otherwise an installed `imtypeset` distribution, known by its metadata
+   and imported with no variable set. **No such distribution exists yet**
+   (request H3 of `HANDOFF-imtypeset.md`); the route is tested with stand-in
+   packages. An application frozen without the distribution's `dist-info`
+   would not be found this way (from reading; no freezer was run).
+3. Otherwise not loaded, and `reason()` is `IMTYPESET_LIBRARY is not set`.
+
+`advtext.typesetter.pairing()` answers which route was taken (`route`:
+`"environment"`, `"distribution"` or `"none"`), the library's path, the
+versions, the headers it was built with and what accepted the pair: what a
+host puts in an About box or a bug report. It is not on the facade.
+`reason()` does not name the route. Each takes `--frames N`
 to draw N frames and exit, which is how the tests run them. What a host
 calls, in the order it calls it:
 
@@ -212,8 +266,10 @@ requests `make shot-all` photographs.
 | Performance | Stress (`stress`) | 1 to 16 panes at once, finished or streaming, with the per-frame cost |
 | Experimental | Typeset (`typeset`) | the sample document with a find box; the first page that drew through imtypeset |
 
-Fourteen pages. The fifteenth, Blocks, showed the old core's boxes and was
-deleted on 2026-10-11. **Every page has run in a real window on Xvfb with the
+Fourteen pages. Specimen, Formula and Math in text each have a *text size*
+combo of 14, 16, 19, 23 and 28 px and open at 23 (since 2026-10-11, after
+the user ran the demo; `--tab math:19` opens at 19). The fifteenth, Blocks,
+showed the old core's boxes and was deleted on 2026-10-11. **Every page has run in a real window on Xvfb with the
 library, in the suite, and no person and no agent has looked at any of them.**
 
 Without a display `scripts/run_demo.py` refuses rather than hanging: it exits
@@ -268,10 +324,34 @@ markdown, not a picture of what the window shows.
 
 Until that runs there is no interpreter: every target that needs one stops and
 names `make bootstrap`. `make venv-info` says what the others will use.
-`pyproject.toml` states genuine dependency floors and is installable normally;
-the one that matters is `imgui-bundle>=1.92.900`. The imtypeset library is
-built for ONE installed imgui-bundle wheel and checks at import that it is
-the one running; a new wheel means `make typeset-lib` again.
+`pyproject.toml` states floors for `markdown-it-py`, `fonttools` and the dev
+tools, and **one exact pin, `imgui-bundle==1.92.900`** (since 2026-10-11; it
+was the floor `>=1.92.900` before). The imtypeset library is built for ONE
+installed imgui-bundle wheel and checks at import that it is the one
+running, so a range promised what the pairing cannot keep. An upgrade is
+three acts: change the pin, `make typeset-lib` against the new wheel,
+`make check TYPESET=1`. imtypeset itself is not listed as a dependency: it
+has no distribution to name. `pip install` with the pin has not been run on
+any machine by the sessions that wrote it (no index was reachable).
+
+**Continuous integration** is `.github/workflows/ci.yml`: a job for
+`make check` with no imtypeset anywhere, and a job that builds the pair from
+the ref in `imtypeset.ref` and runs `make check TYPESET=1`, both on Ubuntu
+under `xvfb-run`. **It has never run.** It was written without network;
+`tests/test_ci_workflow.py` holds its text to the Makefile's targets and
+variables, and the text of its fetch-and-build steps was run here against
+local clones. `.github/workflows/macos.yml` is a placeholder that cannot
+start by itself.
+
+**A Mac.** Nothing in this tree has run on macOS. An audit by reading
+(`docs/status.md` section 0e) found three things in the way of an install:
+the other team's link line is GNU ld's and the pinned wheel has macOS builds
+for Apple Silicon only; the library's import gate starts a child interpreter
+and writes a stamp beside the library, which a packaged application cannot
+do; and every font the text is set in is a file inside the `imgui-bundle`
+wheel. By the same reading `make run` on a Mac would need `ARGS=--force`,
+and every real-window test would skip there. The questions are with the
+other team as H1 and H15 to H20 of `HANDOFF-imtypeset.md`.
 
 This used to say `make` drove a **borrowed** interpreter from a sibling project,
 `../pptmstr`. That fallback was removed on 2026-10-06: the sibling is the
@@ -304,8 +384,9 @@ They are orientation and route into the documents below, which carry the
 measurements.
 
 - [`docs/status.md`](docs/status.md) — what is true today. Start here, at
-  section 0d: the swap of 2026-10-11, what was deleted, what remains of the
-  old core and why, what was measured and what is open. Section 0c is the day
+  section 0e (2026-10-12: the pin, how the library is found and built, CI,
+  the Mac audit), then section 0d: the swap of 2026-10-11, what was deleted,
+  what remains of the old core and why, what was measured and what is open. Section 0c is the day
   before, when the new layer stood beside the old. Sections 1 to 6 describe
   `main`. [`docs/decisions.md`](docs/decisions.md), "The swap" and "imtypeset
   adoption, experimental branch", keep the user's sentences apart from every

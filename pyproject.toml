@@ -6,26 +6,33 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Walter Reel" }]
 dependencies = [
-    # The ImDrawList backend and the demo app. The floor is the first release
-    # that has `ImDrawListFlags_.text_no_pixel_snap`, which
-    # `advtext.backends.imgui_draw.draw` sets on every call; a lower floor turns
-    # an install-time failure into an AttributeError on the first frame drawn.
+    # Dear ImGui, the demo app, and the binary the imtypeset library is for.
     #
-    # How 1.92.900 was arrived at, and how far to trust it:
-    #   read      Dear ImGui's CHANGELOG adds `ImDrawListFlags_TextNoPixelSnap`
-    #             under 1.92.9. imgui-bundle's CHANGELOG has 1.92.900 as the
-    #             release that moved to Dear ImGui 1.92.9b, and the release
-    #             before it on PyPI (1.92.801) is on 1.92.8.
-    #   measured  the flag exists in the installed 1.92.900, and
-    #             tests/test_makefile_env.py pins that.
-    #   not done  installing 1.92.801 to watch it fail -- no package index is
-    #             reachable where this was written. So this is the minimum by
-    #             the changelogs and the verified version by measurement.
-    # No upper bound is set, but one is coming due: imgui-bundle's unreleased
-    # notes move to Dear ImGui 1.93 WIP, where upstream is discussing folding
-    # this flag into `ImDrawFlags` (ocornut/imgui#9504). The same test goes red
-    # on the release that renames it.
-    "imgui-bundle>=1.92.900",
+    # EXACT, and deliberately (2026-10-11; `.concerns/lead--level-1.md`,
+    # decision 1). Everything advtext draws is drawn by imtypeset, a shared
+    # library loaded beside this wheel and linked against this wheel's own
+    # extension module: one library is for one wheel binary, and its import
+    # gate refuses any other (`advtext/typesetter.py`). A range here would
+    # promise that advtext works on versions its library was never built for,
+    # and the failure would arrive at import of the library, as a page that
+    # draws one line, and not at install. So an upgrade is three acts and never
+    # a side effect of `pip install -U`: change this pin, rebuild the library
+    # against the new wheel (`make typeset-lib`), run `make check TYPESET=1`.
+    #
+    # 1.92.900 is the version every measurement in this tree was taken on.
+    # `tests/test_makefile_env.py` holds the pin to `==` one version and the
+    # installed wheel to that version.
+    #
+    # What the pin costs: advtext cannot be installed beside anything that
+    # needs another imgui-bundle. That is true of the pairing whatever this
+    # line says; the pin says it at install.
+    #
+    # imtypeset itself is NOT listed. It has no distribution to name yet
+    # (HANDOFF-imtypeset.md, request H3), and a dependency that cannot be
+    # resolved would break `pip install` for everyone. Until it has one the
+    # library is built by `make typeset-lib` and found by IMTYPESET_LIBRARY;
+    # when it has one, it goes here, pinned the same way.
+    "imgui-bundle==1.92.900",
     # Block and inline parsing for the markdown litmus test. Only the parser is
     # used -- token stream in, our own box tree out. Nothing here renders HTML.
     "markdown-it-py>=3.0",
@@ -71,6 +78,8 @@ packages = ["advtext"]
 include = [
     "/advtext", "/scripts", "/examples", "/tests", "/docs", "/README.md", "/Makefile",
     "/pyproject.toml",
+    # Read by tests/test_ci_workflow.py (2026-10-12). Not built: no hatchling here.
+    "/imtypeset.ref", "/.github", "/HANDOFF-imtypeset.md",
 ]
 exclude = ["**/__pycache__", "**/*.pyc"]
 

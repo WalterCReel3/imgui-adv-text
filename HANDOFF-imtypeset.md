@@ -57,11 +57,13 @@ if we ever decide to render mermaid diagrams inline."
 
 | | |
 |---|---|
-| imtypeset ref built and gated against | commit `c9f8902` (lead's run, 2026-10-11: `make check` 2875 passed; `make check TYPESET=1` 3129 passed) |
-| how it is built | `make typeset-lib IMTYPESET_COMMIT=<rev>`: `git archive` of that commit, `python/host/build_bundle_library.sh`, and a snapshot of `python/imtypeset` beside the library |
-| how it is found | `IMTYPESET_LIBRARY` (the shared library) and `IMTYPESET_PYTHON` (the package directory); `advtext/typesetter.py` |
+| imtypeset ref built and gated against | commit `c9f8902` (lead's run, 2026-10-11: `make check` 2875 passed; `make check TYPESET=1` 3129 passed; and on the Level 1 working tree, L1-GATE's builder, an agent, 2026-10-12, load 3.4 to 4.5: 2955 passed and 3211 passed) |
+| the ref in use | the full hash `c9f8902a67adf00a18426876d5983617b7d1408c`, in `imtypeset.ref` at advtext's root (one line; `tests/test_ci_workflow.py` holds it to a full hash and to the short hash in this table). imtypeset has no tag yet (H4). The Makefile does not read that file: a person passes the ref, and the CI workflow reads the file and passes it |
+| how it is built | Three ways, one recipe after the source is in hand (`python/host/build_bundle_library.sh`, and a snapshot of `python/imtypeset` beside the library). `make typeset-lib IMTYPESET_REF=<tag \| branch \| full hash>`: one commit fetched with `git fetch --depth 1` from `IMTYPESET_REPO` (default `https://github.com/WalterCReel3/imtypeset.git`) into a cache under `build/`, then `git archive`. `make typeset-lib IMTYPESET_COMMIT=<rev>`: `git archive` of that commit of the sibling checkout. `make typeset-lib`: the sibling's working tree. **The first has been run against a `file://` clone only (L1-PKG's builder, 2026-10-11, real compiler and gate, exit 0); nobody has run it against GitHub.** The pair the gates run against, `build/imtypeset-bundle`, was built the second way |
+| how it is found | `advtext/typesetter.py`, in this order: (1) `IMTYPESET_LIBRARY` (the shared library) with `IMTYPESET_PYTHON` (the package directory), the development override; (2) otherwise an installed `imtypeset` distribution, recognised by its metadata (`importlib.metadata.distribution("imtypeset")`), imported with no variable set; (3) otherwise not loaded, and `reason()` is `IMTYPESET_LIBRARY is not set`. `typesetter.pairing()` answers which route was taken, the library, the versions, the headers and what accepted the pair. Route 2 has met stand-ins only: there is no distribution yet (H3) |
 | headers | stand-in (upstream Dear ImGui's docking tag), accepted by the field probe |
-| interpreter | Python 3.11, `imgui-bundle` 1.92.900, Linux x86-64 only |
+| interpreter | Python 3.11, `imgui-bundle==1.92.900` exactly (`pyproject.toml`; it was a floor until 2026-10-11), Linux x86-64 only |
+| CI | `.github/workflows/ci.yml`: a plain job and a job that builds the pair from the ref in `imtypeset.ref`. **Never run**: written by a session that could not reach GitHub. Its fetch-and-build steps' own text was run here against `file://` clones (L1-CI's builder) |
 | public names used | `Document` and its table, column, mark, hit-test and geometry calls; `Paragraph`; `Block`, `Run`, `Cell`, `TableColumn`, `Columns`, `Mark`, `BlockStyle`, `Style`, `DocumentOptions`; the enums; `create_context` / `destroy_context` / `add_font` / `font_atlas_index` / `face_has_glyph`; `imtypeset.demo` |
 
 ## Requests of imtypeset
@@ -79,6 +81,88 @@ that answers it.
 | H4 | **Releases by tag, with a stated compatibility rule.** Name a version tag (not a bare commit) as the ref to build from; say what a version number promises about the Python names advtext uses (the list above), and keep the "API changes" log per tag. One number advtext can read at import (`imtypeset.version()` exists; say what in it changes when a name's meaning does). | advtext moved through six of your commits in two days by hand. Twice a library and a package from different commits met: once it failed loudly at import (good), and once every with-library test was red until a rebuild. |
 | H5 | **CI on GitHub** that builds the sidecar against the pinned `imgui-bundle` wheel(s) on each target platform, runs the binding tests, and publishes the artefacts of H3 for a tag. | Every preset has been run on one Linux machine by agents. Nothing has been built anywhere else. |
 | H6 | **What an update is.** For "automatic updates" of a packaged application: say what must be updated together (the application, advtext, imtypeset, `imgui-bundle`), and what the import gate does when only some of it was (the answer should be a sentence the application can show, never a crash). | The gate's refusal is an `ImportError` with a sentence today. Not tested: an update that replaces the wheel under a running or a packaged application. |
+
+#### Added to H2, H3 and H4 on 2026-10-12, from what advtext built
+
+The requests keep their numbers. Each quoted passage is by the advtext
+builder who built or measured the thing (an agent: L1-PKG the pairing, L1-CI
+the workflow), copied as written, with its own date. **None of it has run
+against GitHub**, and route 2 of the loader has met stand-in packages only.
+
+**Under H2.** L1-PKG's builder, from reading your script:
+
+> What a clean machine needs today to build the sidecar, beside imtypeset
+> itself (read from `build_bundle_library.sh` at `c9f8902`): a clone of
+> `pthom/imgui_bundle` holding the tag `v<wheel version>` (with its
+> `external/imgui/imgui` submodule at the pinned commit for fork headers),
+> and for stand-in headers a non-bare clone of `ocornut/imgui` holding
+> `v<Dear ImGui version>-docking`. advtext's `make typeset-lib
+> IMTYPESET_REF=<ref>` fetches imtypeset from GitHub and neither of these;
+> advtext's CI clones both itself until the script does.
+
+L1-CI's builder:
+
+> advtext's CI builds the sidecar with your `python/host/build_bundle_library.sh`
+> from a shallow, worktree-less fetch of two tags (pthom/imgui_bundle
+> `v<wheel version>`, ocornut/imgui `v<imgui version>-docking`); it works
+> because the script reads those two only through git objects. A change to what
+> the script reads from either neighbour (H2 will be one) needs saying in your
+> status file, because it breaks that step.
+
+**Under H3.** L1-PKG's builder:
+
+> **The contract advtext's loader assumes (2026-10-11; built and tested with
+> stand-ins only, `tests/test_typesetter_pairing.py`).** With
+> `IMTYPESET_LIBRARY` unset, `importlib.metadata.distribution("imtypeset")`
+> finds the installed distribution; `import imtypeset` then succeeds with no
+> environment variable, finding the library the distribution carries, or
+> raises `ImportError` with a sentence; and `imtypeset.host_info()` answers as
+> it does today (`library`, `imtypeset_version`, `imgui_version`, and
+> `bundle` with `headers`, `wheel_version`, `accepted_by`). advtext tells an
+> installed imtypeset from a source directory on the path by the metadata
+> alone, so a package without a `dist-info` is not found this way.
+> `IMTYPESET_LIBRARY`, when set, must keep winning inside the package: it is
+> the development override. Please declare `Requires-Dist: imgui-bundle==<the
+> one version the library was built for>`; advtext shows it as
+> `typesetter.pairing()["built_for"]`.
+
+And, from the same builder's "least sure of" and the Mac audit together (the
+lead's sentence): A frozen application (py2app, PyInstaller) drops a
+distribution's `dist-info` unless told to keep it, so advtext's metadata
+rule would not find an installed imtypeset there. Say how your
+distribution finds its own library, and advtext will recognise it by
+that instead of, or as well as, the metadata. (From reading; no freezer
+was run.)
+
+**Under H4.** L1-PKG's builder:
+
+> `make typeset-lib IMTYPESET_REF=<ref>` fetches one commit of
+> https://github.com/WalterCReel3/imtypeset.git with `git fetch --depth 1`;
+> the ref is a tag, a branch, or a full 40-character commit hash (an
+> abbreviated hash cannot be fetched). imtypeset has no tag yet, so the ref
+> advtext names is `c9f8902a67adf00a18426876d5983617b7d1408c`, which must be
+> reachable from a branch or tag on GitHub. Not run against GitHub by the
+> session that wrote it.
+
+L1-CI's builder:
+
+> The ref advtext builds from is the full hash in `imtypeset.ref` at advtext's
+> root; it must be reachable on GitHub. c9f8902 is an ancestor of your
+> `origin/main` as your local clone last saw it.
+
+Both builders noted, each from `git` in the sibling checkout and not from
+the remote: **imtypeset has no tags yet.** L1-PKG's builder also read its
+`main` as 2 commits ahead of `origin/main` at the time.
+
+#### H21, a new request (added 2026-10-12)
+
+State: **open**. L1-PKG's builder, from reading `_bundle.py`:
+
+> **Record the imgui-bundle version the library was linked against, in the
+> library.** `host_info()["bundle"]["wheel_version"]` is the wheel that is
+> running, not the one the library was built for (read in `_bundle.py`,
+> `check()`), so a refusal cannot say "built for X, running Y" and advtext's
+> `pairing()` can report "built for" only from a distribution's metadata.
 
 ### Carried over (first written 2026-10-11 in `.concerns/lead--for-imtypeset-team.md`, which your status file does not mention; that file is not tracked, this one is)
 
@@ -120,12 +204,37 @@ on: the tag `advtext-reference` (commit `32e3953`) stays reachable — it is on
 
 ## What advtext is doing meanwhile
 
-- Pinning `imgui-bundle` exactly, and loading imtypeset as an installed
-  distribution when there is one (the environment variables stay as the
-  development override).
-- `make typeset-lib` fetching imtypeset from GitHub at a named ref.
-- CI for advtext's two gates.
-- An audit of what in advtext is Linux-only.
+As of 2026-10-12. Built by advtext's agents, unattended; in advtext's working
+tree and **not yet committed or pushed** when this was written.
+
+Done:
+
+- `imgui-bundle==1.92.900`, exactly, in `pyproject.toml`; a test holds the
+  pin to `==` one version and the installed wheel to that version.
+- The loader's three routes and `typesetter.pairing()` ("how it is found",
+  above). The installed-distribution route is tested with two stand-ins, one
+  of them the pinned pair wrapped as a distribution; it has never met a real
+  one.
+- `make typeset-lib IMTYPESET_REF=<tag | branch | full hash>`, built and
+  gated once from a `file://` clone of the sibling.
+- `.github/workflows/ci.yml` for the two gates, `imtypeset.ref`, and a
+  switched-off placeholder for macOS. Written, and never run.
+- The audit of what in advtext assumes Linux: H15 to H20. From reading.
+- Both gates on that tree, against the pinned pair from `c9f8902`
+  (L1-GATE's builder, an agent, alone on the tree, 2026-10-12:
+  `make check` 2955 passed, 264 skipped, 4 xfailed, load 3.4 at the start
+  and 4.4 at the end; `make check TYPESET=1` 3211 passed, 8 skipped, 4
+  xfailed, load 4.5 and 4.5).
+
+Not done, by anyone:
+
+- **Nothing here has run against GitHub.** Not the fetch of imtypeset by tag,
+  branch or hash, not the fetch of the two neighbours' tags, not the
+  workflow. The session's sandbox reaches neither `github.com` nor an index.
+- **Nothing here has run on macOS.** No build, no import, no window.
+- `pip install` of advtext with the exact pin, on any machine.
+- imtypeset is not declared as a dependency of advtext: there is nothing to
+  name until H3 (an agent decision, the lead's).
 
 pptmstr's own adoption and the product's packaging are in pptmstr's
 repository, which neither session writes.

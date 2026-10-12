@@ -1,0 +1,222 @@
+# advtext's two gates, on GitHub's runners.
+#
+#   plain     `make check` with no imtypeset anywhere: lint, types, and the
+#             suite with its with-library tests skipping.
+#   typeset   the same after building the library pair from imtypeset at the
+#             ref in imtypeset.ref: `make check TYPESET=1`.
+#
+# WRITTEN WITHOUT BEING RUN. The session that wrote this file could not reach
+# GitHub. What was run instead, and what was not, is listed in
+# tests/test_ci_workflow.py's module docstring; a first run that goes red is
+# the expected way to find out which of those assumptions was wrong.
+#
+# Every `run:` below is a command a person can paste into a shell at the top
+# of a checkout: none contains a workflow expression. A value that comes from
+# another step arrives as an environment variable named in that step's `env:`.
+# tests/test_ci_workflow.py holds the file to that, to the make targets and
+# variables it names, and to a small subset of YAML (block style only, whole
+# line comments only), because the project's virtualenv has no YAML parser.
+#
+# THE DISPLAY. The tests that open a real window do it two ways:
+#
+#   the `window` fixture (tests/conftest.py)  runs on DISPLAY when it accepts
+#       a connection. `xvfb-run` provides that, and needs no privilege.
+#   two files (tests/test_mouse_probe.py, tests/test_example_stream.py)  start
+#       their own Xvfb inside a user namespace (`unshare -rm`) whatever
+#       DISPLAY is, and SKIP when a namespace cannot be made.
+#
+# So both are arranged, and the second is checked before the gate rather than
+# left to a skip nobody reads: Ubuntu 24.04 restricts unprivileged user
+# namespaces through AppArmor, and the step "User namespaces" lifts that one
+# setting with sudo only when `unshare -rm true` fails without it.
+#
+# SOFTWARE GL. No GPU on a runner: Mesa's llvmpipe, selected by the two
+# variables under `env:` (the same two scripts/mouse_probe.py::xvfb_command
+# sets). The package list is in each job's "System packages" step and is named
+# from what the imgui-bundle wheel links (libX11, libXext, libxcb) and what its
+# GLFW loads by name at run time (libGLX/libGL, libXrandr, libXinerama,
+# libXcursor, libXi, libXrender).
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "experimental/**"
+  pull_request:
+    branches:
+      - main
+      - "experimental/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "ci-${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+env:
+  LIBGL_ALWAYS_SOFTWARE: "1"
+  GALLIUM_DRIVER: llvmpipe
+  PYTEST_ADDOPTS: "-rs"
+
+jobs:
+  plain:
+    name: "make check (no imtypeset)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: "Check out advtext"
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: "System packages (a display, software GL, what the wheel loads)"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            make git xvfb xauth util-linux \
+            libgl1 libglx0 libglx-mesa0 libgl1-mesa-dri \
+            libx11-6 libxext6 libxcb1 libxrandr2 libxinerama1 libxcursor1 libxi6 libxrender1
+
+      - name: "User namespaces (for the tests that start their own Xvfb)"
+        run: |
+          unshare -rm true || sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          unshare -rm true
+
+      - name: "make bootstrap"
+        run: make bootstrap
+
+      - name: "No imtypeset anywhere"
+        run: |
+          test ! -e ../imtypeset
+          test -z "${IMTYPESET_LIBRARY:-}"
+          test -z "${IMTYPESET_PYTHON:-}"
+          test ! -e build/imtypeset-bundle
+          .venv/bin/python -P -c 'import importlib.util, sys; sys.exit("an imtypeset distribution is installed" if importlib.util.find_spec("imtypeset") else 0)'
+
+      - name: "A display answers under xvfb-run"
+        run: |
+          xvfb-run -a -s "-screen 0 1400x1000x24" .venv/bin/python -P -c 'import os, sys; sys.path.insert(0, "tests"); import conftest; sys.exit(0 if conftest.display_is_reachable(os.environ["DISPLAY"]) else "DISPLAY=%s accepts no connection" % os.environ["DISPLAY"])'
+
+      - name: "make check"
+        run: xvfb-run -a -s "-screen 0 1400x1000x24" make check
+
+  typeset:
+    name: "make check TYPESET=1 (with the imtypeset pair)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: "Check out advtext"
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: "System packages (a display, software GL, what the wheel loads, a compiler)"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            make git xvfb xauth util-linux g++ \
+            libgl1 libglx0 libglx-mesa0 libgl1-mesa-dri \
+            libx11-6 libxext6 libxcb1 libxrandr2 libxinerama1 libxcursor1 libxi6 libxrender1
+
+      - name: "User namespaces (for the tests that start their own Xvfb)"
+        run: |
+          unshare -rm true || sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          unshare -rm true
+
+      - name: "make bootstrap"
+        run: make bootstrap
+
+      - name: "What the pair is: the imtypeset ref, and the wheel it is linked against"
+        id: pair
+        run: |
+          ref="$(sed -n '/^[^#[:space:]]/{p;q;}' imtypeset.ref)"
+          wheel="$(.venv/bin/python -P -c 'import imgui_bundle; print(imgui_bundle.__version__)')"
+          imgui="$(.venv/bin/python -P -c 'from imgui_bundle import imgui; print(imgui.get_version())')"
+          test -n "$ref" && test -n "$wheel" && test -n "$imgui"
+          echo "imtypeset $ref; imgui_bundle $wheel; Dear ImGui $imgui"
+          { echo "ref=$ref"; echo "wheel=$wheel"; echo "imgui=$imgui"; } >> "${GITHUB_OUTPUT:-/dev/null}"
+
+      - name: "The built pair, from the cache when this ref was already built for this wheel"
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/imtypeset-bundle
+          key: "imtypeset-pair-${{ runner.os }}-${{ runner.arch }}-py3.11-${{ steps.pair.outputs.ref }}-bundle-${{ steps.pair.outputs.wheel }}-${{ hashFiles('.venv/lib/python3.11/site-packages/imgui_bundle/_imgui_bundle*.so') }}-${{ hashFiles('Makefile') }}"
+
+      - name: "Fetch what the build script reads beside imtypeset (one commit each, no worktree)"
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          IMGUI_BUNDLE_REPO: https://github.com/pthom/imgui_bundle
+          IMGUI_REPO: https://github.com/ocornut/imgui
+          WHEEL_VERSION: "${{ steps.pair.outputs.wheel }}"
+          IMGUI_VERSION: "${{ steps.pair.outputs.imgui }}"
+          CI_DEPS: build/ci-deps
+        run: |
+          rm -rf "$CI_DEPS"
+          mkdir -p "$CI_DEPS"
+          git init -q "$CI_DEPS/imgui_bundle"
+          git -C "$CI_DEPS/imgui_bundle" fetch -q --depth 1 --no-tags "$IMGUI_BUNDLE_REPO" "refs/tags/v$WHEEL_VERSION:refs/tags/v$WHEEL_VERSION"
+          git -C "$CI_DEPS/imgui_bundle" ls-tree "v$WHEEL_VERSION" external/imgui/imgui imgui_bundle_cmake/imgui_bundle_config.h
+          git init -q "$CI_DEPS/imgui"
+          git -C "$CI_DEPS/imgui" fetch -q --depth 1 --no-tags "$IMGUI_REPO" "refs/tags/v$IMGUI_VERSION-docking:refs/tags/v$IMGUI_VERSION-docking"
+          git -C "$CI_DEPS/imgui" ls-tree "v$IMGUI_VERSION-docking" imgui.h imconfig.h
+
+      - name: "make typeset-lib (imtypeset from GitHub at the ref)"
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          PAIR_REF: "${{ steps.pair.outputs.ref }}"
+          CI_DEPS: build/ci-deps
+        run: |
+          make typeset-lib IMTYPESET_REF="$PAIR_REF" \
+            IMGUI_BUNDLE_CHECKOUT="$PWD/$CI_DEPS/imgui_bundle" \
+            IMTYPESET_IMGUI_CLONE="$PWD/$CI_DEPS/imgui"
+
+      - name: "Cache the pair now, so that a red gate does not cost the next run a rebuild"
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/imtypeset-bundle
+          key: "${{ steps.cache.outputs.cache-primary-key }}"
+
+      - name: "Which pair the gate runs against (built now or restored: it must be of this ref)"
+        env:
+          PAIR_REF: "${{ steps.pair.outputs.ref }}"
+        run: |
+          cat build/imtypeset-bundle/BUILT-FROM
+          grep -qx "ref: $PAIR_REF" build/imtypeset-bundle/BUILT-FROM
+          test -f build/imtypeset-bundle/libimtypeset_bundle.so
+          test -f build/imtypeset-bundle/pysnap/imtypeset/__init__.py
+
+      - name: "One window before the gate (red here: no GL context, or the library does not draw)"
+        run: |
+          mkdir -p artifacts
+          xvfb-run -a -s "-screen 0 1400x1000x24" make shot TYPESET=1 ARGS="--out artifacts/ci-document.png"
+          test -s artifacts/ci-document.png
+
+      - name: "make check TYPESET=1"
+        run: xvfb-run -a -s "-screen 0 1400x1000x24" make check TYPESET=1
+
+      - name: "Keep the photograph"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-document
+          path: artifacts/ci-document.png
+          if-no-files-found: ignore

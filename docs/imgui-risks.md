@@ -56,6 +56,13 @@ Three risks that session added, in working order:
   `AttributeError` on the first `draw`. **Where to look:**
   `advtext.backends.imgui_draw.draw`, `scripts/pen_rules.py`, and the floor
   test in `tests/test_makefile_env.py`, which goes red first.
+  *Note of 2026-10-12, by an agent, on the branch
+  `experimental/imtypeset-adoption`:* the sentence above is left as it was
+  written and is no longer true there. The dependency is the exact pin
+  `imgui-bundle==1.92.900`, not a floor; the backend that set the flag,
+  `scripts/pen_rules.py` and the floor test are deleted, and nothing under
+  `advtext/` names the flag (L1-PKG's builder's grep). The test in that file
+  now holds the pin. `docs/status.md` section 0e.
 - **`BareView` leans on two ImGui behaviours nothing documents.** It submits an
   `invisible_button` only from the frame a press lands, and needs ImGui to make
   a button first submitted on that frame the active item; and it asks

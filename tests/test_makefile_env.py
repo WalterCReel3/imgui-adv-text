@@ -10,8 +10,8 @@ Three claims, each of which was false or unchecked before the adoption work
     on advtext, which it cannot do while advtext's build depends on it.
 2.  Without `./.venv` a target fails, quickly, with a line that names `make
     bootstrap` -- rather than with `make: .venv/bin/python: No such file`.
-3.  `pyproject.toml`'s imgui-bundle floor is a version that has the draw-list
-    flag the backend sets, and the installed bundle satisfies it.
+3.  `pyproject.toml` pins imgui-bundle to exactly one version, and it is the
+    installed one.
 
 The `make` runs are real runs of the real `Makefile` with `VENV` pointed at a
 directory that does not exist, which is the only way to reach the no-venv
@@ -48,6 +48,10 @@ _INHERITED = (
     "TYPESET",
     "IMTYPESET_LIBRARY",
     "IMTYPESET_PYTHON",
+    "IMTYPESET_COMMIT",
+    "IMTYPESET_REF",
+    "IMTYPESET_REPO",
+    "IMTYPESET_CACHE",
 )
 
 
@@ -626,6 +630,252 @@ def test_a_commit_that_cannot_be_taken_stops_before_anything_is_touched(
     assert not Path(f"{bundle}.building").exists()
 
 
+# ---------------------------------------------------------------------------
+# From a repository by URL, at a named ref (IMTYPESET_REF)
+#
+# The default IMTYPESET_REPO is GitHub, which the sessions that wrote this
+# cannot reach, so every test here hands the recipe a `file://` URL of a
+# repository it has just made. What that does and does not show about the real
+# remote is listed in `.concerns/L1-PKG--builder--result.md`.
+# ---------------------------------------------------------------------------
+
+
+def _a_remote(tmp_path: Path) -> tuple[Path, str, str]:
+    """
+    A repository to fetch from: two commits that build differently, the first
+    tagged twice (`named`, and `annotated` with a tag object), and a working
+    tree that has moved on to something that builds nothing.
+    """
+    remote = _a_checkout(tmp_path, _BUILD_OK, "COMMITTED = 1\n")
+    (remote / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    first = _commit_all(remote, "the commit to build from")
+    _git(remote, "tag", "named")
+    _git(remote, "tag", "-a", "-m", "a release", "annotated")
+    script = remote / "python" / "host" / "build_bundle_library.sh"
+    package = remote / "python" / "imtypeset" / "__init__.py"
+    package.write_text("COMMITTED = 2\n", encoding="utf-8")
+    script.write_text(_BUILD_OK.replace("echo new", "echo second"), encoding="utf-8")
+    second = _commit_all(remote, "a later commit")
+    package.write_text("raise ImportError('the working tree was read')\n", encoding="utf-8")
+    script.write_text("exit 1\n", encoding="utf-8")
+    return remote, first, second
+
+
+def _fetch_and_build(
+    tmp_path: Path, url: str, ref: str, *more: str
+) -> subprocess.CompletedProcess[str]:
+    """
+    `make typeset-lib IMTYPESET_REF=...` with no checkout of imtypeset to fall back on.
+    """
+    import sys
+
+    return _make(
+        "typeset-lib",
+        f"PY={sys.executable}",
+        f"IMTYPESET_ROOT={tmp_path / 'no-sibling-checkout'}",
+        f"IMTYPESET_BUNDLE={tmp_path / 'bundle'}",
+        f"IMTYPESET_CACHE={tmp_path / 'cache'}",
+        f"IMTYPESET_REPO={url}",
+        f"IMTYPESET_REF={ref}",
+        *more,
+    )
+
+
+@needs_make
+def test_without_a_ref_the_build_fetches_nothing_and_names_no_repository(tmp_path: Path) -> None:
+    """
+    `IMTYPESET_REPO` has a default, and a default must not be an opt-in: with
+    no ref the recipe is the sibling checkout's, as it was.
+    """
+    checkout = _a_checkout(tmp_path, _BUILD_OK)
+    for more in ((), ("IMTYPESET_COMMIT=HEAD",), ("IMTYPESET_REF=",)):
+        result = _make("-n", "typeset-lib", "PY=echo", f"IMTYPESET_ROOT={checkout}", *more)
+        assert result.returncode == 0, result.stderr
+        for word in ("fetch", "github.com", "imtypeset-cache", "refs/typeset-lib"):
+            assert word not in result.stdout, (more, word)
+    assert _make("-n", "typeset-lib", "PY=echo", f"IMTYPESET_ROOT={checkout}").stdout == (
+        _make("-n", "typeset-lib", "PY=echo", f"IMTYPESET_ROOT={checkout}", "IMTYPESET_REF=").stdout
+    )
+
+
+@needs_make
+def test_the_default_repository_is_imtypeset_on_github() -> None:
+    """
+    Read, not run: nothing here reaches GitHub. What is held is the URL the
+    fetch would be given and that it cannot stop at a prompt.
+    """
+    result = _make("-n", "typeset-lib", "PY=echo", "IMTYPESET_REF=v0.0.0")
+    assert result.returncode == 0, result.stderr
+    fetch = [line for line in result.stdout.splitlines() if " fetch " in line]
+    assert len(fetch) == 1, result.stdout
+    assert fetch[0].startswith("GIT_TERMINAL_PROMPT=0 git --git-dir="), fetch[0]
+    asked = '"https://github.com/WalterCReel3/imtypeset.git" "v0.0.0"'
+    command = fetch[0].split(" || ")[0]
+    assert command.endswith(f" fetch --quiet --depth 1 --no-tags {asked}"), fetch[0]
+    assert f'--git-dir="{_ROOT}/build/imtypeset-cache"' in fetch[0]
+
+
+@needs_make
+@needs_git
+@pytest.mark.parametrize("ref", ["named", "annotated", "hash", "main"])
+def test_typeset_lib_fetches_a_ref_from_a_url_and_builds_that_commit(
+    ref: str, tmp_path: Path
+) -> None:
+    """
+    A tag, a tag object, a full hash and a branch, each resolved to the hash
+    that BUILT-FROM then names; the remote's working tree is not what is
+    built, the remote is not written to, and no sibling checkout is read.
+    """
+    remote, first, second = _a_remote(tmp_path)
+    if ref == "main":
+        _git(remote, "branch", "-M", "main")
+    before = _tree(remote)
+    url = f"file://{remote}"
+    given = first if ref == "hash" else ref
+    expected = second if ref == "main" else first
+
+    result = _fetch_and_build(tmp_path, url, given)
+    assert result.returncode == 0, result.stderr
+    assert _tree(remote) == before, "the build wrote in the repository it fetched from"
+    bundle = tmp_path / "bundle"
+    built = "second\n" if ref == "main" else "new\n"
+    assert (bundle / "libimtypeset_bundle.so").read_text(encoding="utf-8") == built
+    snapshot = (bundle / "pysnap" / "imtypeset" / "__init__.py").read_text(encoding="utf-8")
+    assert snapshot == ("COMMITTED = 2\n" if ref == "main" else "COMMITTED = 1\n")
+    built_from = (bundle / "BUILT-FROM").read_text(encoding="utf-8")
+    assert _field(built_from, "imtypeset") == url
+    assert _field(built_from, "ref") == given
+    assert _field(built_from, "commit") == expected, "the full hash the ref resolved to"
+    assert _field(built_from, "uncommitted paths") == "0 (an archive of a commit)"
+    assert _field(built_from, "by") == f"make typeset-lib IMTYPESET_REF={given}"
+    assert _field(built_from, "library cksum")
+    assert built_from in result.stdout
+    extract = bundle / "src"
+    assert (extract / "python" / "imtypeset" / "__init__.py").read_text() == snapshot
+    assert not (extract / ".git").exists() and not Path(f"{extract}.tar").exists()
+    assert not (tmp_path / "no-sibling-checkout").exists()
+    cache = tmp_path / "cache"
+    assert (cache / "HEAD").is_file(), "the cache is a bare repository"
+    kept = _git(cache, "for-each-ref", "--format=%(objectname)", "refs/typeset-lib").split()
+    assert kept == [expected], "the cache does not keep what was asked for under a ref of its own"
+
+
+@needs_make
+@needs_git
+def test_a_second_ref_is_fetched_into_the_same_cache_and_replaces_the_pair(tmp_path: Path) -> None:
+    remote, first, second = _a_remote(tmp_path)
+    url = f"file://{remote}"
+    assert _fetch_and_build(tmp_path, url, "named").returncode == 0
+    result = _fetch_and_build(tmp_path, url, second)
+    assert result.returncode == 0, result.stderr
+    bundle = tmp_path / "bundle"
+    assert (bundle / "libimtypeset_bundle.so").read_text(encoding="utf-8") == "second\n"
+    assert _field((bundle / "BUILT-FROM").read_text(encoding="utf-8"), "commit") == second
+    # ... and back, from what the cache already holds plus one more fetch.
+    result = _fetch_and_build(tmp_path, url, "named")
+    assert result.returncode == 0, result.stderr
+    assert _field((bundle / "BUILT-FROM").read_text(encoding="utf-8"), "commit") == first
+
+
+@needs_make
+@needs_git
+def test_with_a_ref_the_neighbours_are_looked_for_beside_this_repository(tmp_path: Path) -> None:
+    """
+    With a sibling imtypeset the Dear ImGui Bundle checkout and the Dear ImGui
+    clone are looked for beside IT. A machine that fetches imtypeset has no
+    such sibling, and a path through a directory that does not exist resolves
+    to nothing; so both are looked for beside this repository, or where the
+    caller says.
+    """
+    build = (
+        _BUILD_OK + 'echo "$1|$IMTYPESET_IMGUI_CLONE" > "$IMTYPESET_BUNDLE_OUT/obj/neighbours"\n'
+    )
+    remote = _a_checkout(tmp_path, build)
+    _commit_all(remote, "a repository")
+    _git(remote, "tag", "named")
+    url = f"file://{remote}"
+    result = _fetch_and_build(tmp_path, url, "named")
+    assert result.returncode == 0, result.stderr
+    neighbours = tmp_path / "bundle" / "obj" / "neighbours"
+    beside = _ROOT.parent
+    assert neighbours.read_text(encoding="utf-8").strip() == f"{beside}/imgui_bundle|{beside}/imgui"
+    result = _fetch_and_build(
+        tmp_path, url, "named", "IMGUI_BUNDLE_CHECKOUT=/a/bundle", "IMTYPESET_IMGUI_CLONE=/a/clone"
+    )
+    assert result.returncode == 0, result.stderr
+    assert neighbours.read_text(encoding="utf-8").strip() == "/a/bundle|/a/clone"
+
+
+@needs_make
+@needs_git
+@pytest.mark.parametrize(
+    "what",
+    [
+        "no such ref",
+        "an abbreviated hash",
+        "no repository there",
+        "a ref that is no commit",
+        "a commit as well",
+        "no build script",
+    ],
+)
+def test_a_ref_that_cannot_be_fetched_stops_before_anything_is_touched(
+    what: str, tmp_path: Path
+) -> None:
+    """
+    No repository at the URL is what no network looks like from here: the
+    fetch fails. In every case the installed pair is byte for byte what it
+    was, nothing is left staged, and the line says which variable to change.
+
+    The pair that is installed was itself fetched, so the cache already holds
+    a commit when the fetch fails: what was fetched LAST time must not be
+    what gets built this time.
+    """
+    remote, first, second = _a_remote(tmp_path)
+    url, ref, more = f"file://{remote}", "named", ()
+    if what == "no such ref":
+        ref = "v9.9.9"
+    elif what == "an abbreviated hash":
+        ref = first[:10]
+    elif what == "no repository there":
+        url = f"file://{tmp_path / 'nowhere'}"
+    elif what == "a ref that is no commit":
+        blob = _git(remote, "rev-parse", "named:python/imtypeset/_capi.py")
+        _git(remote, "tag", "a-file", blob)
+        ref = "a-file"
+    elif what == "a commit as well":
+        more = ("IMTYPESET_COMMIT=HEAD",)
+    else:
+        bare = tmp_path / "elsewhere"
+        bare.mkdir()
+        (bare / "README").write_text("not imtypeset\n", encoding="utf-8")
+        _commit_all(bare, "another project")
+        _git(bare, "tag", "named")
+        url = f"file://{bare}"
+    if what == "a commit as well":
+        bundle = _an_installed_pair(tmp_path)
+    else:
+        bundle = tmp_path / "bundle"
+        assert _fetch_and_build(tmp_path, f"file://{remote}", second).returncode == 0
+    before = _tree(bundle)
+    result = _fetch_and_build(tmp_path, url, ref, *more)
+    assert result.returncode != 0, result.stdout
+    assert ref in result.stderr and url in result.stderr, result.stderr
+    if what in ("no such ref", "an abbreviated hash", "no repository there"):
+        assert "could not be fetched" in result.stderr and "IMTYPESET_COMMIT" in result.stderr
+        assert "untouched" in result.stderr
+    elif what == "a ref that is no commit":
+        assert "is not a commit" in result.stderr, result.stderr
+    elif what == "a commit as well":
+        assert "name two sources" in result.stderr, result.stderr
+        assert not (tmp_path / "cache").exists(), "it fetched before refusing"
+    else:
+        assert "has no python/host/build_bundle_library.sh" in result.stderr, result.stderr
+    assert _tree(bundle) == before
+    if what != "no build script":
+        assert not Path(f"{bundle}.building").exists()
+
+
 @needs_make
 @pytest.mark.parametrize("given", ["{}/", "{}//", "build/../{}/"], ids=["slash", "two", "dots"])
 def test_a_bundle_directory_given_with_a_trailing_slash_is_the_same_directory(
@@ -782,38 +1032,52 @@ def test_a_pair_the_check_cannot_judge_is_not_called_stale(case: str, tmp_path: 
     assert result.stdout.splitlines()[-1] == f"suite: {bundle}/libimtypeset_bundle.so {package}"
 
 
-def _floor() -> tuple[int, ...]:
+def _pin() -> str:
     text = _PYPROJECT.read_text(encoding="utf-8")
-    found = re.search(r'^\s*"imgui-bundle>=([0-9.]+)"', text, re.MULTILINE)
-    assert found, "pyproject.toml no longer states an imgui-bundle floor this test can read"
-    return tuple(int(part) for part in found.group(1).split("."))
+    found = re.findall(r'^\s*"imgui-bundle\s*([^"]*)"', text, re.MULTILINE)
+    assert len(found) == 1, f"pyproject.toml names imgui-bundle {len(found)} times"
+    exact = re.fullmatch(r"==\s*([0-9]+(?:\.[0-9]+)*)", found[0])
+    assert exact, (
+        f"pyproject.toml asks for imgui-bundle{found[0]}: it must be `==` one version. "
+        "The imtypeset library is linked against one wheel binary and refuses any other "
+        "at import, so a range here promises what the pairing cannot keep."
+    )
+    return exact.group(1)
 
 
-def test_the_imgui_floor_is_a_release_that_has_the_flag_the_backend_sets() -> None:
+def test_imgui_bundle_is_pinned_to_exactly_the_version_that_is_installed() -> None:
     """
     What this measures and what it does not.
 
-    Measured: the installed imgui-bundle has `ImDrawListFlags_.text_no_pixel_snap`
-    and is at or above the declared floor. Not measured: that the release
-    *below* the floor lacks it -- that half comes from the two changelogs and is
-    written up beside the floor in `pyproject.toml`. So a floor set too high
-    passes here; a floor set below 1.92.900 fails on the last assertion, which
-    is the changelog finding written down as a number so that lowering it is a
-    deliberate act.
+    Measured: the pin is one exact version (no range, no wildcard) and the
+    installed imgui-bundle IS that version. The pin replaced a floor
+    (`>=1.92.900`) on 2026-10-11, and the reason is the sidecar: a library
+    built by `make typeset-lib` is for the wheel it was linked against.
+    Bumping the pin is therefore three acts, and this test is red until the
+    first two are done: change the pin, install it (`make bootstrap`), and
+    then rebuild the library and run `make check TYPESET=1`, which nothing
+    here can check for you.
 
-    It also goes red on the first imgui-bundle that renames the flag, which
-    upstream is discussing for 1.93. That is the intended alarm: the fix then is
-    in `advtext/backends/imgui_draw.py`, not here.
+    Not measured: that an environment holding ANOTHER version is corrected
+    by `pip install -e .[dev]`. By pip's rules it is -- an installed version
+    that does not satisfy `==` is replaced -- but no index is reachable where
+    this was written.
+
+    Until that date this test also held the floor to a release that has
+    `ImDrawListFlags_.text_no_pixel_snap`, the flag advtext's own draw
+    backend set. That backend was deleted in tranche 5 and nothing in advtext
+    names the flag now, so it is no longer asserted; the pin is still not
+    allowed below 1.92.900, the release every measurement was taken on.
     """
-    imgui = pytest.importorskip("imgui_bundle").imgui
-    assert hasattr(imgui.ImDrawListFlags_, "text_no_pixel_snap"), (
-        "the installed imgui-bundle has no ImDrawListFlags_.text_no_pixel_snap; "
-        "advtext.backends.imgui_draw.draw would raise on its first call"
-    )
-    floor = _floor()
-    installed = tuple(int(part) for part in metadata.version("imgui-bundle").split(".")[:3])
-    assert installed >= floor, f"installed imgui-bundle {installed} is below the floor {floor}"
-    assert floor >= (1, 92, 900), (
-        f"the floor {floor} is below 1.92.900, the first release on Dear ImGui 1.92.9, "
-        "which is where the flag was added"
+    pin = _pin()
+    assert tuple(int(part) for part in pin.split(".")) >= (
+        1,
+        92,
+        900,
+    ), f"the pin {pin} is below 1.92.900, the release every measurement here was taken on"
+    pytest.importorskip("imgui_bundle")
+    installed = metadata.version("imgui-bundle")
+    assert installed == pin, (
+        f"imgui-bundle {installed} is installed and pyproject.toml pins {pin}: "
+        "run `make bootstrap`, then `make typeset-lib` for the new wheel"
     )

@@ -66,6 +66,10 @@ SRC := advtext tests $(wildcard scripts) $(wildcard examples)
 #   make typeset-lib IMTYPESET_COMMIT=<rev>
 #                                 the same from that commit of IMTYPESET_ROOT,
 #                                 whatever its working tree holds (see below)
+#   make typeset-lib IMTYPESET_REF=<tag or full commit hash>
+#                                 the same from IMTYPESET_REPO (GitHub) at that
+#                                 ref, with no sibling checkout of imtypeset
+#                                 (see below; needs network)
 #   make test TYPESET=1           the suite with it (the tests that need it run
 #                                 instead of skipping); likewise check, run,
 #                                 shot, shot-all
@@ -160,7 +164,49 @@ endif
 # IMTYPESET_ROOT's WORKING TREE and writes only under IMTYPESET_BUNDLE; it ends
 # by running the import gate and fails if the gate refuses. Its first argument
 # is a Dear ImGui Bundle checkout and its second the interpreter.
-IMGUI_BUNDLE_CHECKOUT ?= $(abspath $(IMTYPESET_ROOT))/../imgui_bundle
+#
+# From GitHub at a named ref rather than from a checkout beside this one:
+#
+#   make typeset-lib IMTYPESET_REF=v0.1.0
+#   make typeset-lib IMTYPESET_REF=c9f8902a67adf00a18426876d5983617b7d1408c
+#
+# Both projects are public (HANDOFF-imtypeset.md, rule 4: "builds refer to
+# GitHub, by tag"). IMTYPESET_REF is a tag, a branch, or a FULL 40-character
+# commit hash -- the remote resolves it, and no remote resolves an abbreviated
+# hash. That one commit is fetched (`git fetch --depth 1`) from IMTYPESET_REPO
+# into IMTYPESET_CACHE, a bare repository under build/ that is this target's
+# own, and from there on the build is IMTYPESET_COMMIT's: `git archive` of the
+# resolved hash into the staging directory, script, sources and package
+# snapshot from that extract. BUILT-FROM names the URL, the ref as it was
+# given, and the full hash it resolved to (a tag or a branch can move; the hash
+# is what was built). IMTYPESET_ROOT is not read at all.
+#
+# The fetch is the first thing the recipe does. No network, a ref the remote
+# does not have, or a ref that is not a commit stops there, with a line saying
+# what to do, before the staging directory or the installed pair is touched.
+# GIT_TERMINAL_PROMPT=0 because GitHub answers a repository it does not know
+# by asking for a user name, and a build that waits at a prompt is a hang.
+#
+# IMTYPESET_REPO can be any URL git fetches from; tests/test_makefile_env.py
+# uses file:// ones. IMTYPESET_REF and IMTYPESET_COMMIT together are refused:
+# they name two sources.
+#
+# What the build script reads beside imtypeset is NOT fetched here: a Dear
+# ImGui Bundle checkout (IMGUI_BUNDLE_CHECKOUT) and, for stand-in headers, a
+# Dear ImGui clone (IMTYPESET_IMGUI_CLONE). With a sibling imtypeset both are
+# looked for beside IT, as before; with IMTYPESET_REF there is no sibling, and
+# both are looked for beside THIS repository (../imgui_bundle, ../imgui).
+IMTYPESET_REPO  ?= https://github.com/WalterCReel3/imtypeset.git
+IMTYPESET_REF   ?=
+IMTYPESET_CACHE ?= $(CURDIR)/build/imtypeset-cache
+typeset_beside  := $(if $(strip $(IMTYPESET_REF)),$(abspath $(CURDIR)/..),$(abspath $(IMTYPESET_ROOT))/..)
+ifneq ($(strip $(IMTYPESET_REF)),)
+  # Where the fetched commit is kept between the recipe's first step and the
+  # one that archives it: a ref of the cache named by what was asked for, so
+  # two builds sharing a cache do not read one another's FETCH_HEAD.
+  typeset_fetched := refs/typeset-lib/$(shell printf '%s' '$(IMTYPESET_REPO) $(IMTYPESET_REF)' | cksum | tr ' ' '-')
+endif
+IMGUI_BUNDLE_CHECKOUT ?= $(typeset_beside)/imgui_bundle
 
 # From a commit rather than from whatever the working tree holds:
 #
@@ -181,7 +227,7 @@ IMGUI_BUNDLE_CHECKOUT ?= $(abspath $(IMTYPESET_ROOT))/../imgui_bundle
 # a Dear ImGui clone) beside its own checkout, and the extract has neither, so
 # both are named from IMTYPESET_ROOT.
 IMTYPESET_COMMIT      ?=
-IMTYPESET_IMGUI_CLONE ?= $(abspath $(IMTYPESET_ROOT))/../imgui
+IMTYPESET_IMGUI_CLONE ?= $(typeset_beside)/imgui
 
 # The library and the Python package that calls it are a PAIR. The package is
 # ctypes declarations of the library's exports, both come from one working
@@ -196,7 +242,9 @@ IMTYPESET_IMGUI_CLONE ?= $(abspath $(IMTYPESET_ROOT))/../imgui
 #   BUILT-FROM               the checkout, its HEAD (or IMTYPESET_COMMIT), how
 #                            many paths were uncommitted, when, and the
 #                            library's checksum (what the stale-pair check
-#                            above reads)
+#                            above reads). With IMTYPESET_REF: the URL in
+#                            place of the checkout, a `ref:` line, and the
+#                            hash the ref resolved to
 #
 # BUILT-FROM's git lines are about IMTYPESET_ROOT's OWN repository. A directory
 # that is not the top of one -- an extract lying inside this repository, say --
@@ -219,10 +267,21 @@ IMTYPESET_IMGUI_CLONE ?= $(abspath $(IMTYPESET_ROOT))/../imgui
 # writes its own.
 IMTYPESET_STAGE   := $(IMTYPESET_BUNDLE).building
 IMTYPESET_EXTRACT := $(IMTYPESET_STAGE)/src
-IMTYPESET_SOURCE  := $(if $(strip $(IMTYPESET_COMMIT)),$(IMTYPESET_EXTRACT),$(IMTYPESET_ROOT))
+IMTYPESET_SOURCE  := $(if $(strip $(IMTYPESET_COMMIT)$(IMTYPESET_REF)),$(IMTYPESET_EXTRACT),$(IMTYPESET_ROOT))
 
-typeset-lib: | $(NEED_VENV)  ## build the imtypeset library and its package snapshot into build/imtypeset-bundle (needed to draw; IMTYPESET_COMMIT=<rev> builds that commit)
-ifeq ($(strip $(IMTYPESET_COMMIT)),)
+typeset-lib: | $(NEED_VENV)  ## build the imtypeset library and its package snapshot into build/imtypeset-bundle (needed to draw; IMTYPESET_COMMIT=<rev> builds that commit, IMTYPESET_REF=<tag> fetches it from GitHub)
+ifneq ($(strip $(IMTYPESET_REF)),)
+ifneq ($(strip $(IMTYPESET_COMMIT)),)
+	@echo "IMTYPESET_REF=$(IMTYPESET_REF) and IMTYPESET_COMMIT=$(IMTYPESET_COMMIT) name two sources. Give one: IMTYPESET_REF fetches from $(IMTYPESET_REPO), IMTYPESET_COMMIT reads the checkout at $(IMTYPESET_ROOT)." >&2; exit 2
+endif
+	@[ -d "$(IMTYPESET_CACHE)" ] || git init --quiet --bare "$(IMTYPESET_CACHE)" || { \
+	  echo "IMTYPESET_REF=$(IMTYPESET_REF) needs git and a cache it can write: IMTYPESET_CACHE=$(IMTYPESET_CACHE) could not be made." >&2; exit 2; }
+	@GIT_TERMINAL_PROMPT=0 git --git-dir="$(IMTYPESET_CACHE)" fetch --quiet --depth 1 --no-tags "$(IMTYPESET_REPO)" "$(IMTYPESET_REF)" || { \
+	  echo "IMTYPESET_REF=$(IMTYPESET_REF) could not be fetched from $(IMTYPESET_REPO): no network, or the repository has no such tag, branch or FULL commit hash (an abbreviated hash is not fetchable). Nothing was built and the installed pair is untouched. With a checkout of imtypeset on this machine, 'make typeset-lib IMTYPESET_COMMIT=<rev>' (IMTYPESET_ROOT=$(IMTYPESET_ROOT)) builds without network; IMTYPESET_REPO=... names another repository." >&2; exit 2; }
+	@commit=$$(git --git-dir="$(IMTYPESET_CACHE)" rev-parse --verify --quiet "FETCH_HEAD^{commit}") \
+	  && git --git-dir="$(IMTYPESET_CACHE)" update-ref "$(typeset_fetched)" "$$commit" || { \
+	  echo "IMTYPESET_REF=$(IMTYPESET_REF) of $(IMTYPESET_REPO) was fetched and is not a commit (or a tag of one)." >&2; exit 2; }
+else ifeq ($(strip $(IMTYPESET_COMMIT)),)
 	@test -f "$(IMTYPESET_ROOT)/python/host/build_bundle_library.sh" || { \
 	  echo "No imtypeset checkout at $(IMTYPESET_ROOT). Set IMTYPESET_ROOT=..." >&2; exit 2; }
 else
@@ -234,7 +293,23 @@ else
 endif
 	rm -rf "$(IMTYPESET_STAGE)"
 	mkdir -p "$(IMTYPESET_STAGE)/pysnap/imtypeset"
-ifeq ($(strip $(IMTYPESET_COMMIT)),)
+ifneq ($(strip $(IMTYPESET_REF)),)
+	@set -e; \
+	commit=$$(git --git-dir="$(IMTYPESET_CACHE)" rev-parse --verify --quiet "$(typeset_fetched)^{commit}"); \
+	echo "git archive $$commit ($(IMTYPESET_REF) of $(IMTYPESET_REPO)) -> $(IMTYPESET_EXTRACT)"; \
+	mkdir "$(IMTYPESET_EXTRACT)"; \
+	git --git-dir="$(IMTYPESET_CACHE)" archive --format=tar -o "$(IMTYPESET_EXTRACT).tar" "$$commit"; \
+	tar -xf "$(IMTYPESET_EXTRACT).tar" -C "$(IMTYPESET_EXTRACT)"; \
+	rm -f "$(IMTYPESET_EXTRACT).tar"; \
+	test -f "$(IMTYPESET_EXTRACT)/python/host/build_bundle_library.sh" || { \
+	  echo "Commit $$commit ($(IMTYPESET_REF) of $(IMTYPESET_REPO)) has no python/host/build_bundle_library.sh." >&2; exit 2; }; \
+	{ echo "imtypeset: $(IMTYPESET_REPO)"; \
+	  echo "ref: $(IMTYPESET_REF)"; \
+	  echo "commit: $$commit"; \
+	  echo "uncommitted paths: 0 (an archive of a commit)"; \
+	  echo "date: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+	  echo "by: make typeset-lib IMTYPESET_REF=$(IMTYPESET_REF)"; } > "$(IMTYPESET_STAGE)/BUILT-FROM"
+else ifeq ($(strip $(IMTYPESET_COMMIT)),)
 	@{ echo "imtypeset: $(abspath $(IMTYPESET_ROOT))"; \
 	  if top=$$(git -C "$(IMTYPESET_ROOT)" rev-parse --show-toplevel 2>/dev/null) \
 	     && [ "$$top" = "$$(cd "$(IMTYPESET_ROOT)" && pwd -P)" ] \
@@ -265,7 +340,7 @@ else
 endif
 	cp -R "$(IMTYPESET_SOURCE)/python/imtypeset/." "$(IMTYPESET_STAGE)/pysnap/imtypeset/"
 	find "$(IMTYPESET_STAGE)/pysnap" -name __pycache__ -type d -prune -exec rm -rf {} +
-	$(if $(strip $(IMTYPESET_COMMIT)),IMTYPESET_IMGUI_CLONE="$(IMTYPESET_IMGUI_CLONE)" )IMTYPESET_BUNDLE_OUT=$(IMTYPESET_STAGE) sh $(IMTYPESET_SOURCE)/python/host/build_bundle_library.sh \
+	$(if $(strip $(IMTYPESET_COMMIT)$(IMTYPESET_REF)),IMTYPESET_IMGUI_CLONE="$(IMTYPESET_IMGUI_CLONE)" )IMTYPESET_BUNDLE_OUT=$(IMTYPESET_STAGE) sh $(IMTYPESET_SOURCE)/python/host/build_bundle_library.sh \
 	  "$(IMGUI_BUNDLE_CHECKOUT)" "$(abspath $(PY))"
 	IMTYPESET_LIBRARY="$(IMTYPESET_STAGE)/libimtypeset_bundle.so" "$(abspath $(PY))" -P -B -c \
 	  'import sys; sys.path.insert(0, sys.argv[1]); import imtypeset' "$(IMTYPESET_STAGE)/pysnap"

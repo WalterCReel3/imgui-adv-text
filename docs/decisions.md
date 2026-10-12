@@ -1234,6 +1234,128 @@ agent, alone on the tree.
 
 ---
 
+## Level 1 (2026-10-11 and 12)
+
+Added 2026-10-12 by the builder of the task L1-GATE, an agent, before the
+terminal gate; the gate's counts were written in afterwards. The section
+above is the two days before and is not changed. `docs/status.md` section 0e
+says what exists, what was measured and what has never run; this section
+keeps who decided what.
+
+The branch is committed now (`HEAD` `f34f6c8`, five commits on `main`). What
+this section describes was uncommitted in the working tree when it was
+written, and unpushed: the session cannot reach GitHub.
+
+### What the user said, in the user's words
+
+Quoted here from `HANDOFF-imtypeset.md`, "Direction (the user, 2026-10-11)",
+which is the only place this section's writer has the user's words from.
+
+> "Let's target Level 1. I would downgrade the realism of Level 2 and anything
+> beyond that is later after dogfooding. Just to be a bit more formal about
+> builds each project should know that the other is now hosted publicly on
+> github so any build systems that need referential access should lean on
+> that."
+
+> "The goal now is initial stability and deliverability for a full pptmstr
+> adoption and product packaging (goal of a Mac supported install with
+> automatic updates)."
+
+**What the user decided, read narrowly:** the target is Level 1 (the
+sidecar, made reliable) and not a private wheel; builds that need the other
+project refer to GitHub; the goal is pptmstr's adoption and a Mac install
+with automatic updates. "Level 1" and "Level 2" are the lead's phrases from
+the same conversation, which the user answered in.
+
+**The user took none of the decisions below.** The lead's file says so of
+its own four. The session ran unattended; read each row as what is
+implemented and why, not as a boundary.
+
+### The lead's decisions — agent decisions, awaiting the user
+
+From `.concerns/lead--level-1.md` (not version-controlled), with the reason
+given there.
+
+| decision | reason given |
+|---|---|
+| **`imgui-bundle` is pinned exactly**, `==1.92.900`, in `pyproject.toml` | "the sidecar is linked against one wheel binary and refuses any other at import; a range in the dependency promises something the pairing cannot keep." An upgrade is a deliberate act: the pin, a rebuilt library, the gate |
+| **imtypeset is located in this order**: `IMTYPESET_LIBRARY` when set, the development override; otherwise an importable `imtypeset` distribution that carries its own library; otherwise not loaded, with the sentence. `reason()` to say which route was taken. Nothing else about `typesetter`'s surface changes | the other team's distribution (H3) does not exist yet: "write the seam and test it with a stand-in package" |
+| **advtext does not vendor or build imtypeset in its own wheel**, and does not declare it as a dependency until there is a distribution to name | "an undeclarable dependency in pyproject would break `pip install` for everyone" |
+| **The sibling checkout stays a supported source for `make typeset-lib`; the DEFAULT source becomes the GitHub URL at a named ref**, fetched into a cache under `build/` | the sibling "is how both teams work on one machine"; the user's sentence about GitHub. **Built otherwise: see the first row of the next table** |
+| Anything that fetches from GitHub is written to be testable against a local `file://` clone and is marked "not run against GitHub" until someone with network runs it | the sandbox denies `github.com` |
+| The Mac question is an audit by reading, by a reviewer, and its findings go to the other team as numbered requests (H15 to H20) | `HANDOFF-imtypeset.md`, H1: advtext "has no Mac". The lead's file gives no further reason |
+| **After the builders finished:** `make typeset-lib` is left as L1-PKG's builder built it (the row below), and the Makefile is not changed to read `imtypeset.ref` | the lead's instruction to this section's writer, with the task: leave it as built and record it |
+
+### Builders' decisions — agent decisions, awaiting the user
+
+Accepted by the lead or never ruled on. The files are
+`.concerns/L1-PKG--builder--result.md` and `.concerns/L1-CI--builder--result.md`
+(not version-controlled); each has more than is here.
+
+| who | decision | reason given |
+|---|---|---|
+| L1-PKG (the pairing) | **A plain `make typeset-lib` still builds the sibling's working tree. There is a default REPOSITORY (GitHub) and no default REF, so nothing is fetched unless `IMTYPESET_REF` is given; the Makefile does not read `imtypeset.ref`.** This is not the lead's fourth decision as written | the task's text said a plain `make typeset-lib` keeps building the sibling, and the builder followed the task over the decision and said so. What it keeps: the three recipes without the new variable are character for character what they were (`make -n` of 12 invocations compared before and after, the builder's run), and a developer's build never depends on the network. What it costs: the ref lives in a file a person must read and pass; only the CI workflow reads it |
+| | **`reason()` does not say which route was taken**; `pairing()["route"]` does. `reason()` names the route only when the distribution route failed | `reason()` is "why `module()` is `None`, empty when it is not"; views and some thirty tests in files the builder did not hold test it for empty or for the exact unset sentence, and every existing test was to stay. Offered as "say if you want it otherwise" |
+| | **An installed distribution is recognised by its metadata, not by being importable** | the environment route leaves a source package named `imtypeset` importable for the rest of the process, and many tests then remove the variable; metadata is what a source directory does not have. Cost, stated in the docstring: an application frozen without `dist-info` is not found. **Its builder's least sure decision** |
+| | The lookup for a distribution is done once per process | a view asks every frame, and the lookup walks `sys.path`. A distribution installed later in the same process is not seen |
+| | `pairing()["built_for"]` is the distribution's `Requires-Dist` on `imgui-bundle`, and `None` on the environment route | the library does not record the wheel it was linked against (read in the other team's `_bundle.py`); asked of them as H21 |
+| | With the variable set and a distribution installed, the installed package is imported and handed the variable's library | "exactly as today": `IMTYPESET_PYTHON` goes at the end of `sys.path`. Pinned by a test so that it is not a surprise |
+| | `pairing` is not added to the facade | `advtext/__init__.py` was outside the task. Nobody has ruled on it |
+| | The test of the old dependency floor is replaced by a test of the pin, and its assertion that the wheel has `ImDrawListFlags_.text_no_pixel_snap` is DROPPED | the backend that set the flag was deleted in the swap and nothing under `advtext/` names it (the builder's grep). The one place in these two days where an assertion was removed; said here so that it is not found later as a quiet weakening |
+| | With `IMTYPESET_REF` the two neighbours default to beside THIS repository, not beside `IMTYPESET_ROOT` | a path through a sibling that does not exist resolves to nothing. On this machine it is the same two directories |
+| | Fetching the two neighbours is NOT built into the Makefile | not small (the wheel's version before the fetch, two repositories, a submodule-shaped checkout for fork headers), and it is the other team's script's to do (H2) |
+| L1-CI (the workflow) | Plain `git fetch` of one tag each for the two neighbours, into `build/ci-deps/`, where the task said `actions/checkout` | the build script reads those two only through git objects and needs the TAG NAMES as local refs; the command is one a person can run and could be run here against `file://`; `actions/checkout` refuses a path outside the workspace |
+| | The versions in the workflow come from the installed wheel; no second literal | so that a bump of the pin is one edit |
+| | `xvfb-run` AND user namespaces, the second checked by a step that fails | two test files start their own Xvfb in `unshare -rm` whatever `DISPLAY` is and SKIP without it; with `xvfb-run` alone they would skip green. That the one `sysctl` is what blocks it on a 24.04 runner is the builder's unverified assumption |
+| | `imtypeset.ref` is comment lines and then one line, a full 40-digit hash | the task's shape. When the ref becomes a tag (H4) one test changes and nothing in the workflow does |
+| | No workflow expression inside any `run:`; values arrive through `env:`. A test holds it | it is what let the steps' own text be run here |
+| | No YAML parser is added; the test file has a reader for a stated subset that refuses everything else | the virtualenv has none. Compared once with PyYAML under the system Python: the same structure |
+| | macOS is a separate workflow file that cannot start by itself | enabling it is then a diff of that file only. Its steps are "a guess" (the builder's word) |
+| L1-GATE (the last task) | `pyproject.toml`'s sdist list gains `imtypeset.ref`, `.github` and `HANDOFF-imtypeset.md` | `tests/test_ci_workflow.py` reads all three. Not built: no `hatchling` here. It does not make the suite pass from an unpacked sdist, which also lacks `demo/` |
+| | `docs/imgui-risks.md` gets a dated note beside its sentence about the dependency floor, and is otherwise not edited; sections 0d and 0c of `docs/status.md` are not edited | the lead's instruction for the first (a dated risk document); the house rule for the second (an older section is a record) |
+| | `HANDOFF-pptmstr.md` keeps "Nothing asked yet" and says under it that pptmstr's file now has P1 to P6, unanswered | the lead's text for that file was written when nothing had been asked; by the time it was applied six requests were there. Not answering them was the instruction; saying nothing would have left a false sentence |
+
+### What review was, and what it found
+
+One review task, L1-MAC, by an agent with no shell: **every finding is from
+reading, nothing was run, and there was no Mac.** One fact came from a web
+fetch of PyPI's listing through a summariser. Its three blockers for a Mac
+install (the link recipe and an Apple-Silicon-only wheel; an import gate
+that cannot work in a packaged application; fonts that live inside the
+wheel) are in `docs/status.md` section 0e and went to the other team as H15
+to H20. None was reproduced, because none can be here.
+
+No reviewer read L1-PKG's or L1-CI's code. Each builder tested its own:
+mutation tests for the first (19 of 21 mutants killed), and for the second
+the workflow's step texts run against local clones.
+
+The terminal gate, by this section's writer, an agent, alone on the tree:
+`make check`, 2955 passed, 264 skipped, 4 xfailed; `make check TYPESET=1`,
+3211 passed, 8 skipped, 4 xfailed, against the pinned pair from `c9f8902`;
+no failure either way (the loads are in `docs/status.md`). The documents
+were edited after the runs only to write these counts in, and
+`tests/test_docs.py` was run again afterwards.
+
+### Premises of these two days that did not hold
+
+- **"The default source becomes the GitHub URL at a named ref"** (the lead's
+  fourth decision): the task written from it said otherwise, and the builder
+  built the task. The lead then kept what was built.
+- **"Say in `reason()` which route was taken"** (the lead's second
+  decision): it would have changed a sentence some thirty tests hold (the
+  builder's count).
+- **"`actions/checkout` for the two neighbours"** (L1-CI's task): it cannot
+  check out beside the workspace.
+- **"The Makefile can take its default ref from `imtypeset.ref` with a small
+  change"** (offered in the last task's text): not tried. The lead withdrew
+  it when the task was handed over.
+- **"Nothing asked yet"** of pptmstr: true on the 11th, six requests by the
+  12th.
+- **The floor test's flag assertion** guarded a backend that had been
+  deleted the day before.
+
+---
+
 ## Correcting the brief
 
 The research brief asked for "the 4/5 and 1/5 x-height clamps" in

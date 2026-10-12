@@ -136,12 +136,13 @@ added: all four homes were homes already.
 """
 
 FONT_FILES = {
-    "advtext.fontlib": (
-        "register_font",
-        "unregister_font",
-        "registered_fonts",
-        "em_size_for_pixel_height",
-    ),
+    # Until 2026-10-12 all four were `advtext.fontlib`'s, the reference core's
+    # font reader. The table of files opens no font and has its own module; the
+    # size conversion asks the library once it has fonts
+    # (`tests/test_typeset_metrics.py`). `advtext.fontlib` still has all four
+    # names, and the first three are these objects.
+    "advtext.fontfiles": ("register_font", "unregister_font", "registered_fonts"),
+    "advtext.typeset_metrics": ("em_size_for_pixel_height",),
     "advtext.ui.fonts": ("load_faces", "LoadedFaces", "TEXT_FACES", "ALL_FACES"),
 }
 """

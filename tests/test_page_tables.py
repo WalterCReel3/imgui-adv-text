@@ -1048,16 +1048,16 @@ def test_with_the_library_importing_the_page_and_opening_it_load_no_old_view(
     What is in `sys.modules` of the old core (`tests/test_typeset_closure.py`'s
     list) at two moments of the child. Importing the page: nothing (two
     leaves until T5-B2). After five frames drawn through the library:
-    `fontlib` and the `fontmetrics` it imports (`typesetter.load_fonts`
-    reads the font files from it), which is `closure.FONT_FILES`, and
-    nothing else (`Theme.build` loaded `nodes`, `pack` and `badness` until
-    T5-B2). **No line breaker, no ship-out, no selection model, no
-    compositor, no node, no draw backend.**
+    nothing either. Until 2026-10-12 it was `fontlib` and the `fontmetrics`
+    it imports, because `typesetter.load_fonts` read the font files from
+    it; the table of files is `advtext.fontfiles`' now (`Theme.build`
+    loaded `nodes`, `pack` and `badness` until T5-B2). **No line breaker, no
+    ship-out, no selection model, no compositor, no node, no draw backend.**
     """
     core = closure.REFERENCE_CORE
     assert set(typeset["loaded_at_import"]) & core == set()
     opened = set(typeset["loaded_after_five_frames"])
-    assert opened & core == closure.FONT_FILES
+    assert opened & core == set()
     assert "advtext.markdown" not in opened and "advtext.ui.typeset_view" in opened
 
 

@@ -211,23 +211,25 @@ def _no_font(face: object) -> None:
 
 def face_metrics(key: str) -> FontMetrics:
     """
-    A face's measurements at a size, read from its font file: the default of `PageContext.metrics`.
+    A face's measurements at a size: the default of `PageContext.metrics`.
 
-    **The one thing a page context still takes from the old core**
-    (`.concerns/lead--tranche-5.md`, decision 5). It is
-    `advtext.style.fontlib_metrics`, asked at the call: nothing is imported
-    until a page measures a face, and a caller who replaces
-    `advtext.style.fontlib_metrics` is still the one asked. Its use is
-    `Theme.at_pixel_height(height, metrics=context.metrics)`, which needs a
-    face's ascent, descent and em to size a theme to a pixel height.
-    imtypeset has no such query yet (`.concerns/lead--for-imtypeset-team.md`,
-    item 5); when it has, this function is where the change goes.
+    It is `advtext.typeset_metrics.face_metrics`, asked at the call: **the
+    library, once `typesetter.load_fonts()` has succeeded**, and nothing of
+    the old core is loaded then. Before that (the app builds its pages
+    before there is a window) and without the library it is
+    `advtext.style.fontlib_metrics`, read from that module at the call, so
+    a caller who replaces the name there is still the one asked: the one
+    thing a page context can still take from the old core, and only then.
+    Its use is `Theme.at_pixel_height(height, metrics=context.metrics)`,
+    which needs a face's ascent, descent, em and eleven advances to size a
+    theme to a pixel height. The library's answer has no ink boxes and no
+    kerns (`advtext.typeset_metrics.LibraryMetrics`).
 
     `key` is a font key as `advtext.theme.font_key` makes it.
     """
-    from advtext.style import fontlib_metrics
+    from advtext import typeset_metrics
 
-    return fontlib_metrics(key)
+    return typeset_metrics.face_metrics(key)
 
 
 @dataclass(slots=True)

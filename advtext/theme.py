@@ -43,10 +43,13 @@ core, **when called and not when imported**:
   (`advtext.ui.composition`) reads it, and that has loaded `advtext.style`
   already. It is the value `Theme.build` used to store, field for field
   (`tests/test_style.py` holds it).
-- **`Theme.at_pixel_height` with no resolver asks
-  `advtext.style.fontlib_metrics`**, which opens a font file through
-  `advtext.fontlib` (decision 5 of `.concerns/lead--tranche-5.md`: until
-  imtypeset answers a face's metrics). `Theme.build` opens nothing.
+- **`Theme.at_pixel_height` with no resolver, while the library has no
+  fonts** (`advtext.typesetter.ready()` is false), asks
+  `advtext.style.fontlib_metrics`, which opens a font file through
+  `advtext.fontlib`. Once `typesetter.load_fonts()` has succeeded the
+  library answers and nothing of the reference core is loaded
+  (`advtext.typeset_metrics` has the order a host follows and why a theme
+  sized early is not refused). `Theme.build` opens nothing.
 
 `Strut.applied_to` takes an `advtext.nodes.Box` and needs the class only as an
 annotation. `font_key` and `parse_font_key` write and read the opaque string
@@ -132,7 +135,7 @@ that default and should not have to construct ten `BlockStyle`s to say so.
   monospace is the table's own `monospace` field, declared and not inferred.
 - **the body size** -- `base_px`, an em size, as before. A host that has an
   ImGui font size has a pixel *height* instead, which is a different length
-  (`advtext.fontlib.em_size_for_pixel_height`); `Theme.at_pixel_height` takes
+  (`advtext.typeset_metrics.em_size_for_pixel_height`); `Theme.at_pixel_height` takes
   that and converts.
 - **`align`** -- what the running text is set as: paragraphs, list items and
   quotes. Headings, code, rules and tables are ragged in every theme and do not
@@ -872,7 +875,7 @@ class Theme:
         For a host whose own UI font is "16": pass 16 and the body is drawn from
         the same 16 px raster the host's labels are, rather than at an em of 16
         that ImGui would bake at 18.75. The two lengths and the conversion are
-        `advtext.fontlib.em_size_for_pixel_height`'s subject; this applies it to
+        `advtext.typeset_metrics.em_size_for_pixel_height`'s subject; this applies it to
         `faces.regular`.
 
         **Only the running text's face lands on the height asked for.** Every
@@ -889,17 +892,24 @@ class Theme:
         em `build` uses, so `at_pixel_height` and `build` agree about everything
         but the size.
 
-        `metrics` is the resolver the document will be measured with, and
-        defaults to `advtext.style.fontlib_metrics`. It is asked for
-        `faces.regular` once, at a probe size; only ratios are read.
+        `metrics` is the resolver that measures the face, and defaults to
+        `advtext.typeset_metrics.face_metrics`: **imtypeset, once
+        `advtext.typesetter.load_fonts()` has succeeded** (no font file is
+        opened here and no kerning read), and the old reader
+        `advtext.style.fontlib_metrics` before that and without the library.
+        The two give the same theme; the first is some hundreds of times
+        cheaper, so a host sizes its themes after it loads its fonts. It is
+        asked for `faces.regular` once, at a probe size; only ratios are
+        read: the ascent, the descent, the em, and the advances of the ten
+        digits and the period.
         """
         if metrics is None:
-            # Measuring a font is `advtext.style`'s half, and it is read from
-            # there at the call so that a caller who replaces
-            # `advtext.style.fontlib_metrics` is still the one asked.
-            from advtext import style
+            # Read from there at the call, so that a caller who replaces the
+            # name (or `advtext.style.fontlib_metrics`, which it falls back
+            # to) is still the one asked.
+            from advtext import typeset_metrics
 
-            metrics = style.fontlib_metrics
+            metrics = typeset_metrics.face_metrics
         probe = metrics(font_key(faces.regular, _PROBE_SIZE))
         extent = probe.ascent + probe.descent
         em_px = height_px * probe.em / extent if extent > 0 and probe.em > 0 else height_px

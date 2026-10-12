@@ -1,6 +1,6 @@
 r"""
-The only module in this project that imports fontTools, and the only one that names
-a font file.
+The only module in this project that imports fontTools, and the only one that opens
+a font file to read it.
 
 **fontTools is imported when a font is first opened, not when this module is.**
 The three functions that need it -- `_face_data`, `_FaceData.glyph_bounds` and
@@ -13,18 +13,19 @@ face's own cost -- reading its `MATH` table, minting codepoints, and
 `imgui_font_file` writing a patched copy -- is paid only when `Face.MATH` is
 asked for, which nothing does until mathematics is set.
 
-## The files are a registry a host can write to
+## The files are a registry a host can write to, and it is `advtext.fontfiles`'
 
-`_FONT_FILES` names what imgui-bundle ships and is the default for every role it
-lists. `register_font` puts a host's own file in front of it for one role, and
-that is how a role the bundle has no file for gets one: `Face.CODE_BOLD` has no
-bundled file (the bundle ships one Inconsolata weight), so it is backed by
-`Face.PROSE_BOLD`'s file -- which is exactly what bold inside code has always
-been set in -- until a host registers a bold monospace. `backing_face` says
-which of the two a role currently is.
+Which file backs which role (`font_file`, `backing_face`, `font_directory`),
+a host's own file for a role (`register_font`, `unregister_font`,
+`registered_fonts`), `on_registry_change` and `MissingFontError` are defined
+in `advtext.fontfiles` since 2026-10-12 and imported here: the same objects
+under either path, and still names of this module. That module's docstring
+has the registry's rules. They moved because finding a file needs no
+fontTools and none of the reference core, and the typeset layer finds files.
 
 **Registration must precede building.** `register_font` clears every cache this
-module holds, so the next measurement reads the new file. It cannot reach what
+module holds (this module is the registry's first listener), so the next
+measurement reads the new file. It cannot reach what
 was already made from the old one: a document's kerns are baked into its
 material, `advtext.style.char_measure` memoises widths in a closure this module
 never sees, and a layout cache is keyed by content and not by font file. A host
@@ -171,13 +172,31 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, TypeAlias, assert_never
 
+# Which file backs which role, and a host's own files in front of the bundle's,
+# are `advtext.fontfiles`' since 2026-10-12 and are imported back: the same
+# functions and the same dictionaries under either path. They moved so that
+# `advtext.typesetter.load_fonts` and a host's `register_font` find a file
+# without loading this module, which reads fonts and is the reference core's.
+from advtext.fontfiles import _FONT_FILES as _FONT_FILES
+from advtext.fontfiles import _LISTENERS as _LISTENERS
+from advtext.fontfiles import _REGISTERED as _REGISTERED
+from advtext.fontfiles import _STAND_INS as _STAND_INS
+from advtext.fontfiles import (
+    MissingFontError,
+    backing_face,
+    font_directory,
+    font_file,
+    on_registry_change,
+    register_font,
+    registered_fonts,
+    unregister_font,
+)
 from advtext.fontmetrics import (
     Face,
     FontMetrics,
@@ -217,36 +236,6 @@ say what the mapping *is* rather than to constrain it. `_TTGlyphSet` really is a
 `Mapping`, so the two operations named above are the honest contract.
 """
 
-# Relative to the bundle's assets/fonts directory. `docs/decisions.md` explains the
-# choices: four real Roboto faces so emphasis is a true italic rather than a colour
-# shift, and Latin Modern Math because it is the only bundled face with a MATH table.
-_FONT_FILES: dict[Face, str] = {
-    Face.PROSE: "Roboto/Roboto-Regular.ttf",
-    Face.PROSE_BOLD: "Roboto/Roboto-Bold.ttf",
-    Face.PROSE_ITALIC: "Roboto/Roboto-RegularItalic.ttf",
-    Face.PROSE_BOLD_ITALIC: "Roboto/Roboto-BoldItalic.ttf",
-    Face.CODE: "Inconsolata-Medium.ttf",
-    Face.MATH: "latex/latinmodern-math.otf",
-}
-
-# A role the bundle ships no file for, and the role whose file stands in for it
-# until a host registers one. `Face.CODE_BOLD` -> `Face.PROSE_BOLD` is not a
-# guess at what looks nearest: it is what `advtext.style.Theme.face_for` already
-# returned for bold on a monospace base before the role existed, so a tree with
-# nothing registered sets the same glyphs at the same widths it always did.
-_STAND_INS: dict[Face, Face] = {
-    Face.CODE_BOLD: Face.PROSE_BOLD,
-}
-
-# What a host has registered, by role. Absolute paths, checked when registered.
-_REGISTERED: dict[Face, Path] = {}
-
-# Caches outside this module that are keyed by face and must go when a file
-# changes. A dict used as an ordered set, so registering the same callable twice
-# -- which `advtext.backends.svg` does on every cache miss rather than keep a
-# flag -- is one entry.
-_LISTENERS: dict[Callable[[], None], None] = {}
-
 # Substituted for any codepoint the font does not map. Returning a zero advance
 # instead would make missing text vanish silently, which reads as a layout bug
 # rather than as a missing glyph.
@@ -257,143 +246,22 @@ _NOTDEF = ".notdef"
 _X_HEIGHT_FALLBACK = 0.45
 
 
-class MissingFontError(RuntimeError):
-    """
-    A face was asked for and the bundle does not ship the file it maps to.
-    """
-
-
-@cache
-def font_directory() -> Path:
-    """
-    The directory imgui-bundle ships its fonts in, resolved from the package itself.
-    """
-    try:
-        import imgui_bundle
-    except ImportError as exc:  # pragma: no cover - environment, not logic
-        raise MissingFontError(
-            "imgui-bundle is not importable, so its bundled fonts cannot be found"
-        ) from exc
-    directory = Path(imgui_bundle.__file__).parent / "assets" / "fonts"
-    if not directory.is_dir():
-        raise MissingFontError(f"imgui-bundle is installed but ships no fonts at {directory}")
-    return directory
-
-
-def backing_face(face: Face) -> Face:
-    """
-    The role whose file this role is currently read from: usually itself.
-
-    Different only for a role with neither a registered file nor a bundled one,
-    which today is `Face.CODE_BOLD` and answers `Face.PROSE_BOLD`. Two things
-    read this. `advtext.ui.fonts.load_faces` uses it to hand ImGui each file
-    once rather than loading Roboto Bold a second time under another name. And a
-    caller deciding whether a bold monospace really exists -- a theme choosing
-    whether bold inside code keeps its columns -- asks
-    `backing_face(Face.CODE_BOLD) is Face.CODE_BOLD`.
-    """
-    if face in _REGISTERED or face in _FONT_FILES:
-        return face
-    return _STAND_INS.get(face, face)
-
-
-def font_file(face: Face) -> Path:
-    """
-    The file backing one role. The single place a font family is named.
-
-    A registered file wins; then the bundle's; then the stand-in role's. A role
-    with none of the three is a `MissingFontError` like any other missing file,
-    not a `KeyError` -- `Face` is an enum a later change may add to, and the
-    callers that degrade on a missing face catch this type.
-    """
-    registered = _REGISTERED.get(face)
-    if registered is not None:
-        return registered
-    bundled = _FONT_FILES.get(face)
-    if bundled is None:
-        stand_in = _STAND_INS.get(face)
-        if stand_in is None:
-            raise MissingFontError(f"{face.value} has no bundled file and none is registered")
-        return font_file(stand_in)
-    path = font_directory() / bundled
-    if not path.is_file():
-        raise MissingFontError(f"{face.value} maps to {path}, which does not exist")
-    return path
-
-
-def register_font(face: Face, path: str | os.PathLike[str]) -> None:
-    """
-    Back a role with a host's own font file, replacing the bundled one if any.
-
-    For a role the bundle has no file for -- `Face.CODE_BOLD` -- this is what
-    gives it one; for the others it swaps the family. The file must exist now:
-    a path that is wrong is a `MissingFontError` here, at the one call a host
-    makes on purpose, rather than at the first glyph of the first frame.
-
-    **Call it before anything is built.** Every cache in this module is cleared,
-    so metrics asked for afterwards come from the new file, and so does
-    `imgui_font_file`. What was built before is not repaired and cannot be: the
-    module docstring lists what holds numbers from the old file. In particular
-    an `ImFont` already loaded from the old file stays loaded -- reload through
-    `advtext.ui.fonts.load_faces` -- and a `char_measure` made earlier must be
-    made again.
-
-    The math role is registrable like any other, and a file with no `MATH`
-    table is refused later, by `math_metrics`, with the file's name in the
-    message.
-    """
-    resolved = Path(path).expanduser().resolve()
-    if not resolved.is_file():
-        raise MissingFontError(f"{face.value} was registered as {resolved}, which does not exist")
-    _REGISTERED[face] = resolved
-    _registry_changed()
-
-
-def unregister_font(face: Face) -> None:
-    """
-    Withdraw a host's file for a role, restoring the bundled file or the stand-in.
-
-    A role with nothing registered is left alone and no cache is touched, so a
-    teardown may call this unconditionally.
-    """
-    if _REGISTERED.pop(face, None) is not None:
-        _registry_changed()
-
-
-def registered_fonts() -> Mapping[Face, Path]:
-    """
-    The files a host has registered, by role. A read-only view, not a copy.
-    """
-    return MappingProxyType(_REGISTERED)
-
-
-def on_registry_change(clear: Callable[[], None]) -> None:
-    """
-    Have `clear` called whenever a role's file changes. Idempotent per callable.
-
-    For a cache outside this module that is keyed by face, which would otherwise
-    go on answering from the old file: `advtext.backends.svg.glyph_outline` is
-    the one in this tree. Not a general event system -- there is no way to
-    remove a listener because nothing has needed one, and the callables are
-    module-level cache clears that live as long as the process.
-    """
-    _LISTENERS[clear] = None
-
-
 def _registry_changed() -> None:
     """
-    Drop everything derived from a font file, here and in whoever asked to be told.
+    Drop everything this module derived from a font file.
 
-    All of it and not just the changed role's: `functools.cache` cannot evict by
-    argument, a stand-in role shares another role's file so the dependency is
-    not one-to-one, and this runs a handful of times in the life of a process.
+    What `advtext.fontfiles` calls, first of its listeners, whenever a role's
+    file changes. All of it and not just the changed role's:
+    `functools.cache` cannot evict by argument, and a stand-in role shares
+    another role's file so the dependency is not one-to-one.
     """
     _face_data.cache_clear()
     _prose_metrics.cache_clear()
     math_metrics.cache_clear()
     imgui_font_file.cache_clear()
-    for clear in tuple(_LISTENERS):
-        clear()
+
+
+on_registry_change(_registry_changed)
 
 
 # --------------------------------------------------------------------------------

@@ -20,9 +20,12 @@ written around justified proportional type. The theme is one call:
 
 (`bold=Face.CODE` because the bundled files have no bold monospace: without it
 the bold role would be set in the proportional bold.) That call measures the
-face to turn a pixel height into a size, and measuring a face is still
-`advtext.fontlib_metrics`, the one thing here that is not the typeset
-layer's: imtypeset has no metrics query yet.
+face to turn a pixel height into a size. imtypeset measures it once
+`advtext.load_fonts()` has succeeded; called before that, as here (the
+theme is made before the window), the old font reader does
+(`advtext.fontlib_metrics`), which gives the same theme and costs some
+hundreds of milliseconds once. A host that minds sizes its themes in its
+font callback, after `load_fonts()`.
 
 ## How it is put together
 
@@ -185,8 +188,9 @@ def transcript_theme(pixel_height: float = BODY_PX) -> Theme:
     """
     One monospace face at a pixel height, ragged right: what a terminal-like host sets.
 
-    Measures the face (`advtext.fontlib_metrics`, asked by
-    `Theme.at_pixel_height`) to turn the pixel height into a size.
+    `Theme.at_pixel_height` measures the face to turn the pixel height into
+    a size: by the library after `advtext.load_fonts()`, by the old reader
+    before. The same theme either way.
     """
     return Theme.at_pixel_height(pixel_height, faces=Faces.mono(bold=Face.CODE), align=Align.LEFT)
 

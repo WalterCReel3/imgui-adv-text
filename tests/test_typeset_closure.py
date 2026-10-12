@@ -27,12 +27,14 @@ defined in `advtext.primitives` now, which imports nothing, and the two old
 modules import them back (the identities are held below); a style's leading
 is a number.
 
-Five modules are in the chain's closure and are NOT reference core, because
+Six modules are in the chain's closure and are NOT reference core, because
 the typeset layer is built on them too (`SHARED`): the package `advtext`
 itself, the package `advtext.ui` (which defines `Viewport` and `Hosted` and
 is the door to composition only when composition is asked for),
 `advtext.markdown_rules` (the parser's rules, which import nothing of
-advtext), `advtext.theme` and `advtext.primitives`.
+advtext), `advtext.theme`, `advtext.primitives`, and since 2026-10-12
+`advtext.fontfiles` (which file backs which role: a table that opens no
+font, which `advtext.fontlib` imports back).
 
 **Both ways of writing the import are measured**, `import a.b.c` and `from a.b
 import c`. They are not the same question to a package: for the second,
@@ -46,19 +48,28 @@ green.
 Two limits, so the claim is not read as more than it is:
 
 - **`EXPECTED` is import time only.** A function that imports when called
-  is not seen by it. Five do, each is named here and measured below
-  (`test_the_named_exceptions_load_exactly_what_is_stated`), and there is no
-  sixth that a page's constructor or a drawn frame reaches:
-  - `Theme.at_pixel_height` with no resolver, and
-    `advtext.ui.pages.face_metrics`, ask `advtext.style.fontlib_metrics` to
-    measure a face from its font file: `MEASURING`, which is `advtext.style`,
-    `advtext.fontlib` and the five modules `advtext.style` imports.
-  - `advtext.typesetter.load_fonts` asks `advtext.fontlib` where the font
-    files are, and `advtext.ui.typeset_diff_view.code_size` given a pixel
-    height asks it for the em size: `FONT_FILES`, which is `advtext.fontlib`
-    and the `advtext.fontmetrics` it imports.
-  Those four are decision 5 of `.concerns/lead--tranche-5.md`: they stay
-  until imtypeset answers a face's metrics.
+  is not seen by it. Until 2026-10-12 five did. **Two are left, and one of
+  them only while the library has no fonts**; each is named here and
+  measured below, and there is no third that a page's constructor or a drawn
+  frame reaches:
+  - **Sizing to a pixel height while `advtext.typesetter.ready()` is
+    false** (no library; or the library imported and `load_fonts()` not yet
+    succeeded in the current Dear ImGui context). `Theme.at_pixel_height`
+    with no resolver and `advtext.ui.pages.face_metrics` then ask
+    `advtext.style.fontlib_metrics` to measure a face from its font file:
+    `MEASURING`, which is `advtext.style`, `advtext.fontlib` and the five
+    modules `advtext.style` imports. `advtext.ui.typeset_diff_view.code_size`
+    given a pixel height, and `advtext.em_size_for_pixel_height`, then ask
+    `advtext.fontlib` for the em: `OLD_READER`, which is `advtext.fontlib`
+    and the `advtext.fontmetrics` it imports. It is kept because advtext's
+    app and pages size their themes before there is a window, and a host
+    may have no library (`advtext.typeset_metrics` has the argument and the
+    measurement of who would break).
+    **With `ready()` true the same four calls load NOTHING of the reference
+    core and no fontTools**: imtypeset answers (`font_metrics`,
+    `glyph_advance`; `test_with_the_library_ready_nothing_reaches_the_reference_core`).
+    Nor does `advtext.typesetter.load_fonts`, in either state: it finds the
+    files in `advtext.fontfiles`.
   - `BlockStyle.interline` builds the reference core's `InterlineSkip`
     through `advtext.style` (`INTERLINE`). Only the reference compositor
     reads it; no module of the typeset layer does, which a test below holds
@@ -99,6 +110,7 @@ SVG_CLOSURE = frozenset(
         "advtext.backends",
         "advtext.backends.svg",
         "advtext.badness",
+        "advtext.fontfiles",
         "advtext.fontlib",
         "advtext.fontmetrics",
         "advtext.linebreak",
@@ -126,10 +138,19 @@ deletion (`.concerns/T5-B1--svg-closure.md`: 21 names) and held by
 `test_the_reference_core_is_what_the_litmus_chain_loads`. `advtext.primitives`
 is the twenty-second, added by T5-B2: `advtext.units` and
 `advtext.fontmetrics` import their lengths and `Face` from it.
+`advtext.fontfiles` is the twenty-third (2026-10-12): `advtext.fontlib`
+imports the table of font files from it.
 """
 
 SHARED = frozenset(
-    {"advtext", "advtext.ui", "advtext.markdown_rules", "advtext.theme", "advtext.primitives"}
+    {
+        "advtext",
+        "advtext.ui",
+        "advtext.markdown_rules",
+        "advtext.theme",
+        "advtext.primitives",
+        "advtext.fontfiles",
+    }
 )
 """
 In the chain's closure and the typeset layer's own as well: not reference core.
@@ -192,12 +213,18 @@ two modules that hand it the lengths and `Face`. `advtext.style` is reference
 core itself; this is what reaching it costs.
 """
 
-FONT_FILES = frozenset({"advtext.fontlib", "advtext.fontmetrics"})
+OLD_READER = frozenset({"advtext.fontlib", "advtext.fontmetrics"})
 """
-What asking `advtext.fontlib` for a font file or an em size loads
-(`advtext.typesetter.load_fonts`; `code_size` given a pixel height):
-`advtext.fontlib` and the metrics protocols it implements.
+What asking `advtext.fontlib` for an em size loads (`code_size` given a
+pixel height, `advtext.em_size_for_pixel_height`, WHILE THE LIBRARY HAS NO
+FONTS): `advtext.fontlib` and the metrics protocols it implements. Until
+2026-10-12 this set was called `FONT_FILES` and `advtext.typesetter.load_fonts`
+loaded it too, to find a file; the table of files is `advtext.fontfiles`'
+now, which is not reference core.
 """
+
+FONT_FILES = OLD_READER
+"""The old name of `OLD_READER`, for the test files that import it."""
 
 INTERLINE = STYLE | {"advtext.style"}
 """
@@ -205,13 +232,30 @@ What `BlockStyle.interline` loads when it is first read: `advtext.style`
 builds the triple. The reference compositor's door, not the typeset layer's.
 """
 
-MEASURING = STYLE | FONT_FILES | {"advtext.style"}
+MEASURING = STYLE | OLD_READER | {"advtext.style"}
 """
 What measuring a face from its font file loads of the reference core, when
-it is called and not before: `advtext.style.fontlib_metrics`, which is
-`advtext.style` (and so `STYLE`) and `advtext.fontlib`. The one thing a page
-may take from the reference core, when it calls `Theme.at_pixel_height` or
-`advtext.ui.pages.face_metrics`.
+it is called and not before, AND ONLY WHILE `advtext.typesetter.ready()` IS
+FALSE: `advtext.style.fontlib_metrics`, which is `advtext.style` (and so
+`STYLE`) and `advtext.fontlib`. The one thing a page may take from the
+reference core, when it calls `Theme.at_pixel_height` or
+`advtext.ui.pages.face_metrics` before the library has its fonts.
+"""
+
+METRICS_OWN = frozenset(
+    {
+        "advtext.typeset_metrics",
+        "advtext.typesetter",
+        "advtext.description",
+        "advtext.fontfiles",
+        "advtext.primitives",
+        "advtext.theme",
+    }
+)
+"""
+What asking for a face's metrics may load of advtext that is NOT reference
+core: `advtext.typeset_metrics`, which decides who answers, and what it
+imports.
 """
 
 EXPECTED = {
@@ -228,6 +272,8 @@ EXPECTED = {
     "advtext.typeset_markdown": THEME,
     "advtext.markdown_rules": NOTHING,
     "advtext.diff": NOTHING,
+    "advtext.fontfiles": NOTHING,
+    "advtext.typeset_metrics": NOTHING,
     "advtext.ui.typeset_view": THEME,
     "advtext.ui.typeset_stream_view": THEME,
     "advtext.ui.typeset_diff_view": THEME,
@@ -587,16 +633,20 @@ def test_the_reference_cores_own_modules_load_what_is_stated() -> None:
     `advtext.fontlib` and not memories of them.
     """
     assert _loaded_by("advtext.style") & REFERENCE_CORE == STYLE | {"advtext.style"}
-    assert _loaded_by("advtext.fontlib") & REFERENCE_CORE == FONT_FILES
-    assert STYLE | FONT_FILES | {"advtext.style"} <= REFERENCE_CORE
+    assert _loaded_by("advtext.fontlib") & REFERENCE_CORE == OLD_READER
+    assert STYLE | OLD_READER | {"advtext.style"} <= REFERENCE_CORE
 
 
 def test_the_named_exceptions_load_exactly_what_is_stated() -> None:
     """
     Each call that still reaches the reference core, alone in a fresh
     interpreter after a theme has been built, and what it loaded: exactly the
-    set stated for it. (`advtext.typesetter.load_fonts` needs the library and
-    a Dear ImGui context: `test_loading_the_fonts_loads_the_font_files_and_no_more`.)
+    set stated for it. **The library has no fonts in that interpreter** (no
+    Dear ImGui context is made, so `typesetter.ready()` is false whether or
+    not the library is there), which is the one state in which the first
+    four reach it. Beside the reference core each may load
+    `advtext.typeset_metrics` and what that imports (`METRICS_OWN`), and
+    nothing else of advtext.
     """
     calls = {
         "at_pixel_height": "Theme.at_pixel_height(18.0)",
@@ -615,12 +665,18 @@ def test_the_named_exceptions_load_exactly_what_is_stated() -> None:
             "before = loaded()\n"
             "code_size(theme, pixel_height=16.0)"
         ),
+        "em_size": (
+            "import advtext\n"
+            "before = loaded()\n"
+            "advtext.em_size_for_pixel_height(advtext.Face.PROSE, 16.0)"
+        ),
         "interline": "theme.style(BlockKind.PARAGRAPH).interline",
     }
     stated = {
         "at_pixel_height": MEASURING,
         "face_metrics": MEASURING,
-        "code_size": FONT_FILES,
+        "code_size": OLD_READER,
+        "em_size": OLD_READER,
         "interline": INTERLINE,
     }
     for name, call in calls.items():
@@ -634,33 +690,42 @@ def test_the_named_exceptions_load_exactly_what_is_stated() -> None:
             "before = loaded()\n"
             "assert not before & CORE\n"
             f"{call}\n"
+            "from advtext import typesetter\n"
+            "assert not typesetter.ready()\n"
             "print('\\n'.join(sorted(loaded() - before)))"
         )
-        assert set(lines) == stated[name], (name, sorted(set(lines) ^ stated[name]))
-        assert set(lines) <= REFERENCE_CORE
+        new = set(lines)
+        assert new & REFERENCE_CORE == stated[name], (name, sorted(new ^ stated[name]))
+        own = new - REFERENCE_CORE
+        assert own <= METRICS_OWN, (name, sorted(own - METRICS_OWN))
+        assert stated[name] <= REFERENCE_CORE
 
 
-def test_loading_the_fonts_loads_the_font_files_and_no_more() -> None:
+_READY = (
+    "import os, sys\n"
+    "def loaded():\n"
+    "    return {m for m in sys.modules if m.split('.')[0] in ('advtext', 'fontTools')}\n"
+    "from advtext import typesetter\n"
+    "before = loaded()\n"
+    "if os.environ.get('IMTYPESET_LIBRARY'):\n"
+    "    from imgui_bundle import imgui\n"
+    "    imgui.create_context()\n"
+    "    imgui.get_io().backend_flags |= imgui.BackendFlags_.renderer_has_textures.value\n"
+    "print(typesetter.load_fonts(), typesetter.ready(), typesetter.reason())\n"
+)
+"""A fresh interpreter's first lines: the library's fonts loaded, when there is a library."""
+
+
+def test_loading_the_fonts_loads_the_table_of_files_and_no_reference_core() -> None:
     """
     `advtext.typesetter.load_fonts`, with the library and a Dear ImGui
     context of its own, in a fresh interpreter: it answers True and what it
-    loaded of advtext is `FONT_FILES`, exactly. Skipped without the library,
-    where `load_fonts` answers False before it asks for a file (the second
-    half, which runs either way).
+    loaded of advtext is `advtext.fontfiles` and the leaf, exactly. No
+    `advtext.fontlib` (which it loaded until 2026-10-12, to find a file) and
+    no fontTools. Skipped without the library, where `load_fonts` answers
+    False before it asks for a file (the first half, which runs either way).
     """
-    script = (
-        "import os, sys\n"
-        "def loaded():\n"
-        "    return {m for m in sys.modules if m.split('.')[0] == 'advtext'}\n"
-        "from advtext import typesetter\n"
-        "before = loaded()\n"
-        "if os.environ.get('IMTYPESET_LIBRARY'):\n"
-        "    from imgui_bundle import imgui\n"
-        "    imgui.create_context()\n"
-        "    imgui.get_io().backend_flags |= imgui.BackendFlags_.renderer_has_textures.value\n"
-        "print(typesetter.load_fonts(), typesetter.ready(), typesetter.reason())\n"
-        "print('\\n'.join(sorted(loaded() - before)))"
-    )
+    script = _READY + "print('\\n'.join(sorted(loaded() - before)))"
     without = {
         name: value for name, value in os.environ.items() if not name.startswith("IMTYPESET_")
     }
@@ -673,7 +738,71 @@ def test_loading_the_fonts_loads_the_font_files_and_no_more() -> None:
         pytest.skip("IMTYPESET_LIBRARY is not set: run `make test TYPESET=1`")
     lines = _fresh(script)
     assert lines[0] == "True True ", lines[0]
-    assert set(lines[1:]) == FONT_FILES | {"advtext.primitives"}, sorted(lines[1:])
+    assert set(lines[1:]) == {"advtext.fontfiles", "advtext.primitives"}, sorted(lines[1:])
+
+
+def test_with_the_library_ready_nothing_reaches_the_reference_core() -> None:
+    """
+    THE claim of 2026-10-12, measured: once `typesetter.load_fonts()` has
+    succeeded, every call that used to open a font file with the old reader
+    is answered by imtypeset, and a fresh interpreter that makes all of them
+    has loaded NO module of the reference core and no fontTools.
+
+    The calls: a host's `register_font` (before the load, as it must be),
+    `load_fonts`, `Theme.at_pixel_height` with no resolver (the default
+    faces and all-mono), `advtext.ui.pages.face_metrics` and a theme sized
+    through a `PageContext`'s resolver, `code_size` given a pixel height,
+    `advtext.em_size_for_pixel_height` for every face, and the markdown of
+    `demo/sample.md` described under the theme.
+
+    Then `unload()`: the library has no fonts again, and the same question
+    is the old reader's (`MEASURING`), which is the exception as stated.
+    Skipped without the library.
+    """
+    if not os.environ.get("IMTYPESET_LIBRARY"):
+        pytest.skip("IMTYPESET_LIBRARY is not set: run `make test TYPESET=1`")
+    lines = _fresh(
+        "import sys\n"
+        "import advtext\n"
+        "from advtext import Face, register_font, unregister_font\n"
+        "from advtext.fontfiles import font_file\n"
+        "register_font(Face.CODE_BOLD, font_file(Face.CODE))\n"
+        + _READY
+        + "from advtext.theme import Faces, Theme, font_key\n"
+        "from advtext.primitives import sp_from_px\n"
+        "from advtext.ui.pages import PageContext, face_metrics\n"
+        "from advtext.ui.typeset_diff_view import code_size\n"
+        "from advtext.typeset_markdown import MarkdownConverter, parse_markdown\n"
+        "theme = Theme.at_pixel_height(16.0)\n"
+        "mono = Theme.at_pixel_height(18.0, faces=Faces.mono())\n"
+        "probe = face_metrics(font_key(Face.CODE, sp_from_px(20.0)))\n"
+        "print(type(probe).__module__, type(probe).__name__, probe.ascent > probe.descent > 0)\n"
+        "Theme.at_pixel_height(15.0, metrics=PageContext.build().metrics)\n"
+        "code_size(theme, pixel_height=16.0)\n"
+        "print([advtext.em_size_for_pixel_height(face, 16.0) > 0 for face in Face])\n"
+        "source = open('demo/sample.md', encoding='utf-8').read()\n"
+        "MarkdownConverter(theme).describe(parse_markdown(source, theme).blocks)\n"
+        "print('\\n'.join(sorted(loaded())))\n"
+        "print('--')\n"
+        "typesetter.unload()\n"
+        "unregister_font(Face.CODE_BOLD)\n"
+        "print(typesetter.ready(), Theme.at_pixel_height(16.0) == theme)\n"
+        "print('\\n'.join(sorted(loaded())))"
+    )
+    assert lines[0] == "True True ", lines[0]
+    assert lines[1] == "advtext.typeset_metrics LibraryMetrics True"
+    assert lines[2] == str([True] * 7)
+    cut = lines.index("--")
+    ready = set(lines[3:cut])
+    assert not ready & REFERENCE_CORE, sorted(ready & REFERENCE_CORE)
+    assert not {name for name in ready if name.split(".")[0] == "fontTools"}
+    assert ready <= set(EXPECTED) | SHARED, sorted(ready - set(EXPECTED) - SHARED)
+    # ... and the exception, exactly: with no fonts the old reader is asked,
+    # and it gives the theme the library gave.
+    assert lines[cut + 1] == "False True"
+    after = set(lines[cut + 2 :])
+    assert after & REFERENCE_CORE == MEASURING
+    assert "fontTools" in after
 
 
 def test_no_module_of_the_typeset_layer_reads_a_styles_interline() -> None:
@@ -963,6 +1092,75 @@ def test_a_moved_length_or_face_is_one_object_under_both_paths() -> None:
         assert getattr(advtext, name) is getattr(primitives, name)
 
 
+FONTFILES_NAMES = (
+    "MissingFontError",
+    "backing_face",
+    "font_directory",
+    "font_file",
+    "on_registry_change",
+    "register_font",
+    "registered_fonts",
+    "unregister_font",
+)
+"""What moved from `advtext.fontlib` to `advtext.fontfiles` on 2026-10-12."""
+
+
+def test_a_moved_font_file_name_is_one_object_under_every_path() -> None:
+    """
+    `advtext.fontlib` imports back what `advtext.fontfiles` defines, tables
+    included, so a file registered through either path (or the facade) is
+    seen by both, and `except fontlib.MissingFontError` catches what
+    `fontfiles.font_file` raises.
+    """
+    import advtext
+    from advtext import fontfiles, fontlib
+
+    assert sorted(fontfiles.__all__) == sorted(FONTFILES_NAMES)
+    for name in FONTFILES_NAMES:
+        assert getattr(fontlib, name) is getattr(fontfiles, name), name
+        assert name in fontlib.__all__
+        assert getattr(fontfiles, name).__module__ == "advtext.fontfiles"
+        if name in advtext.__all__:
+            assert getattr(advtext, name) is getattr(fontfiles, name)
+    for table in ("_FONT_FILES", "_STAND_INS", "_REGISTERED", "_LISTENERS"):
+        assert getattr(fontlib, table) is getattr(fontfiles, table), table
+    # The old reader drops what it read when a file changes: it is a listener.
+    assert fontlib._registry_changed in fontfiles._LISTENERS
+
+
+def test_the_font_file_table_imports_only_the_leaf() -> None:
+    """
+    By source: `advtext/fontfiles.py` imports `advtext.primitives` and no
+    other module of advtext, a function's body included; and a fresh
+    interpreter that imports it, registers a file and asks for every role's
+    file has loaded those two modules and no fontTools.
+    """
+    import ast
+
+    tree = ast.parse((REPO / "advtext" / "fontfiles.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            assert not [alias.name for alias in node.names if alias.name.startswith("advtext")]
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0
+            assert not (node.module or "").startswith("advtext") or node.module == (
+                "advtext.primitives"
+            )
+    lines = _fresh(
+        "import sys\n"
+        "from advtext import Face, register_font, registered_fonts, unregister_font\n"
+        "from advtext.fontfiles import font_file\n"
+        "register_font(Face.CODE_BOLD, font_file(Face.CODE))\n"
+        "assert font_file(Face.CODE_BOLD) == font_file(Face.CODE)\n"
+        "assert list(registered_fonts()) == [Face.CODE_BOLD]\n"
+        "unregister_font(Face.CODE_BOLD)\n"
+        "assert [font_file(face).is_file() for face in Face] == [True] * len(Face)\n"
+        "print('fontTools' in sys.modules)\n"
+        f"{_PRINT_LOADED}"
+    )
+    assert lines == ["False", "advtext", "advtext.fontfiles", "advtext.primitives"]
+
+
 def test_the_new_leaf_imports_nothing_of_advtext() -> None:
     """
     By source: no `import` of `advtext` anywhere in `advtext/primitives.py`,
@@ -980,12 +1178,17 @@ def test_the_new_leaf_imports_nothing_of_advtext() -> None:
     assert _loaded_by("advtext.primitives") == {"advtext", "advtext.primitives"}
 
 
-def test_a_page_context_measures_with_the_real_resolver_asked_at_the_call() -> None:
+def test_a_page_context_measures_with_the_real_resolver_asked_at_the_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """
-    `PageContext.metrics` defaults to `advtext.ui.pages.face_metrics`, which is
-    `advtext.style.fontlib_metrics` looked up when it is called: the same
-    answer, a replacement of the name on `advtext.style` is the one asked, and
-    a caller's own resolver is kept.
+    `PageContext.metrics` defaults to `advtext.ui.pages.face_metrics`, which
+    WHILE THE LIBRARY HAS NO FONTS is `advtext.style.fontlib_metrics` looked
+    up when it is called: the same answer, a replacement of the name on
+    `advtext.style` is the one asked, and a caller's own resolver is kept.
+    (With the library ready it is the library's answer:
+    `tests/test_typeset_metrics.py`. This process may have loaded the
+    library's fonts in another test, so `ready` is held false here.)
 
     It was the object itself, fetched when a context was made, until tranche
     5: making a context then loaded `advtext.style`
@@ -993,11 +1196,13 @@ def test_a_page_context_measures_with_the_real_resolver_asked_at_the_call() -> N
     holds that it no longer does).
     """
     import advtext.style as style
+    from advtext import typesetter
     from advtext.fontmetrics import Face
     from advtext.theme import Theme, font_key
     from advtext.ui.pages import PageContext, face_metrics
     from advtext.units import sp_from_px
 
+    monkeypatch.setattr(typesetter, "ready", lambda: False)
     key = font_key(Face.CODE, sp_from_px(20.0))
     assert PageContext.build().metrics is face_metrics
     assert PageContext(theme=Theme.build()).metrics is face_metrics
@@ -1044,9 +1249,10 @@ def test_the_app_and_a_context_load_no_more_than_a_built_theme() -> None:
     `MEASURING`.** A page that sizes a theme to a pixel height
     (`Theme.at_pixel_height`: the Themes page does it in its constructor)
     measures a face from its font file, through `advtext.style` (and what
-    it imports) and `advtext.fontlib`. That is decision 5 of `.concerns/lead--tranche-5.md`:
-    it stays until imtypeset answers a face's metrics. No page's constructor
-    loads anything else of the core, and none loads an old view.
+    it imports) and `advtext.fontlib`: there is no window yet, so the
+    library has no fonts and cannot be asked (`advtext.typeset_metrics`).
+    No page's constructor loads anything else of the core, and none loads
+    an old view.
 
     The same measurement is what `PageContext.metrics` is for
     (`advtext.ui.pages.face_metrics`); the last step calls it. The other

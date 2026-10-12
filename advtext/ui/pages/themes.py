@@ -42,15 +42,18 @@ setters work on them.
 `"none"` when they do not; `reason` is then why.
 
 Nothing of the old views is imported by this module, at import or later.
-**One thing of the old core is reached, and only when a theme is made**:
+**One thing of the old core can be reached, and only when a theme is made
+before the library has its fonts**:
 `Theme.at_pixel_height` measures the regular face (ascent, descent, the
 widest list marker) to turn a pixel height into an em, and its measuring
 source is `PageContext.metrics` -- by default
-`advtext.ui.pages.face_metrics`, which is `advtext.style.fontlib_metrics`
-asked at the call, and that loads `advtext.style` and `advtext.fontlib`. It
-stays until the library has a metrics query
-(`.concerns/lead--for-imtypeset-team.md`, item 5); `face_metrics` is where
-the change then goes.
+`advtext.ui.pages.face_metrics`. The page makes its first theme in its
+constructor, before there is a window, and that one is measured by
+`advtext.style.fontlib_metrics`, which loads `advtext.style` and
+`advtext.fontlib`. Every theme made once `typesetter.load_fonts()` has
+succeeded (a slider moved, a face table chosen) is measured by the
+library and loads nothing; the two give the same theme
+(`advtext.typeset_metrics`).
 
 ## What a change is, and what it costs
 

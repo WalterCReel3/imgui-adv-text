@@ -1278,3 +1278,44 @@ stand-in headers, Linux): alone in a directory the wheel was refused (their
 kind `layout`); **with `imgui_bundle` beside it in the same directory it was
 ready, accepted by attestation, fonts loaded, in 250 ms**, and the same with
 its `dist-info` deleted. So the two must be installed side by side.
+
+### P25, built (2026-10-12)
+
+By advtext's N-METRICS builder, an agent; both gates green after it, alone on
+the tree (`make check` 3445 passed, `make check TYPESET=1` 3786 passed, load
+2 to 5), against imtypeset `03b5cd4`, which is the pin now. Nothing was run in
+a real window, on macOS or frozen. The builder's sentences:
+
+- "Once `advtext.load_fonts()` has succeeded, `Theme.at_pixel_height`,
+  `advtext.em_size_for_pixel_height` and `code_size(pixel_height=)` are
+  answered by imtypeset's `font_metrics` and `glyph_advance`: no font file is
+  opened by advtext, no `GPOS` is read, and neither `advtext.fontlib` nor
+  fontTools is imported."
+- "Measured (fresh interpreter per sample, median of 9, load 3.5): a document
+  theme (one `Theme.at_pixel_height` and six `em_size_for_pixel_height`) is
+  0.22 ms cold and 0.12 ms after a `register_font`, against 373 ms and 302 ms
+  by the old reader on the same machine. `register_font` itself is 0.07 ms."
+- "The order is the one your `gate.load_fonts` already follows:
+  `register_font`, then `typesetter.load_fonts()`, then the themes. A theme
+  sized before `load_fonts()` has succeeded, or with no library, is still
+  measured by the old reader at the old cost; it is the same theme (175 ems,
+  100 themes and 14 descriptions of a sample document compared, no
+  difference)."
+- "It needs imtypeset `74f5116` or later; an older one is now refused at the
+  gate (`reason()` names `font_metrics, glyph_advance`)."
+- "A file you register after `load_fonts()` is not what a theme is sized from
+  until you call `load_fonts()` again (12 ms measured). A role you left out of
+  `load_fonts(faces)` raises `MissingFontError` when sized."
+- "`advtext.register_font`, `unregister_font` and `registered_fonts` no longer
+  import `advtext.fontlib`; a freezer needs `advtext.fontfiles` and
+  `advtext.typeset_metrics`."
+
+Least sure of (the builder): exact equality between the two readers is
+measured for the bundled fonts only; a host font with unusual units per em
+answers to about seven digits through the library's C floats, so a theme
+size could in principle differ by one scaled point between a theme sized
+before `load_fonts` and one after. Not observed.
+
+**The pin moved:** advtext builds and gates against imtypeset `03b5cd4`
+(`imtypeset.ref`), built here with stand-in headers. Your own `imtypeset.ref`
+should move with it before you take the commits below.

@@ -1490,25 +1490,23 @@ def test_the_presets_are_one_theme_or_two_and_a_switch_lets_go_of_every_view(
 def test_a_conversation_loads_no_old_view_and_no_old_stream(typeset: dict[str, Any]) -> None:
     """
     Six conversations, every reply of the script, code coloured and a diff
-    hosted, before the demo app was imported: what is loaded of the old core
-    is what measuring a face loads (`MEASURING` of
-    `tests/test_typeset_closure.py`) and nothing else. `typesetter.load_fonts`
-    asks `advtext.fontlib` where the font files are, and the mono preset's
-    `Theme.at_pixel_height` measures one through
-    `advtext.style.fontlib_metrics`, which brings what `advtext.style`
-    imports. Building a theme, which loaded three of these until T5-B2,
-    loads none of them now: they are here for the measuring alone.
-    (`advtext.style` is not on the old-core list this child is given.)
+    hosted, before the demo app was imported: NOTHING is loaded of the old
+    core. Until 2026-10-12 it was what measuring a face loads (`MEASURING`
+    of `tests/test_typeset_closure.py`): `typesetter.load_fonts` asked
+    `advtext.fontlib` where the font files are, and the mono preset's
+    `Theme.at_pixel_height` measured one through
+    `advtext.style.fontlib_metrics`. The files are `advtext.fontfiles`'
+    now, and the child has loaded the library's fonts before the preset
+    sizes its theme, so the library measures (`advtext.typeset_metrics`).
     """
-    from test_typeset_closure import MEASURING
-
     loaded = set(typeset["old_before_app"])
-    assert loaded == MEASURING - {"advtext.style"}, sorted(loaded)
+    assert loaded == set(), sorted(loaded)
     everything = set(typeset["advtext_before_app"])
     for name in ("advtext.stream", "advtext.markdown", "advtext.mathtext", "advtext.spans"):
         assert name not in everything, name
     assert not {n for n in everything if n.startswith(("advtext.backends", "advtext.ui.bare"))}
-    assert "advtext.style" in everything, "the mono preset no longer measures through style"
+    # The mono preset was sized all the same, and by the library.
+    assert "advtext.style" not in everything and "advtext.typeset_metrics" in everything
 
 
 def test_the_page_takes_a_typed_turn_follows_the_end_and_lets_go(

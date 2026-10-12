@@ -54,9 +54,10 @@ push. `_use_library_ui_font` makes that font ImGui's default by name
 
 **Without the library, one UI font**, loaded by `load_fonts` through
 `advtext.ui.fonts.load_faces`, so that the one line each page then draws can
-be read. That call and `advtext.typesetter.load_fonts` are the two places
-that still reach `advtext.fontlib` (to find a font file); both import it
-when they run and not before.
+be read. That call still reaches `advtext.fontlib` (through
+`advtext.ui.fonts`), imported when it runs and not before;
+`advtext.typesetter.load_fonts` finds its files in `advtext.fontfiles`
+and reaches nothing of the old core.
 
 Deliberately out of scope: docking, persistence beyond the ini file, and any
 editing.

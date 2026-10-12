@@ -99,11 +99,14 @@ own theme: the tail is read ragged and a block again in the page's theme when
 it commits (`MarkdownStream(theme, live_theme=...)`). Changing preset rebuilds
 every message, and replays what has arrived of the unfinished one.
 
-**The one thing here that still reaches the old core**
-(`.concerns/lead--tranche-5.md`, decision 5): the mono preset sizes its theme
-with `Theme.at_pixel_height(..., metrics=context.metrics)`, and measuring a
-face's ascent, descent and em is `advtext.style.fontlib_metrics` over
-`advtext.fontlib`, imported when that call is made and not with this module.
+**The one thing here that can still reach the old core, and only before
+the library has its fonts**: the mono preset sizes its theme with
+`Theme.at_pixel_height(..., metrics=context.metrics)`. The page is built
+before there is a window, so that first measurement of a face's ascent,
+descent and em is `advtext.style.fontlib_metrics` over `advtext.fontlib`,
+imported when the call is made and not with this module. A theme sized
+after `typesetter.load_fonts()` is measured by the library and is the
+same theme (`advtext.typeset_metrics`).
 
 ## What has been run
 

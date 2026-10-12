@@ -99,8 +99,9 @@ converts to the library's byte offsets itself.
 nothing else.** The gate, the description types and `block_styles` need no
 more. `FACE_ROLE` and `ALIGN`, keyed by enums that live in
 `advtext.primitives` and `advtext.theme`, are made when first read;
-`load_fonts` imports `advtext.fontlib` for the font files (the one use of the
-old core left here: `.concerns/lead--tranche-5.md`, decision 5).
+`load_fonts` imports `advtext.fontfiles` for the font files, which is the
+table of them and no part of the old core (until 2026-10-12 it was
+`advtext.fontlib`, the one use of the old core left here).
 
 Ported from `../imtypeset/python/spike_advtext/convert.py`. Where this differs
 from the spike, and why, is in `.concerns/IT-A1--builder--result.md`.
@@ -326,6 +327,8 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "destroy_context",
         "face_has_glyph",
         "font_atlas_index",
+        "font_metrics",
+        "glyph_advance",
         "host_info",
         "stats",
     ),
@@ -1160,9 +1163,10 @@ def load_fonts(faces: Iterable[Face] | None = None) -> bool:
     there is none.
 
     `faces` are the roles to register, by default every `Face`: each gets
-    `advtext.fontlib.font_file(face)` under `FACE_ROLE[face]`, so a font a
-    host registered with `advtext.fontlib.register_font` is the one imtypeset
-    draws too, and the two measure the same file. A role with no file
+    `advtext.fontfiles.font_file(face)` under `FACE_ROLE[face]`, so a font a
+    host registered with `advtext.register_font` is the one imtypeset
+    draws, and the one a theme sized afterwards is measured from
+    (`advtext.typeset_metrics`). A role with no file
     (`MissingFontError`) is left out and said in `trouble()`; text in it is
     then set in the document's face. imtypeset loads each file into the atlas
     itself, so a face advtext also loaded is there twice.
@@ -1191,7 +1195,7 @@ def load_fonts(faces: Iterable[Face] | None = None) -> bool:
 
     **Called again after start-up, between frames** (an operator switches
     typeset text on, or chooses another font file for a role with
-    `advtext.fontlib.register_font`). Measured 2026-10-12 in a real window
+    `advtext.register_font`). Measured 2026-10-12 in a real window
     (hello_imgui's runner, `imgui-bundle` 1.92.900, imtypeset `c9f8902`,
     Xvfb and a software renderer), calling this from `pre_new_frame` twice
     more, long after `load_additional_fonts` had returned, with a
@@ -1268,7 +1272,9 @@ def load_fonts(faces: Iterable[Face] | None = None) -> bool:
         if context is None:
             note("load_fonts was called with no Dear ImGui context; nothing was loaded")
             return False
-        fontlib = importlib.import_module("advtext.fontlib")
+        # The table of files, which opens none: no module of the reference
+        # core is loaded to find one (`advtext.fontfiles`).
+        fontfiles = importlib.import_module("advtext.fontfiles")
         if faces is None:
             faces = tuple(importlib.import_module("advtext.primitives").Face)
         if ts.current_context() is not None:
@@ -1278,8 +1284,8 @@ def load_fonts(faces: Iterable[Face] | None = None) -> bool:
         given: int | None = None
         for face in faces:
             try:
-                path = fontlib.font_file(face)
-            except fontlib.MissingFontError:
+                path = fontfiles.font_file(face)
+            except fontfiles.MissingFontError:
                 missing.append(face.value)
                 continue
             ts.add_font(FACE_ROLES[face.name], str(path))

@@ -16,11 +16,13 @@ ImGui draw backend and views. The views and the backend are deleted. What is
 left of the core is what the SVG litmus renderer needs (`make svg`:
 `scripts/render_litmus.py`, `advtext.backends.svg`, and the modules they
 import), and it is called the reference core here. No module of the typeset
-layer imports it, at import or when a theme is built, with the exceptions
-`tests/test_typeset_closure.py` names: measuring a face from its font file
-(`Theme.at_pixel_height`, `advtext.ui.typeset_diff_view.code_size`) and
-finding the font files (`load_fonts`) go through `advtext.fontlib`, until the
-library answers a face's metrics.
+layer imports it, at import or when a theme is built, with the one exception
+`tests/test_typeset_closure.py` names: sizing a theme to a pixel height
+(`Theme.at_pixel_height`, `advtext.ui.typeset_diff_view.code_size`) BEFORE
+`load_fonts()` has succeeded, or without the library, measures the face
+through `advtext.fontlib`. After it the library answers
+(`advtext.typeset_metrics`), and finding the font files never needed it
+(`advtext.fontfiles`).
 
 ## The names importable from here
 
@@ -74,9 +76,11 @@ In three groups, which `_HOMES` keeps apart:
     `TypesetDiffView` with `DiffLayout`, `SyntaxColour`, `language_for`, and
     `DiffHeader`, what `TypesetDiffView.headers` answers (a file header's
     text and whether it fit).
-- **Font files**: `register_font`, `unregister_font`, `registered_fonts`,
-  `em_size_for_pixel_height` (`advtext.fontlib`: the files `load_fonts`
-  hands the library are the ones registered there), and the Python atlas
+- **Font files**: `register_font`, `unregister_font`, `registered_fonts`
+  (`advtext.fontfiles`: the files `load_fonts` hands the library are the
+  ones registered there; register before `load_fonts`),
+  `em_size_for_pixel_height` (`advtext.typeset_metrics`: the library's
+  answer after `load_fonts`, the old reader's before), and the Python atlas
   loader `load_faces`, `LoadedFaces`, `TEXT_FACES`, `ALL_FACES`
   (`advtext.ui.fonts`), which the demo app uses for one UI font when the
   library is not drawing and nothing sets text with.
@@ -156,12 +160,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers; see the module docstr
         RowKind,
         UnifiedDiffStream,
     )
-    from advtext.fontlib import (
-        em_size_for_pixel_height,
-        register_font,
-        registered_fonts,
-        unregister_font,
-    )
+    from advtext.fontfiles import register_font, registered_fonts, unregister_font
     from advtext.markdown import (
         Block,
         CodeBlock,
@@ -195,6 +194,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers; see the module docstr
         ReaderOptions,
         parse_markdown,
     )
+    from advtext.typeset_metrics import em_size_for_pixel_height
     from advtext.typesetter import (
         Kind,
         kind,
@@ -321,14 +321,16 @@ _HOMES: dict[str, str] = {
     # Fenced diffs drawn as diff views inside a document.
     "TypesetDiffFences": "advtext.ui.typeset_hosts",
     "HostedDiff": "advtext.ui.typeset_hosts",
-    # === Font files (decision 5 of .concerns/lead--tranche-5.md) ===
-    # The host's own files by role, which `load_fonts` hands the library, and the size
-    # conversion `Theme.at_pixel_height` applies. `advtext.fontlib` is the reference
-    # core's and stays until imtypeset answers a face's metrics.
-    "register_font": "advtext.fontlib",
-    "unregister_font": "advtext.fontlib",
-    "registered_fonts": "advtext.fontlib",
-    "em_size_for_pixel_height": "advtext.fontlib",
+    # === Font files ===
+    # The host's own files by role, which `load_fonts` hands the library
+    # (`advtext.fontfiles`: a table, no font is opened), and the size conversion
+    # `Theme.at_pixel_height` applies (`advtext.typeset_metrics`: the library's answer
+    # once `load_fonts` has succeeded, the reference core's `advtext.fontlib` before).
+    # `advtext.fontlib` has the same four names; the first three are these objects.
+    "register_font": "advtext.fontfiles",
+    "unregister_font": "advtext.fontfiles",
+    "registered_fonts": "advtext.fontfiles",
+    "em_size_for_pixel_height": "advtext.typeset_metrics",
     # The Python atlas loader. The demo app uses it for one UI font when the library is
     # not drawing (decision 6); nothing sets text with the faces it loads.
     "load_faces": "advtext.ui.fonts",

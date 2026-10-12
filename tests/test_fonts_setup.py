@@ -662,7 +662,10 @@ def test_a_role_with_no_file_at_all_is_a_missing_face_and_not_a_crash(
     `KeyError` out of `font_file`; it is now the `MissingFontError` the callers
     that degrade already catch.
     """
-    monkeypatch.setattr(fontlib, "_STAND_INS", {})
+    # The table itself, emptied: it is `advtext.fontfiles`' since 2026-10-12 and
+    # `fontlib._STAND_INS` is that dictionary, so a rebinding of the name on
+    # either module would be read by nobody.
+    monkeypatch.delitem(fontlib._STAND_INS, Face.CODE_BOLD)
     with pytest.raises(fontlib.MissingFontError, match="code-bold"):
         fontlib.font_file(Face.CODE_BOLD)
 

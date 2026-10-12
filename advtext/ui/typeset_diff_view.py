@@ -202,9 +202,10 @@ to its release).
   6.196 px at `pixel_height=13` where `DiffView` draws on 6 (both measured in
   a window). Pane edges are rounded to a pixel.
 - `metrics=` (a `MetricsResolver`) is not taken. `pixel_height` is, and
-  imports `advtext.fontlib` when given: the one place this module asks the
-  old core for anything (a face's line metrics from the library would remove
-  it). The theme is `advtext.theme`'s, which loads `fontmetrics` and `units`
+  asks the library for the face's line metrics once it has its fonts
+  (`advtext.typeset_metrics`); given before that, and only then, it imports
+  `advtext.fontlib`, the one place this module can ask the old core for
+  anything. The theme is `advtext.theme`'s, which loads `fontmetrics` and `units`
   for its own purposes; nothing here calls them.
 - A character the code face lacks is not in its own cell, and a glyph taller
   than the pitch is not cut to it (above).
@@ -1557,8 +1558,10 @@ def code_size(
     The code face's size in pixels and the pitch in whole pixels, as `DiffView`
     reads them from a theme (`DiffMetrics.font` and `.row`); and, third, what
     they were read from, to compare. `pixel_height` is the height the face is
-    drawn at as ImGui means it, and is the one thing here that asks the old
-    core (`advtext.fontlib`, imported only then) for a face's line metrics.
+    drawn at as ImGui means it, and is the one thing here that asks for a
+    face's line metrics (`advtext.typeset_metrics.em_size_for_pixel_height`:
+    the library once `typesetter.load_fonts()` has succeeded; before that,
+    and only then, the old core's `advtext.fontlib`, imported at the call).
     """
     # Here and not at the top: a `Theme` is handed in, and importing its module
     # is the caller's business (`tests/test_typeset_diff_view.py` holds what
@@ -1570,9 +1573,9 @@ def code_size(
     key = (style.font, style.leading, pixel_height, ppi)
     size = style.font.size
     if pixel_height is not None:
-        from advtext import fontlib
+        from advtext import typeset_metrics
 
-        em_px = fontlib.em_size_for_pixel_height(style.font.face, pixel_height)
+        em_px = typeset_metrics.em_size_for_pixel_height(style.font.face, pixel_height)
         size = round(em_px * _PT_PER_INCH / ppi * _UNITY)
     leading = round(style.leading * size / max(1, style.font.size))
     row = max(1, math.ceil(_px(leading, ppi) - 1e-6))

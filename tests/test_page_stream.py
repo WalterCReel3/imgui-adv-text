@@ -1148,17 +1148,16 @@ def typeset() -> dict[str, Any]:
 def test_the_session_loads_no_old_view_and_no_old_stream(typeset: dict[str, Any]) -> None:
     """
     Twenty frames of both lanes, drawn, in a process that had imported the page
-    and a theme and nothing else of advtext: what is loaded of the old core is
-    `advtext.fontlib`, which `typesetter.load_fonts` asks where the font
-    files are, and the `advtext.fontmetrics` it imports (`FONT_FILES`).
-    Building a theme loads none of it since T5-B2. Neither
+    and a theme and nothing else of advtext: NOTHING is loaded of the old
+    core. Until 2026-10-12 it was `advtext.fontlib`, which
+    `typesetter.load_fonts` asked where the font files are, and the
+    `advtext.fontmetrics` it imports; the files are `advtext.fontfiles`'
+    now. Building a theme loads none of it since T5-B2. Neither
     `advtext.stream` nor `advtext.markdown`, and no view of the old core. The
     lanes had no view until their first `show`.
     """
-    from test_typeset_closure import FONT_FILES
-
     alone = typeset["alone"]
-    assert set(alone["old"]) == FONT_FILES, alone["old"]
+    assert set(alone["old"]) == set(), alone["old"]
     for name in ("advtext.stream", "advtext.markdown", "advtext.style", "advtext.mathtext"):
         assert name not in alone["advtext"], name
     assert alone["unmade"] == [True, True]

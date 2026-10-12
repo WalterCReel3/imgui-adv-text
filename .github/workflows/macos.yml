@@ -17,9 +17,11 @@
 #                                docs/status.md.
 #
 # Known from reading, before either answer, to be Linux-only in what ci.yml
-# does: `xvfb-run`, `unshare -rm` and the apt packages; the Makefile's library
-# name `libimtypeset_bundle.so`; imtypeset's build script (g++, `-shared`,
-# `-Wl,--version-script`, `-Wl,--no-undefined`). Not known: whether a GLFW
+# does: `xvfb-run`, `unshare -rm` and the apt packages; imtypeset's build
+# script at the pinned ref (g++, `-shared`, `-Wl,--version-script`,
+# `-Wl,--no-undefined`; from its commit 03b5cd4 on it has a macOS branch,
+# never run). The Makefile no longer names the library's file: it reads the
+# name that script writes (2026-10-12; never run on a Mac). Not known: whether a GLFW
 # window opens on a hosted macOS runner at all, which the tests that
 # photograph the app need.
 #

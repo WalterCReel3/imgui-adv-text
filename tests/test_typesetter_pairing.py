@@ -68,6 +68,8 @@ _KEYS = {
     "built_for",
     "headers",
     "accepted_by",
+    "imtypeset_kind",
+    "imtypeset_route",
 }
 
 _REPORT = """
@@ -257,6 +259,8 @@ def test_an_installed_distribution_is_loaded_with_no_variable_set(tmp_path: Path
         "built_for": "imgui-bundle==1.92.900",
         "headers": "fork:0123abc",
         "accepted_by": "imgui-check+probe",
+        "imtypeset_kind": None,
+        "imtypeset_route": None,
     }
     assert report["again"] == report["pairing"]
     assert set(report["pairing"]) == _KEYS and report["trouble"] == ""
@@ -279,6 +283,180 @@ def test_a_distribution_that_refuses_is_a_sentence_that_names_it(tmp_path: Path)
     assert report["pairing"]["kind"] == typesetter.Kind.REFUSED.value
     assert report["pairing"]["distribution"] == "imtypeset 0.9.0"
     assert report["pairing"]["library"] is None and report["pairing"]["built_for"] is None
+    assert report["pairing"]["imtypeset_kind"] is None, "a refusal that carries no kind has none"
+
+
+# -- imtypeset's own word for a refusal (its commit 03b5cd4 on: `ImportError.kind`) --
+
+_SENTENCE = (
+    "imtypeset 0.3.0 was built for imgui-bundle 1.92.900, and this application has "
+    "imgui-bundle 1.93.0. The two are updated together."
+)
+_DETAIL = "'/site/imgui_bundle/_imgui_bundle.so' is not sha256 0123 nor elf-load:4567"
+
+# What `imtypeset._bundle.refusal` makes: a plain ImportError whose first line
+# is a sentence, with the paths on the lines after it and three attributes.
+_REFUSES = """
+error = ImportError("imtypeset: " + {sentence!r} + "\\n" + {detail!r}, name="imtypeset")
+error.kind, error.sentence, error.detail = {kind!r}, {sentence!r}, {detail!r}
+raise error
+"""
+
+
+@pytest.mark.parametrize(
+    ("theirs", "ours"),
+    [
+        ("bundle-mismatch", typesetter.Kind.REFUSED),
+        ("damaged", typesetter.Kind.REFUSED),
+        ("package-mismatch", typesetter.Kind.REFUSED),
+        ("layout", typesetter.Kind.REFUSED),
+        ("unchecked", typesetter.Kind.REFUSED),
+        ("a-word-of-a-later-release", typesetter.Kind.REFUSED),
+        ("wrong-platform", typesetter.Kind.UNSUPPORTED),
+        ("no-library", typesetter.Kind.NOT_INSTALLED),
+    ],
+)
+def test_a_refusal_that_carries_a_kind_is_carried_and_decides_advtexts_kind(
+    theirs: str, ours: typesetter.Kind, tmp_path: Path
+) -> None:
+    """
+    imtypeset's T4 and its answer to H26. The word is `pairing()["imtypeset_kind"]`
+    as it was given; advtext's own kind is `unsupported` for a package built
+    for another system, `not-installed` for one that carries no library, and
+    `refused` for every other word, one it has never heard included. The
+    reason is the sentence alone: the line of paths is for a log.
+    """
+    source = _REFUSES.format(kind=theirs, sentence=_SENTENCE, detail=_DETAIL)
+    site = _a_distribution(tmp_path, source)
+    code = (
+        _REPORT
+        + "print(json.dumps([typesetter.kind().value, typesetter.EXIT_CODES[typesetter.kind()]]))"
+    )
+    assert _child(code, _without(), site) == [ours.value, typesetter.EXIT_CODES[ours]]
+    report = _child(_REPORT, _without(), site)
+    assert report["module"] is False
+    assert report["pairing"]["imtypeset_kind"] == theirs
+    assert report["pairing"]["kind"] == ours.value
+    assert report["reason"] == (
+        f"the installed imtypeset 0.9.0 did not load: ImportError: imtypeset: {_SENTENCE}"
+    )
+    assert "\n" not in report["reason"] and _DETAIL not in report["reason"]
+    assert report["pairing"]["route"] == typesetter.ROUTE_NONE
+    assert report["again"] == report["pairing"]
+
+
+def test_a_named_library_refused_with_a_kind_says_the_sentence_and_the_word(tmp_path: Path) -> None:
+    """
+    The same by the environment route, where nothing is put in front of the
+    sentence; and the paths are logged, once, with the word.
+    """
+    source = _REFUSES.format(kind="damaged", sentence=_SENTENCE, detail=_DETAIL)
+    package = tmp_path / "appended"
+    _a_package(package, source)
+    env = _without()
+    env[typesetter.LIBRARY_VARIABLE] = str(tmp_path / "a-library")
+    env[typesetter.PACKAGE_VARIABLE] = str(package)
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", _REPORT],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+        env={**env, "PYTHONPATH": str(_ROOT)},
+        cwd=str(_ROOT),
+    )
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout.strip().splitlines()[-1])
+    assert report["reason"] == f"ImportError: imtypeset: {_SENTENCE}"
+    assert report["pairing"]["kind"] == typesetter.Kind.REFUSED.value
+    assert report["pairing"]["imtypeset_kind"] == "damaged"
+    assert result.stderr.count(f"imtypeset says of that refusal (damaged): {_DETAIL}") == 1
+
+
+# -- known by its attestation, with no metadata (imtypeset's T5: a frozen application) --
+
+_INSTALLED = """
+import os
+def host_info():
+    return {
+        "library": os.path.join(os.path.dirname(__file__), "the-library"),
+        "route": "installed",
+        "imgui_version": "1.92.9",
+        "imtypeset_version": "0.3.0",
+        "bundle": {
+            "headers": "fork:0123abc",
+            "wheel_version": "1.92.900",
+            "accepted_by": "imgui-check+probe",
+            "built_for": {"wheel_version": "1.92.900"},
+        },
+    }
+"""
+
+
+@pytest.mark.parametrize(
+    ("attestation", "distribution"),
+    [
+        ('{"schema": 1, "distribution_version": "0.3.0.192900"}', "imtypeset 0.3.0.192900"),
+        ('{"schema": 1, "distribution_version": ""}', "imtypeset"),
+        ("not json at all", "imtypeset"),
+    ],
+    ids=["a version", "no version", "unreadable"],
+)
+def test_a_package_that_carries_an_attestation_is_a_distribution_without_metadata(
+    attestation: str, distribution: str, tmp_path: Path
+) -> None:
+    """
+    What a freezer leaves of an installed imtypeset: the package, the library
+    and `_attestation.json` inside it, and no `dist-info`. It is loaded with
+    no variable set; what the metadata would have said comes from the file
+    and from the library's own record. A file advtext cannot read still marks
+    the package: whether it is damaged is the package's gate to say.
+    """
+    site = tmp_path / "site"
+    _a_package(site, _INSTALLED)
+    (site / "imtypeset" / "_attestation.json").write_text(attestation, encoding="utf-8")
+    report = _child(_REPORT, _without(), site)
+    assert report["before"] == [], "looking for the attestation imported imtypeset"
+    assert report["module"] is True and report["reason"] == ""
+    assert report["path"] == [] and report["trouble"] == ""
+    assert report["pairing"] == {
+        "route": typesetter.ROUTE_DISTRIBUTION,
+        "reason": "",
+        "kind": typesetter.Kind.READY.value,
+        "library": str(site / "imtypeset" / "the-library"),
+        "package": str(site / "imtypeset"),
+        "distribution": distribution,
+        "imtypeset_version": "0.3.0",
+        "imgui_version": "1.92.9",
+        "wheel_version": "1.92.900",
+        "built_for": "imgui-bundle==1.92.900",
+        "headers": "fork:0123abc",
+        "accepted_by": "imgui-check+probe",
+        "imtypeset_kind": None,
+        "imtypeset_route": "installed",
+    }
+    assert report["again"] == report["pairing"]
+
+
+def test_metadata_is_what_built_for_and_the_version_are_read_from_when_there_is_some(
+    tmp_path: Path,
+) -> None:
+    """
+    With both, as `pip install` leaves them, nothing changes: the metadata's
+    version and its `Requires-Dist`, not the attestation's.
+    """
+    site = _a_distribution(tmp_path, _INSTALLED)
+    (site / "imtypeset" / "_attestation.json").write_text(
+        '{"schema": 1, "distribution_version": "9.9.9"}', encoding="utf-8"
+    )
+    info = site / "imtypeset-0.9.0.dist-info" / "METADATA"
+    info.write_text(
+        info.read_text(encoding="utf-8").replace("==1.92.900", "==1.92.801"), encoding="utf-8"
+    )
+    report = _child(_REPORT, _without(), site)
+    assert report["pairing"]["distribution"] == "imtypeset 0.9.0"
+    assert report["pairing"]["built_for"] == "imgui-bundle==1.92.801"
+    assert report["pairing"]["imtypeset_route"] == "installed"
 
 
 @pytest.mark.parametrize(
@@ -497,3 +675,119 @@ def test_the_pinned_pair_as_a_distribution_loads_and_draws_with_no_variable_set(
     assert report["pairing"]["built_for"] == f"imgui-bundle=={wheel}"
     assert report["fonts"] is True and report["ready"] is True, report["reason"]
     assert report["after"] == report["pairing"]
+
+
+# ---------------------------------------------------------------------------
+# The pair this run was given, in whichever of the two shapes it has: built
+# from imtypeset before 03b5cd4 (`<library>.gate`, refusals without a kind,
+# no `route`) or from it on (`<library>.attestation.json`, kinds, a route)
+# ---------------------------------------------------------------------------
+
+_GATED = """
+import json
+from advtext import typesetter
+answer = {"pairing": typesetter.pairing()}
+package = typesetter.module()
+if package is not None:
+    answer["checked_in"] = (package.host_info().get("bundle") or {}).get("checked_in")
+print(json.dumps(answer))
+"""
+
+
+def _says_kinds(package: Path) -> bool:
+    """Whether the package given is one whose refusals carry a kind (03b5cd4 on)."""
+    return "def refusal(" in (package / "_bundle.py").read_text(encoding="utf-8")
+
+
+def test_a_pair_that_carries_an_attestation_is_accepted_by_it_and_not_by_a_child() -> None:
+    """
+    imtypeset's T3: `make typeset-lib` leaves `<library>.attestation.json`
+    beside the library it installs, and the import then checks content
+    against it in this process. Without the file every import of the pair
+    starts a child interpreter, which works and is never noticed. A pair from
+    before 03b5cd4 has no such file and says nothing of a route; then this
+    holds only that.
+    """
+    library, package = _the_pair()
+    report = _child(_GATED, dict(os.environ))
+    assert report["pairing"]["kind"] == typesetter.Kind.READY.value, report["pairing"]["reason"]
+    if _says_kinds(package):
+        attestation = Path(f"{library}.attestation.json")
+        assert attestation.is_file(), f"the pair was installed without {attestation.name}"
+        assert report["checked_in"] == "attestation"
+        assert report["pairing"]["imtypeset_route"] == "IMTYPESET_LIBRARY"
+    else:
+        assert not Path(f"{library}.attestation.json").exists()
+        assert report["pairing"]["imtypeset_route"] is None
+    assert report["pairing"]["imtypeset_kind"] is None
+
+
+def test_a_real_refusal_carries_the_packages_own_word_when_it_has_one(tmp_path: Path) -> None:
+    """
+    The package this run was given, handed a file that is no library. From
+    03b5cd4 on its refusal is `not-a-library` and its first line a sentence;
+    before, there is no word and the reason is the whole message. Either way
+    advtext's kind is `refused`.
+    """
+    _, package = _the_pair()
+    impostor = tmp_path / "not-a-library.so"
+    impostor.write_bytes(b"\x7fELF and then nothing a loader would take")
+    env = dict(os.environ)
+    env[typesetter.LIBRARY_VARIABLE] = str(impostor)
+    report = _child(_GATED, env)
+    assert report["pairing"]["kind"] == typesetter.Kind.REFUSED.value
+    assert report["pairing"]["route"] == typesetter.ROUTE_NONE
+    if _says_kinds(package):
+        assert report["pairing"]["imtypeset_kind"] == "not-a-library"
+        assert "\n" not in report["pairing"]["reason"]
+        assert str(impostor) not in report["pairing"]["reason"], "the sentence names no path"
+    else:
+        assert report["pairing"]["imtypeset_kind"] is None
+
+
+def test_the_pair_laid_out_as_a_wheel_lays_it_out_is_found_by_its_attestation_alone(
+    tmp_path: Path,
+) -> None:
+    """
+    Route 2 with nothing standing in for the package: its modules, the library
+    and the attestation in ONE directory, as imtypeset's wheel has them, no
+    `dist-info`, and neither variable set. The package finds the library
+    beside itself (`route: installed`), holds it to the attestation without
+    starting a child, and the fonts load.
+
+    Only with a pair from imtypeset 03b5cd4 on: before it the package looks
+    for a library nowhere but in the variable, and
+    `test_the_pinned_pair_as_a_distribution_loads_and_draws_with_no_variable_set`
+    is the test of this route.
+    """
+    library, real = _the_pair()
+    attestation = Path(f"{library}.attestation.json")
+    if not _says_kinds(real) or not attestation.is_file():
+        pytest.skip(
+            "the pair given is from before imtypeset 03b5cd4: its package carries no library "
+            "and finds none without IMTYPESET_LIBRARY"
+        )
+    site = tmp_path / "site"
+    (site / "imtypeset").mkdir(parents=True)
+    for module in real.glob("*.py"):
+        (site / "imtypeset" / module.name).write_bytes(module.read_bytes())
+    carried = site / "imtypeset" / library.name
+    carried.symlink_to(library)
+    (site / "imtypeset" / "_attestation.json").write_bytes(attestation.read_bytes())
+
+    asked = _REAL.replace(
+        "print(json.dumps(report))",
+        'report["checked_in"] = typesetter.module().host_info()["bundle"]["checked_in"]\n'
+        "print(json.dumps(report))",
+    )
+    report = _child(asked, _without(), site)
+    assert report["module"] is True, report["pairing"]["reason"]
+    assert report["checked_in"] == "attestation"
+    assert report["fonts"] is True and report["ready"] is True, report["reason"]
+    found = report["pairing"]
+    assert found["kind"] == typesetter.Kind.READY.value, found["reason"]
+    assert found["route"] == typesetter.ROUTE_DISTRIBUTION
+    assert found["imtypeset_route"] == "installed"
+    assert found["library"] == str(carried) and found["package"] == str(site / "imtypeset")
+    assert found["distribution"] == "imtypeset", "a development build's attestation has no version"
+    assert found["built_for"] == f"imgui-bundle=={metadata.version('imgui-bundle')}"

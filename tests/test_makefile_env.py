@@ -52,6 +52,9 @@ _INHERITED = (
     "IMTYPESET_REF",
     "IMTYPESET_REPO",
     "IMTYPESET_CACHE",
+    "IMTYPESET_HEADERS",
+    "IMTYPESET_HEADER_CACHE",
+    "IMTYPESET_BUNDLE_HEADERS",
 )
 
 
@@ -399,8 +402,11 @@ def test_typeset_lib_leaves_the_library_its_package_and_where_they_came_from(
     assert not list(bundle.rglob("__pycache__")), "the snapshot carries bytecode"
     # Whole, not merged: nothing of the build before survives a successful one.
     assert not (bundle / "left-over").exists()
-    # The stamp named the staging path; the first import writes the real one.
-    assert not (bundle / "libimtypeset_bundle.so.gate").exists()
+    # Nothing here removes `<library>.gate` (imtypeset's T3): what a script
+    # from before 03b5cd4 wrote while staging is that package's to find stale.
+    assert (bundle / "libimtypeset_bundle.so.gate").read_text(encoding="utf-8") == "stamp\n"
+    # ... and a script that writes no LIBRARY file gets none made for it.
+    assert not (bundle / "LIBRARY").exists()
     assert (bundle / "obj" / "python").read_text(encoding="utf-8").strip() == sys.executable
     built_from = (bundle / "BUILT-FROM").read_text(encoding="utf-8")
     assert f"imtypeset: {checkout}\n" in built_from
@@ -408,6 +414,10 @@ def test_typeset_lib_leaves_the_library_its_package_and_where_they_came_from(
     assert re.search(r"^uncommitted paths: \S", built_from, re.MULTILINE), built_from
     assert re.search(r"^date: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", built_from, re.MULTILINE)
     assert built_from in result.stdout, "the target does not say what it built from"
+    assert result.stdout.splitlines()[-1].startswith(
+        f"use it with: IMTYPESET_LIBRARY={bundle}/libimtypeset_bundle.so "
+        f"IMTYPESET_PYTHON={bundle}/pysnap "
+    )
     assert not Path(f"{bundle}.building").exists()
     assert not Path(f"{bundle}.previous").exists()
     # And the opt-in now finds the copy rather than the checkout.
@@ -1030,6 +1040,169 @@ def test_a_pair_the_check_cannot_judge_is_not_called_stale(case: str, tmp_path: 
     result = _suite(tmp_path, bundle, "test")
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines()[-1] == f"suite: {bundle}/libimtypeset_bundle.so {package}"
+
+
+# ---------------------------------------------------------------------------
+# Tranche N (N-IMT): the build script of imtypeset 03b5cd4 and later. It says
+# the library's name in <out>/LIBRARY (the name differs by platform), writes
+# <library>.attestation.json and no .gate, and must be TOLD which headers.
+# `_BUILD_OK` above stays what a script from before that commit does, and
+# every test above is that shape still working.
+# ---------------------------------------------------------------------------
+
+_NEW_NAME = "libimtypeset_bundle.dylib"
+
+_BUILD_NEW = f"""\
+set -eu
+mkdir -p "$IMTYPESET_BUNDLE_OUT/obj"
+told="${{IMTYPESET_BUNDLE_HEADERS-unset}}|${{IMTYPESET_HEADER_CACHE-unset}}"
+echo "$told" > "$IMTYPESET_BUNDLE_OUT/obj/told"
+echo new > "$IMTYPESET_BUNDLE_OUT/{_NEW_NAME}"
+echo "$IMTYPESET_BUNDLE_OUT/{_NEW_NAME}" > "$IMTYPESET_BUNDLE_OUT/LIBRARY"
+echo '{{"schema": 1}}' > "$IMTYPESET_BUNDLE_OUT/{_NEW_NAME}.attestation.json"
+"""
+
+
+@needs_make
+def test_the_librarys_name_is_read_from_the_file_the_build_script_writes(tmp_path: Path) -> None:
+    """
+    imtypeset's T2 and T3, run with a stand-in script that names its library
+    as the macOS branch of the real one does. Everything that used to spell
+    `libimtypeset_bundle.so` goes through LIBRARY: what is imported before
+    the pair is installed, the checksum, the opt-in's default, the stale-pair
+    check. The attestation is carried beside the library as it was written.
+    """
+    checkout = _a_checkout(tmp_path, _BUILD_NEW)
+    bundle = _an_installed_pair(tmp_path)
+    result = _build(checkout, bundle)
+    assert result.returncode == 0, result.stderr
+    library = bundle / _NEW_NAME
+    assert library.read_text(encoding="utf-8") == "new\n"
+    assert not (bundle / "libimtypeset_bundle.so").exists(), "the pair before was merged into"
+    # LIBRARY named the staging directory when the script wrote it.
+    assert (bundle / "LIBRARY").read_text(encoding="utf-8") == f"{library}\n"
+    attestation = bundle / f"{_NEW_NAME}.attestation.json"
+    assert attestation.read_text(encoding="utf-8") == '{"schema": 1}\n'
+    assert not list(bundle.glob("*.gate")), "something here wrote a gate stamp"
+    assert f"import {bundle}.building/{_NEW_NAME} with " in result.stdout
+    # The last line is the two variables an example is run with, by the name the build gave.
+    assert result.stdout.splitlines()[-1].startswith(
+        f"use it with: IMTYPESET_LIBRARY={library} IMTYPESET_PYTHON={bundle}/pysnap "
+    )
+    built_from = (bundle / "BUILT-FROM").read_text(encoding="utf-8")
+    checksum = (
+        subprocess.run(["cksum"], input=library.read_bytes(), capture_output=True, check=True)
+        .stdout.decode()
+        .strip()
+    )
+    assert _field(built_from, "library cksum") == checksum
+
+    report = f"suite: {library} {bundle}/pysnap"
+    assert _suite(tmp_path, bundle, "test").stdout.splitlines()[-1] == report
+    opted = _recipe("test", "TYPESET=1", f"IMTYPESET_BUNDLE={bundle}", f"IMTYPESET_ROOT={checkout}")
+    assert opted.strip() == (
+        f"IMTYPESET_LIBRARY={library} IMTYPESET_PYTHON={bundle}/pysnap echo -m pytest -q"
+    )
+    # Only the NAME is taken from the file: a bundle that was copied names its own library.
+    copy = tmp_path / "copied"
+    shutil.copytree(bundle, copy)
+    assert _suite(tmp_path, copy, "test").stdout.splitlines()[-1] == (
+        f"suite: {copy}/{_NEW_NAME} {copy}/pysnap"
+    )
+    # The stale-pair check reads the library LIBRARY names ...
+    library.write_text("built by hand\n", encoding="utf-8")
+    stale = _suite(tmp_path, bundle, "test")
+    assert stale.returncode != 0 and str(library) in stale.stderr, stale.stderr
+    # ... and building again in one invocation uses the name the pair has.
+    again = _suite(tmp_path, bundle, "typeset-lib", "test")
+    assert again.returncode == 0, again.stderr
+    assert again.stdout.splitlines()[-1] == report
+
+
+@needs_make
+@pytest.mark.parametrize("left", ["nothing", "another name"])
+def test_a_library_file_that_names_what_the_script_did_not_leave_installs_nothing(
+    left: str, tmp_path: Path
+) -> None:
+    build = _BUILD_NEW + f'rm "$IMTYPESET_BUNDLE_OUT/{_NEW_NAME}"\n'
+    if left == "another name":
+        build += 'echo new > "$IMTYPESET_BUNDLE_OUT/libimtypeset_bundle.so"\n'
+    checkout = _a_checkout(tmp_path, build)
+    bundle = _an_installed_pair(tmp_path)
+    before = _tree(bundle)
+    result = _build(checkout, bundle)
+    assert result.returncode != 0, result.stdout
+    assert f"left no library at {bundle}.building/{_NEW_NAME}" in result.stderr, result.stderr
+    assert _tree(bundle) == before
+
+
+@needs_make
+def test_a_pair_built_without_an_attestation_is_installed_and_the_build_says_what_it_costs(
+    tmp_path: Path,
+) -> None:
+    """
+    The real script can be stopped before its gate step. The pair loads (the
+    package probes it in a child at every import), so it is not refused; the
+    line is so that nobody runs a suite that way without knowing.
+    """
+    build = _BUILD_NEW + f'rm "$IMTYPESET_BUNDLE_OUT/{_NEW_NAME}.attestation.json"\n'
+    result = _build(_a_checkout(tmp_path, build), tmp_path / "bundle")
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "bundle" / _NEW_NAME).exists()
+    assert f"no {_NEW_NAME}.attestation.json" in result.stderr, result.stderr
+    # A script from before 03b5cd4 never wrote one, and is told nothing.
+    old = _build(_a_checkout(tmp_path / "old", _BUILD_OK), tmp_path / "old-bundle")
+    assert old.returncode == 0 and "attestation" not in old.stderr, old.stderr
+
+
+@needs_make
+@pytest.mark.parametrize(
+    ("given", "told"),
+    [
+        ((), "unset"),
+        (("IMTYPESET_HEADERS=",), "unset"),
+        (("IMTYPESET_HEADERS=stand-in",), "stand-in"),
+    ],
+    ids=["default", "empty", "stand-in"],
+)
+def test_the_headers_choice_is_handed_to_the_script_only_when_one_is_made(
+    given: tuple[str, ...], told: str, tmp_path: Path
+) -> None:
+    """
+    imtypeset's T1. By default the script chooses, which from 03b5cd4 on is to
+    fetch the wheel's own headers; `IMTYPESET_HEADERS=stand-in` is the choice
+    without network, said under the script's own name for it. What it fetches
+    is kept under this repository's build/ whichever tree the script runs
+    from, or where the caller says.
+    """
+    checkout = _a_checkout(tmp_path, _BUILD_NEW)
+    bundle = tmp_path / "bundle"
+    result = _build(checkout, bundle, *given)
+    assert result.returncode == 0, result.stderr
+    said = (bundle / "obj" / "told").read_text(encoding="utf-8").strip()
+    assert said == f"{told}|{_ROOT}/build/imtypeset-headers"
+    result = _build(checkout, bundle, *given, f"IMTYPESET_HEADER_CACHE={tmp_path}/kept")
+    assert result.returncode == 0, result.stderr
+    said = (bundle / "obj" / "told").read_text(encoding="utf-8").strip()
+    assert said == f"{told}|{tmp_path}/kept"
+
+
+@needs_make
+def test_the_headers_choice_is_in_the_recipe_as_the_scripts_own_variable(tmp_path: Path) -> None:
+    """
+    Read, not run: with no choice the word is not in the recipe at all, so a
+    caller's own IMTYPESET_BUNDLE_HEADERS in the environment still reaches the
+    script, as it did.
+    """
+    checkout = _a_checkout(tmp_path, _BUILD_NEW)
+    plain = _make("-n", "typeset-lib", "PY=echo", f"IMTYPESET_ROOT={checkout}")
+    assert plain.returncode == 0, plain.stderr
+    assert "IMTYPESET_BUNDLE_HEADERS" not in plain.stdout
+    asked = _make(
+        "-n", "typeset-lib", "PY=echo", f"IMTYPESET_ROOT={checkout}", "IMTYPESET_HEADERS=stand-in"
+    )
+    assert "IMTYPESET_BUNDLE_HEADERS=stand-in IMTYPESET_HEADER_CACHE=" in asked.stdout
+    assert asked.stdout.replace("IMTYPESET_BUNDLE_HEADERS=stand-in ", "") == plain.stdout
 
 
 def _pin() -> str:

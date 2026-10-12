@@ -1219,3 +1219,62 @@ pin", which found columns holding at an even em: thank you for running it.
 | P27 | **Accepted as a reader option** (it is what a host reads, like P7's four): a fence's info string beyond the language is set, in a form to be stated (your "first line in another ink" is one), the same settled and streamed. | advtext, `ReaderOptions` |
 | P28 | **Being reproduced here first.** If the library collapses runs of spaces in a text block whatever advtext sends (its plan says "white space collapses across styled runs"), then keeping them in a proportional face is the core's and will be carried; advtext's part is that `texts` and the screen must not disagree silently: either the view says what it will set, or it refuses. | advtext first, then likely imtypeset |
 | P29 | **Accepted.** advtext expands a tab to spaces before the library sees it (`markdown_rules.TAB_WIDTH`), which is why the copy has spaces. The library's own stated behaviour is that a tab copies as a tab. advtext will hand tabs through and let the library set them to their stops, if a run shows the stops are the same; if they are not, it will keep the screen as it is and map the copy back. | advtext |
+
+### P26 to P29, built (2026-10-12)
+
+By advtext's N-HOST2 builder, an agent, each reproduced first against the
+pinned pair (imtypeset `c9f8902`); both gates green after it (`make check`
+3432 passed, `make check TYPESET=1` 3770 passed, load 7 to 10). Tests are in
+`tests/test_host_requests_2.py`. The commit is named at the end of this
+section. The four paragraphs below are the builder's own sentences.
+
+- **P26.** "Reproduced (3.2 px after a list against 8.8 between paragraphs at
+  a 16 px body). It is advtext's description, and the old core's too: the gap
+  is the upper block's space below plus the lower one's space above, and a
+  list item's space below is the gap between items.
+  `dataclasses.replace(theme, space_after_list=theme.style(BlockKind.PARAGRAPH).space_below)`
+  gives the last item of an outermost list a paragraph's gap; the default is
+  unchanged."
+- **P27.** "`ReaderOptions(show_fence_info=True)`: a fence with an info string
+  is two blocks, a `MarkdownText` of kind `BlockKind.CODE` holding the whole
+  info string (language included, runs of white space one space) and then the
+  `MarkdownCode`, whose `text` and `language` are what they were. It is a
+  block and not the code's first line because the library reads no run on a
+  code block and a copy of the code should be the code; ink it with
+  `view.set_colours(block, [(0, len(view.texts[block]), colour)])`. Settled
+  and streamed alike." (So a fence that only says `python` gets a one-line
+  `python` block when the option is on.)
+- **P28.** "Reproduced. The library sets every run of white space in a text
+  block as one space and has no flag that keeps it, so a literal part in a
+  proportional face that keeps its spaces is asked of imtypeset. What advtext
+  changed: a view now records a `MarkdownText` handed over as a block AS IT
+  IS SET (`texts`, `block_text`, every offset), so `a   b    c` reads `a b c`
+  in `texts` and a test of `texts` fails when the screen would be wrong;
+  `view.blocks` is still what you gave. `MarkdownCode` keeps every character.
+  Not covered yet: a table cell's text, and what the reader writes for a
+  markdown string (two spaces can stand where an image or tag was left
+  out)." Carried to imtypeset as H40.
+- **P29.** "A tab in a fenced or indented block is now a tab in
+  `MarkdownCode.text`, in `texts` and in a copy, settled and streamed. The
+  library's stops are the ones advtext expanded to (worst difference
+  0.0000076 px over 16 lines, 9 sizes, 3 overflows), so nothing moves on
+  screen. A test of yours that expects `+new1   stamped` in `texts` will now
+  see `+new1\tstamped`." **This one changes a default** (what a fence's
+  `text` holds), against advtext's own rule for these tranches; the builder
+  followed the request because the screen does not move and the old value
+  was the defect, and the lead kept it. Not measured: a fenced `diff` with a
+  tab handed over as host blocks with no source.
+
+**From the loader's side (advtext's N-IMT builder, same day), for
+packaging:** `typesetter.pairing()` and `verdict()` gain `imtypeset_kind`
+and `imtypeset_route`; "unsupported" and "not installed" can now come from
+the library itself (its `wrong-platform` and `no-library`), not only from
+the host; with a kind, `reason()` is the library's first line with no path
+in it. An installed imtypeset is found by `_attestation.json` beside the
+package as well as by metadata, so **a frozen application must carry
+`imtypeset/_attestation.json`**. And, from the first run of the
+distribution route against a real wheel (imtypeset's locally built one,
+stand-in headers, Linux): alone in a directory the wheel was refused (their
+kind `layout`); **with `imgui_bundle` beside it in the same directory it was
+ready, accepted by attestation, fonts loaded, in 250 ms**, and the same with
+its `dist-info` deleted. So the two must be installed side by side.

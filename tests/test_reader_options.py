@@ -148,8 +148,9 @@ def _replay(
 
 def test_the_fields_and_their_defaults_are_exactly_these() -> None:
     """
-    What PH-VIEW and pptmstr were told. A fifth field, or a default that is
+    What PH-VIEW and pptmstr were told. A sixth field, or a default that is
     not off, is a change to a published interface and should fail here first.
+    (The fifth, `show_fence_info`, is pptmstr's P27: `tests/test_host_requests_2.py`.)
     """
     assert [
         (field.name, field.type, field.default) for field in dataclasses.fields(ReaderOptions)
@@ -158,9 +159,10 @@ def test_the_fields_and_their_defaults_are_exactly_these() -> None:
         ("images_as_text", "bool", False),
         ("keep_glob_stars", "bool", False),
         ("show_link_destinations", "bool", False),
+        ("show_fence_info", "bool", False),
     ]
     options = ReaderOptions()
-    assert options == ReaderOptions(False, False, False, False)
+    assert options == ReaderOptions(False, False, False, False, False)
     # A value: equal options are one key, and it cannot be changed under a stream.
     assert hash(ReaderOptions(html_as_text=True)) == hash(OPTIONS["html"])
     assert len({ReaderOptions(), ReaderOptions(), ALL, replace(ALL)}) == 2

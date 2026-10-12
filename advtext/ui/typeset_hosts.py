@@ -252,7 +252,9 @@ class TypesetDiffFences:
                 fence.hosted.stream.close()
         if fence is None or fence.plain or source is None or where is None:
             # No source to cut from: the code block's own lines as the view
-            # described them, whole, every time. Tabs are spaces in these.
+            # described them, whole, every time. (A tab in these is a tab, as
+            # in the source the other path cuts from, since 2026-10-12; until
+            # then the reader had expanded it, counting the sign's column.)
             if fence is None or not fence.plain:
                 fence = _Fence(self._hosted(view), plain=True)
             text = view.block_text(number)

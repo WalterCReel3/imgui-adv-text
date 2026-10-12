@@ -28,15 +28,16 @@ this order, and `pairing()` says which was taken:
     own -- every script `tests/conftest.py`'s `window` runs -- would lose the
     package and keep the library, and then quietly draw the old way.
 2.  **An installed distribution** (`ROUTE_DISTRIBUTION`), when the variable is
-    not set and `importlib.metadata` finds a distribution named `imtypeset`.
-    It is then imported with no variable set, and is expected to find the
-    library it carries by itself. No such distribution exists yet (2026-10-11,
-    HANDOFF-imtypeset.md, request H3); the route is tested with stand-ins
-    (`tests/test_typesetter_pairing.py`). Metadata, and not merely a package
-    that can be imported, because a source directory of imtypeset on the path
-    -- which is what route 1 leaves behind in a process -- is importable too
-    and carries no library. An application frozen without package metadata
-    therefore names its library by the variable.
+    not set and an installed `imtypeset` is found: by `importlib.metadata`,
+    or by the `_attestation.json` a wheel of imtypeset carries beside its
+    modules (from its commit 03b5cd4 on), which is what is left to know it
+    by in an application frozen without package metadata. It is then
+    imported with no variable set, and finds the library it carries by
+    itself. One of the two, and not merely a package that can be imported,
+    because a source directory of imtypeset on the path -- which is what
+    route 1 leaves behind in a process -- is importable too and carries no
+    library. No distribution is published (2026-10-12); the route is tested
+    with stand-ins (`tests/test_typesetter_pairing.py`).
 3.  **Neither**: not loaded, and `reason()` says `IMTYPESET_LIBRARY is not set`.
 
 `import imtypeset` checks the
@@ -229,6 +230,9 @@ ROUTE_DISTRIBUTION = "distribution"
 ROUTE_NONE = "none"
 
 _DISTRIBUTION = "imtypeset"
+# What a wheel of imtypeset carries beside its modules (its `_bundle.py`,
+# `PACKAGED_ATTESTATION`): the mark of an installed one that needs no metadata.
+_ATTESTATION = "_attestation.json"
 
 
 class Kind(enum.Enum):
@@ -244,18 +248,24 @@ class Kind(enum.Enum):
     - `NOT_INSTALLED`: `IMTYPESET_LIBRARY` is not set and no `imtypeset`
       distribution is installed. Nothing was imported and nothing is
       remembered. A normal state where a product ships without the library.
+      Also, by imtypeset's own word (`no-library`): what was taken for an
+      installed distribution turned out to carry no library.
     - `REFUSED`: something was found and cannot be used: the import raised
       (the library's gate against the running wheel, a library that is not
       there, a package that is not on the path), or the package lacks names
       this advtext calls (`missing`). A fault somebody has to act on.
     - `FAILED`: it was accepted, and a library error has since switched it
       off (`disable`): a font it would not take in `load_fonts`, or a draw.
-    - `UNSUPPORTED`: nothing was found, and the host has said that nothing
-      is to be found here (`unsupported(why)`). **advtext cannot tell this
-      from `NOT_INSTALLED` by itself**: imtypeset has no distribution yet
-      (2026-10-12, HANDOFF-imtypeset.md, H3) and so no way of saying "there
-      is no library for this platform", and advtext does not guess from
-      `sys.platform`. Until a distribution can say it, only a host does.
+    - `UNSUPPORTED`: there is no library for this platform. Two ways of
+      knowing, and advtext guesses neither from `sys.platform`:
+      **imtypeset says so** -- the import was refused with its kind
+      `wrong-platform` (a package or a library built for another system or
+      machine; `reason()` is its sentence), from its commit 03b5cd4 on; or
+      **the host says so** (`unsupported(why)`) and nothing was found.
+      imtypeset's answer to HANDOFF-imtypeset.md's H26 is that an install
+      has no other such state: on a platform it has no wheel for, `pip`
+      installs nothing, and that is `NOT_INSTALLED` here unless the host has
+      spoken. So the second way is still only the host's.
     - `UNCHECKED`: `verdict()` could not ask (a frozen application, or the
       child interpreter did not answer). Never the answer of `kind()`.
     """
@@ -437,6 +447,20 @@ _installed: str | None = None
 _reason = _NOT_SET
 # Which kind `_reason` is a sentence of, while `_ts` is `None`.
 _why = Kind.NOT_INSTALLED
+# imtypeset's own word for a refused import (`ImportError.kind`, from its
+# commit 03b5cd4 on); `None` when it gave none or nothing was refused.
+_their_kind: str | None = None
+# Which of advtext's kinds a word of imtypeset's is, where it is not
+# `Kind.REFUSED` (`docs/sidecar.md` of imtypeset, section 9, and its answer to
+# HANDOFF-imtypeset.md's H26): a package copied from another system is the
+# one way an installed imtypeset says "not for this platform", and a package
+# that carries no library, met with the variable unset, is a source directory
+# and not an install. Every other word of theirs, and a refusal with no word,
+# is `Kind.REFUSED`.
+_THEIR_KINDS: dict[str, Kind] = {
+    "wrong-platform": Kind.UNSUPPORTED,
+    "no-library": Kind.NOT_INSTALLED,
+}
 # The host's own sentence for "there is no library for this platform"
 # (`unsupported`); empty when it has not said so.
 _unsupported = ""
@@ -463,9 +487,12 @@ def module() -> Any:
     The imtypeset package, or `None` when advtext should draw as it always has.
 
     The first call with `IMTYPESET_LIBRARY` set, or with an `imtypeset`
-    distribution installed, is the import, and with it the library's gate (a
-    child interpreter the first time a library meets a wheel, about a third
-    of a second; in-process afterwards). It is tried once: a refusal is
+    distribution installed, is the import, and with it the library's gate
+    (with imtypeset `c9f8902`: a child interpreter the first time a library
+    meets a wheel, about a third of a second, in-process afterwards; from
+    `03b5cd4` on: in-process against the attestation beside the library,
+    and a child interpreter at every import of a library that has none). It
+    is tried once: a refusal is
     remembered and `reason()` holds it. While the variable is unset and no
     distribution is installed nothing is imported, and nothing is remembered
     but that no distribution was found, so setting the variable later in the
@@ -478,7 +505,7 @@ def module() -> Any:
     Not `None` means the package is imported and accepted. It does not mean
     there is a context or a font: `ready()` says that.
     """
-    global _ts, _package, _tried, _route, _reason, _why
+    global _ts, _package, _tried, _route, _reason, _why, _their_kind
     if _ts is not None or _disabled or _tried:
         return _ts
     named = bool(os.environ.get(LIBRARY_VARIABLE))
@@ -498,11 +525,21 @@ def module() -> Any:
         # host set, or not at all.
         loaded = importlib.import_module("imtypeset")
     except Exception as exc:  # noqa: BLE001 -- any failure here means "draw as before"
-        _reason = f"{type(exc).__name__}: {exc}"
+        whole = f"{type(exc).__name__}: {exc}"
+        # imtypeset's own word for the refusal, where it gives one (from its
+        # commit 03b5cd4 on: `ImportError.kind`). Its message is then a
+        # sentence on the first line and paths on the lines after: the
+        # sentence is the reason, and the whole of it goes to the log.
+        theirs = getattr(exc, "kind", None)
+        _their_kind = theirs if isinstance(theirs, str) and theirs else None
+        _reason = whole.splitlines()[0] if _their_kind and whole.strip() else whole
         if not named:
             _reason = f"the installed {_distribution()} did not load: {_reason}"
-        _why = Kind.REFUSED
+        _why = _THEIR_KINDS.get(_their_kind or "", Kind.REFUSED)
         _say(f"imtypeset is not in use: {_reason}")
+        detail = " ".join(whole.splitlines()[1:]) if _their_kind else ""
+        if detail:
+            _say(f"imtypeset says of that refusal ({_their_kind}): {detail}")
         return None
     _route = ROUTE_ENVIRONMENT if named else ROUTE_DISTRIBUTION
     # Kept whether or not it is accepted: `pairing()` then says which package
@@ -593,8 +630,18 @@ def _distribution() -> str:
     """
     The installed `imtypeset` distribution as `imtypeset <version>`; empty when there is none.
 
-    Asked of `importlib.metadata`, which imports nothing of the package. Any
-    failure to read the metadata is "there is none".
+    Two ways of knowing one, neither of which imports the package:
+
+    1.  `importlib.metadata` finds it: what `pip install` leaves.
+    2.  `_attestation.json` lies beside the package's `__init__` (found with
+        `importlib.util.find_spec`): what a wheel of imtypeset carries inside
+        the package from its commit 03b5cd4 on, and what is left of an
+        install after a freezer has dropped the `dist-info` (imtypeset's T5).
+        The version is then the file's `distribution_version`, and the
+        answer is `imtypeset` alone when the file does not say.
+
+    A source directory of imtypeset on the path has neither and is not one.
+    Any failure to read either is "there is none".
     """
     global _installed
     if _installed is None:
@@ -604,8 +651,36 @@ def _distribution() -> str:
             found = metadata.distribution(_DISTRIBUTION)
             _installed = f"{_DISTRIBUTION} {found.version or ''}".strip()
         except Exception:  # noqa: BLE001 -- not installed, or not readable: the same answer
-            _installed = ""
+            _installed = _attested()
     return _installed
+
+
+def _attested() -> str:
+    """
+    `_distribution`'s second way: the package that carries `_attestation.json`, or empty.
+    """
+    try:
+        from importlib import util
+
+        spec = util.find_spec(_DISTRIBUTION)
+        origin = getattr(spec, "origin", None)
+        if not origin:
+            return ""
+        record = os.path.join(os.path.dirname(origin), _ATTESTATION)
+        if not os.path.isfile(record):
+            return ""
+    except Exception:  # noqa: BLE001 -- a finder that raises: there is none
+        return ""
+    version = ""
+    try:
+        import json
+
+        with open(record, encoding="utf-8") as handle:
+            said = json.load(handle).get("distribution_version")
+        version = said if isinstance(said, str) else ""
+    except Exception:  # noqa: BLE001 -- unreadable: the package's own gate will say so
+        pass
+    return f"{_DISTRIBUTION} {version}".strip()
 
 
 def pairing() -> dict[str, str | None]:
@@ -640,6 +715,26 @@ def pairing() -> dict[str, str | None]:
     - `headers`: `fork:<commit>` when the library was compiled against the
       wheel's own Dear ImGui headers, `stand-in:...` when against upstream's.
     - `accepted_by`: `imgui-check+probe` or `probe`, how the gate accepted it.
+    - `imtypeset_kind`: imtypeset's OWN word for a refused import
+      (`ImportError.kind`: `bundle-mismatch`, `damaged`, `package-mismatch`,
+      `layout`, `unchecked`, `wrong-platform`, `not-a-library`, ...; its
+      `docs/sidecar.md`, section 9), from its commit 03b5cd4 on. `None` when
+      nothing was refused, when the refusal is advtext's (names it lacks),
+      and with an imtypeset from before that commit. `kind` is still what to
+      branch on: it is `unsupported` for `wrong-platform`, `not-installed`
+      for `no-library`, and `refused` for every other word. `reason` is then
+      the first line of imtypeset's message, a sentence with no path in it;
+      the lines after it are logged once and are not in this answer.
+    - `imtypeset_route`: how the PACKAGE says it found its library
+      (`host_info()["route"]`: `installed` or `IMTYPESET_LIBRARY`), from the
+      same commit on; `None` before it. `route` is how advtext found the
+      package and is decided before the import; this is the package's word
+      afterwards, and the two say the same thing of a real install.
+
+    With an installed distribution known only by its `_attestation.json` (a
+    frozen application without `dist-info`), `distribution` is `imtypeset
+    <version>` from that file and `built_for` is `imgui-bundle==<version>`
+    from the library's own record of the wheel it was built for.
 
     Whatever the package cannot tell is `None`, and a package that raises
     when asked is a `trouble()`, never an exception here.
@@ -659,6 +754,8 @@ def pairing() -> dict[str, str | None]:
         "built_for": None,
         "headers": None,
         "accepted_by": None,
+        "imtypeset_kind": _their_kind,
+        "imtypeset_route": None,
     }
     if package is None:
         return answer
@@ -676,10 +773,18 @@ def pairing() -> dict[str, str | None]:
         answer["wheel_version"] = said(gate.get("wheel_version"))
         answer["headers"] = said(gate.get("headers"))
         answer["accepted_by"] = said(gate.get("accepted_by"))
+        answer["imtypeset_route"] = said(info.get("route"))
         if _route == ROUTE_DISTRIBUTION:
             from importlib import metadata
 
-            for requirement in metadata.requires(_DISTRIBUTION) or ():
+            try:
+                declared = metadata.requires(_DISTRIBUTION) or ()
+            except metadata.PackageNotFoundError:
+                # Known by its attestation alone: no metadata to declare it.
+                declared = ()
+                wheel = said(dict(gate.get("built_for") or {}).get("wheel_version"))
+                answer["built_for"] = f"imgui-bundle=={wheel}" if wheel else None
+            for requirement in declared:
                 name = requirement.split(";")[0].strip()
                 if name.lower().replace("_", "-").replace(".", "-").startswith("imgui-bundle"):
                     answer["built_for"] = name
@@ -702,6 +807,8 @@ _PAIRING_KEYS = (
     "built_for",
     "headers",
     "accepted_by",
+    "imtypeset_kind",
+    "imtypeset_route",
 )
 
 # What the child of `verdict()` runs: `_main`, in the advtext the asking
@@ -771,9 +878,10 @@ def verdict(
 
     What is not promised: that fonts load, or that anything draws; and what a
     host's `unsupported()` said in this process is not known to the child,
-    which answers `"not-installed"` there. The library's gate keeps a stamp
-    of its own beside the library file; that is the library's memory and is
-    written by the child as it would be by the application.
+    which answers `"not-installed"` there. With imtypeset `c9f8902` the
+    library's gate keeps a stamp of its own beside the library file, written
+    by the child as it would be by the application; from `03b5cd4` on its
+    gate writes nothing.
     """
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
         raise TypeError(f"verdict() takes a timeout in seconds, not {type(timeout).__name__}")
@@ -1384,11 +1492,12 @@ def reset() -> None:
 
     A warning that was logged once is logged again if it happens again.
     """
-    global _ts, _tried, _installed, _reason, _why, _disabled, _ready, _home
+    global _ts, _tried, _installed, _reason, _why, _their_kind, _disabled, _ready, _home
     _ts = None
     _home = None
     _tried = False
     _installed = None
+    _their_kind = None
     _reason = _unsupported or _NOT_SET
     _why = Kind.UNSUPPORTED if _unsupported else Kind.NOT_INSTALLED
     _disabled = False

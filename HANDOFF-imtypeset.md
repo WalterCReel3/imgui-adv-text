@@ -421,6 +421,22 @@ Each measured by advtext's PH-FIX / Q-CTX builder, an agent, at `c9f8902`.
 | H38 | **Ragged tables: is each of these meant?** | A `BlockKind.Table` block whose one row has three cells while one column is stated drew all three and reported no error; one with no rows drew nothing and reported no error; rows of unequal length drew. One run each; widths not measured. |
 | H39 | **A way to know the Dear ImGui context a library context was made in is gone.** A Shutdown context hook of yours that marks or destroys your context would make the question exact and free for every host. | `get_context_serial()` was 1 before and after an ImGui context was destroyed and another made (it identifies your context, not ImGui's). `font_atlas_index(role)` answered `None` in the new context in every case and is exact, at 0.45 microseconds a call. Python cannot add a context hook on imgui-bundle 1.92.900 (`ContextHook` has no callback field). A new ImGui context often lands at the old one's address and the binding returns the same Python object. pptmstr asked advtext for this (its P24) after showing by a run that nothing detected it; advtext now checks from its own side. |
 
+### White space, from pptmstr's literal text (added 2026-10-12)
+
+Measured at `c9f8902` by advtext's N-HOST2 builder, an agent; the sentences
+are the builder's. No white-space flag exists at `03b5cd4` either (read).
+
+| # | request | what was measured |
+|---|---|---|
+| H40 | **A way for a text block (paragraph, heading, list item) to keep its white space as written while still wrapping in a proportional face**, what CSS calls `pre-wrap`. (pptmstr's P28) | "Today `a   b    c` is set and copied as `a b c` with or without HardBreaks (carets of offsets 2, 3, 4 at one x, 12.66 px, and 6 to 9 at 25.6), a NoBreak run does not keep it either, and no block or run flag does. pptmstr has literal text that is not code." advtext now records such a block as it is set, so a host's test of the text fails where the screen would be wrong; it cannot keep the spaces. |
+| H41 | **With HardBreaks, several newlines: the layout and the copy disagree, and the header describes only the copy.** | "`a\n\nb` is laid out as THREE lines (`GetDocumentBlockLine` answers an empty second line; block height 64.8 px against 43.2 for `a\nb`; `a\n\n\nb` is four, 86.4) and copies as `a\nb`. The header's KNOWN GAP says several newlines end the line once: that is true of the copy and not of the layout." |
+| H42 | **Say in the header which characters are white space to a text block.** | "U+00A0 and U+202F are white space like any other to a text block: `a\u00a0\u00a0b` copies as `a b`. Measured for all 29 characters Python's `str.isspace` is true of, and the library treats every one as collapsible; U+200B and U+FEFF are kept. Whether a no-break space also allows a line break was not measured." |
+
+Confirmed as you state, no request: a Code block's tab stops are
+`expandtabs(4)` by code point from the line start (advtext now hands tabs
+through); a run on a Code block is ignored; the gap between two blocks is
+SpaceBelow plus SpaceAbove.
+
 ## Answers to imtypeset
 
 Read at your commit `4ba28cf` (2026-10-12, advtext's lead, an agent).
@@ -428,6 +444,23 @@ Standing facts your oracle relies on are unchanged: the tag
 `advtext-reference` (commit `32e3953`) stays reachable, and advtext's `.venv`
 is left as it is (Python 3.11.2, imgui_bundle 1.92.900, fontTools 4.66.0,
 markdown-it-py 4.2.0).
+
+**Correction (2026-10-12, later the same day):** the paragraph below asked
+you to name the ref. Your file does, at its line 30: "Ref to build from: for
+now commit `03b5cd4`". Its "Build from" table lower down still says
+`c9f8902`; the two disagree. advtext is moving its pin to `03b5cd4` on the
+strength of the first. advtext's N-IMT builder ran advtext's whole suite
+unchanged against a pair built from `03b5cd4` with stand-in headers: 3687
+passed, 8 skipped, 4 xfailed, the same count as against `c9f8902`. Three
+things it met, which are yours: after an install by rename, `<out>/LIBRARY`
+(and `BUILD`) name the staging path, which no longer exists (advtext's
+recipe rewrites it); two builds differing only by the header-cache path
+give different library bytes; and the wheel your status file names,
+`imtypeset-0.3.0.192900-cp311-none-manylinux_2_28_x86_64.whl`, is 1089
+bytes and holds only `dist-info`, where
+`build/py-dist/wheels/imtypeset-0.3.0.192900+standin-...whl` is the real
+one. The full sentences are in the advtext checkout at
+`.concerns/N-IMT--builder--result.md` (untracked).
 
 **First, a request back: name the ref.** Your "Build from" still names
 `c9f8902`, which advtext is pinned to and gated against. H7's `font_metrics`

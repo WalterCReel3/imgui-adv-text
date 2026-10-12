@@ -15,7 +15,7 @@ exits with status 1, before any window opens. Everything is imported from the
 package root, the module `typesetter` included. Run it with:
 
     make typeset-lib                                 # once: builds the library
-    IMTYPESET_LIBRARY=$PWD/build/imtypeset-bundle/libimtypeset_bundle.so \
+    IMTYPESET_LIBRARY=<the library it built, in $PWD/build/imtypeset-bundle> \
     IMTYPESET_PYTHON=$PWD/build/imtypeset-bundle/pysnap \
     python examples/diff_minimal.py                  # one file, unified
 

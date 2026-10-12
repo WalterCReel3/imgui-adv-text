@@ -157,7 +157,14 @@ def _differences(old: Any, new: Any) -> list[str]:
     All seven fields, compared whole. The one thing left out is `KERNS` in
     `kinds`: the old path counts the kern nodes it made and dropped, and the
     direct path makes none.
+
+    And one thing is written the old way first, on both sides: a tab in a
+    code block, which is a tab in a description made since 2026-10-12 and
+    was spaces to its stop in what was frozen
+    (`material_frozen.with_the_old_tabs` says exactly what it changes, and
+    what holds it honest). A frozen description has no tab there to change.
     """
+    old, new = material_frozen.with_the_old_tabs(old), material_frozen.with_the_old_tabs(new)
     found: list[str] = []
     for name in typesetter.Description._fields:
         a, b = getattr(old, name), getattr(new, name)
@@ -498,9 +505,11 @@ def test_the_corpus_reaches_the_rules_it_was_written_for() -> None:
     unclosed = blocks("math-unclosed", math=True)[-1]
     assert unclosed.text == "$$\\sum_{k=0}" and unclosed.formulas[0].state == "unclosed"
     assert unclosed.style.align is Align.CENTER and not unclosed.runs[0].flags
-    # Tabs in code are expanded and the blank end of a fence is dropped.
+    # A tab in code is a tab (since 2026-10-12, pptmstr's P29: until then it
+    # was spaces to its stop; `tests/test_host_requests_2.py` measures that
+    # the library sets the two alike) and the blank end of a fence is dropped.
     code = [block for block in blocks("code") if isinstance(block, MarkdownCode)]
-    assert code[0].text == "def f():\n    return 1" and code[0].language == "python"
+    assert code[0].text == "def f():\n\treturn 1" and code[0].language == "python"
     assert [block.text for block in code[1:]] == ["indented\n  more", "", "   "]
 
 

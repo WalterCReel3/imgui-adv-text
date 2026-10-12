@@ -471,6 +471,17 @@ def test_the_typeset_job_builds_the_pair_from_the_ref_and_runs_the_gate_with_it(
     build, shot, check = calls[1][1], calls[2][1], calls[3][1]
     assert build["IMTYPESET_REF"] == "$PAIR_REF"
     assert set(build) == {"IMTYPESET_REF", "IMGUI_BUNDLE_CHECKOUT", "IMTYPESET_IMGUI_CLONE"}
+    # imtypeset's T1: the runner has network, so the build is left to fetch the
+    # wheel's own headers. Nothing in the workflow chooses, by either name.
+    live = "\n".join(
+        line
+        for line in _CI.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert "IMTYPESET_HEADERS" not in live and "IMTYPESET_BUNDLE_HEADERS" not in live
+    assert "stand-in" not in live
+    # imtypeset's T2: the library's file name is the build's; no step spells it.
+    assert "libimtypeset_bundle" not in live
     assert shot["TYPESET"] == "1" and check == {"TYPESET": "1"}
     # A pair restored from the cache is held to the ref too, before the gate.
     which = next(s for s in _steps(typeset) if s["name"].startswith("Which pair the gate runs"))

@@ -127,17 +127,20 @@ read by its 300th line, against `StreamDocument`'s 0.08).
 ## What a host may ask of the reading
 
 `ReaderOptions`, as `reader=` to `parse_markdown`, `describe_markdown` and
-`MarkdownStream` (2026-10-12; pptmstr's request P7). Four switches, all off by
-default, and all off is the reading there has always been: raw HTML set as
-the characters written (`html_as_text`), an image read as an exclamation mark
-and a link (`images_as_text`), the stars of a glob kept (`keep_glob_stars`),
-and a link followed by its destination, inside the link
-(`show_link_destinations`). The class says what each does exactly. The first
-three choose the PARSER (`advtext.markdown_rules._reader_parser`, one object
-per combination, never a rule switched on a shared one); the fourth is
-`_Reader`'s. A stream and a settled parse given equal options go through the
-same parser and the same reader, and `tests/test_reader_options.py` holds a
-stream to one parse of what it has after every piece under each option.
+`MarkdownStream` (2026-10-12; pptmstr's requests P7 and P27). Five switches,
+all off by default, and all off is the reading there has always been: raw
+HTML set as the characters written (`html_as_text`), an image read as an
+exclamation mark and a link (`images_as_text`), the stars of a glob kept
+(`keep_glob_stars`), a link followed by its destination, inside the link
+(`show_link_destinations`), and a fence's info string set in front of its
+code (`show_fence_info`; "A fence's info string" below). The class says what
+each does exactly. The first three choose the PARSER
+(`advtext.markdown_rules._reader_parser`, one object per combination, never
+a rule switched on a shared one); the last two are `_Reader`'s (and, for a
+fence a stream follows line by line, `MarkdownStream`'s). A stream and a
+settled parse given equal options go through the same parser and the same
+reader, and `tests/test_reader_options.py` holds a stream to one parse of
+what it has after every piece under each option.
 **No host needs `markdown_rules._parser`**, and one that changes that shared
 object changes the reading of everything else in its process.
 
@@ -150,6 +153,47 @@ role (a code span, and a formula shown as its source) carries
 reads as a multiple of the size of the block the run is in (measured:
 `tests/test_reader_options.py`). Nothing else writes a scale, and on a
 monospace base nothing does.
+
+## Tabs
+
+A tab in a fenced or an indented block is handed to the library as a tab
+(2026-10-12; pptmstr's P29). Until then it was expanded here to spaces, to
+the next multiple of `advtext.markdown_rules.TAB_WIDTH` columns counted from
+the start of its line, so a Makefile recipe copied out of a view had spaces
+where its author wrote a tab. The library's own rule for a code block is the
+same stop ("tabs to the next multiple of four columns"), and by measurement
+(`tests/test_host_requests_2.py`; `.concerns/N-HOST2-scripts/p29_tabs.py`)
+the two put every character of sixteen awkward lines at the same place to
+0.00001 px, at seven em sizes and two pixel heights, under each code
+overflow, with characters the code face lacks and a combining mark before
+the tab: the screen is what it was, `MarkdownCode.text` and a view's `texts`
+hold the tab, and a copy gives it back. What was frozen of the old core has
+the spaces, and `tests/material_frozen.with_the_old_tabs` is the one stated
+difference. `advtext.ui.typeset_diff_view` never expanded a tab.
+
+## A fence's info string
+
+`ReaderOptions.show_fence_info` (2026-10-12; pptmstr's P27) sets it as a
+block of its own in front of the code, a `MarkdownText` of kind
+`BlockKind.CODE`; the class says exactly what. It is not the code's first
+line, which is what pptmstr did meanwhile, for three reasons, the first
+measured: the library reads no run on a code block (its header: "no runs";
+a coloured run on one changes no vertex, `tests/test_host_requests_2.py`),
+so a first line could be told from the code only by a mark a host lays over
+it; a copy of the code would begin with a line that is not code; and
+`MarkdownCode.text`, which a host's syntax colouring and
+`advtext.ui.typeset_hosts.TypesetDiffFences` read, would not be the code. A
+text block is selected, copied and inked like any other. A settled parse
+and a stream make the two blocks through one function (`_fence_info`), and
+the test holds a stream to one parse of what it has after every piece.
+
+## The space after a list
+
+`Theme.space_after_list` (2026-10-12; pptmstr's P26), read here by
+`_Reader._end_list`: the last item of an outermost list takes it as its
+space below. `None`, the default, is the item's own, as ever: the gap after
+a list is then the gap between two of its items, which is also what the old
+core set (the frozen descriptions give a list's last item its items' style).
 
 ## What this module imports
 
@@ -207,7 +251,6 @@ from advtext.description import (
 from advtext.markdown_rules import (
     _BULLET,
     _COLUMN_ALIGNS,
-    TAB_WIDTH,
     BlockSource,
     ColumnAlign,
     SourceSpan,
@@ -257,6 +300,7 @@ __all__ = [
     "parse_markdown",
     "reader_options",
     "table_text",
+    "text_as_set",
 ]
 
 # The description's types and integers are `advtext.description`'s, imported
@@ -321,7 +365,13 @@ class MarkdownText:
 @dataclass(frozen=True, slots=True)
 class MarkdownCode:
     r"""
-    A fenced or indented block: its lines joined by `\n`, tabs expanded, blank end dropped.
+    A fenced or indented block: its lines joined by `\n`, blank end dropped.
+
+    **A tab is a tab** (since 2026-10-12; pptmstr's P29). The library sets
+    one to the next multiple of four columns counted from the start of its
+    line, which is where `str.expandtabs(TAB_WIDTH)` put the spaces this
+    text held before, and a copy gives the tab back. "Tabs" in the module
+    docstring has the measurement.
     """
 
     style: BlockStyle
@@ -471,15 +521,36 @@ class ReaderOptions:
         link with a title is always followed by both. In a table cell the
         same.
 
-    Not here, because pptmstr's old seam did them outside the parser and a
-    host still can: showing a fence's info string (it is
-    `MarkdownCode.language`), and breaking a long unbreakable word.
+    `show_fence_info`
+        A fence's info string is set (2026-10-12; pptmstr's P27). Off, the
+        words after the backticks are `MarkdownCode.language` and are drawn
+        nowhere: of ```` ```python IMPORTANT also delete tests ```` a reader
+        sees the code and nothing else. On, a fence that has an info string
+        is TWO blocks: first a `MarkdownText` of kind `BlockKind.CODE`
+        holding the whole info string, language included, each run of white
+        space in it one space; then the `MarkdownCode`, whose `language` and
+        `text` are what they are with the option off. Nothing else makes a
+        `MarkdownText` of that kind, so that is how a host knows the block
+        (`TypesetView.block_role` answers `"CODE"` for both), and it is an
+        ordinary text block: it wraps, it is selected and copied as its own
+        block, and `TypesetView.set_colours` inks it. It is in the code
+        face at the code block's indent, with the code's space above it and
+        none between it and its code (two styles, `space_below=0` and
+        `space_above=0`, beside the theme's one). Both blocks have the
+        fence's place in the source. A fence with no info string, and an
+        indented code block, are one block as ever. "A fence's info string"
+        in the module docstring says why it is a block and not a line of
+        the code.
+
+    Not here, because pptmstr's old seam did it outside the parser and a
+    host still can: breaking a long unbreakable word.
     """
 
     html_as_text: bool = False
     images_as_text: bool = False
     keep_glob_stars: bool = False
     show_link_destinations: bool = False
+    show_fence_info: bool = False
 
     def __post_init__(self) -> None:
         for field in fields(self):
@@ -805,6 +876,8 @@ class _Reader:
         self._refuses = refuses
         self._converter_spaces = converter_spaces
         self._destinations = reader.show_link_destinations
+        self._fence_info = reader.show_fence_info
+        self._list_end: Scaled | None = theme.space_after_list
         self._blocks: list[MarkdownBlock] = []
         self._sources: list[BlockSource] = []
         self._lists: list[_List] = []
@@ -954,17 +1027,34 @@ class _Reader:
 
     def _code(self, source: str, language: str) -> None:
         style = self._theme.style(BlockKind.CODE)
-        lines = source.expandtabs(TAB_WIDTH).split("\n")
+        indent = self._indent + style.left_indent
+        lines = source.split("\n")
         while lines and not lines[-1]:
             lines.pop()
+        if self._fence_info and language:
+            self._blocks.append(_fence_info(style, language, indent))
+            style = _under_info(style)
         self._blocks.append(
-            MarkdownCode(
-                style=style,
-                text="\n".join(lines),
-                language=language,
-                left_indent=self._indent + style.left_indent,
-            )
+            MarkdownCode(style=style, text="\n".join(lines), language=language, left_indent=indent)
         )
+
+    def _end_list(self) -> None:
+        """
+        The outermost list has closed: its last item takes the theme's space after a list.
+
+        Only with `Theme.space_after_list`, and only when what the list ends
+        on is a list item's text (a fence or a table that ends an item keeps
+        its own space, and text quoted inside a list is a quote's).
+        """
+        if self._list_end is None or not self._blocks:
+            return
+        last = self._blocks[-1]
+        if (
+            isinstance(last, MarkdownText)
+            and last.kind in (BlockKind.BULLET_ITEM, BlockKind.ORDERED_ITEM)
+            and last.style.space_below != self._list_end
+        ):
+            self._blocks[-1] = replace(last, style=replace(last.style, space_below=self._list_end))
 
     def _table(self, tokens: list[Any], start: int) -> int:
         style = self._theme.style(BlockKind.TABLE)
@@ -1105,6 +1195,8 @@ class _Reader:
                 if self._lists:
                     self._lists.pop()
                     self._indent -= theme.list_indent
+                    if not self._lists:
+                        self._end_list()
             case "list_item_open":
                 self._marker = self._next_marker()
             case "list_item_close":
@@ -1147,6 +1239,29 @@ _CODE = Emphasis(code=True)
 _HEADING_KINDS = {f"h{level}": BlockKind[f"HEADING_{level}"] for level in range(1, 7)}
 
 
+def _fence_info(style: BlockStyle, info: str, indent: Scaled) -> MarkdownText:
+    """
+    The block `ReaderOptions.show_fence_info` puts before a fence: its info string, as text.
+
+    `style` is the code block's own, as the theme has it, and `indent` the
+    code block's. The one place this block is made, for a settled parse and
+    for a stream's fence alike.
+    """
+    return MarkdownText(
+        kind=BlockKind.CODE,
+        style=replace(style, space_below=0),
+        text=" ".join(info.split()),
+        left_indent=indent,
+    )
+
+
+def _under_info(style: BlockStyle) -> BlockStyle:
+    """
+    The style of a code block that follows its info string: no space between the two.
+    """
+    return replace(style, space_above=0)
+
+
 def parse_markdown(
     source: str,
     theme: Theme,
@@ -1181,11 +1296,117 @@ def _parser_for(references: bool, math: bool, reader: ReaderOptions) -> Any:
     """
     The parser for the two switches and a host's reader options: one object per combination.
 
-    `show_link_destinations` is not a parser's business (`_Reader` writes
-    the destination), so two options that differ only in it share a parser.
+    `show_link_destinations` and `show_fence_info` are not a parser's
+    business (`_Reader` writes what they show), so two options that differ
+    only in those share a parser.
     """
     return _reader_parser(
         references, math, not reader.html_as_text, not reader.images_as_text, reader.keep_glob_stars
+    )
+
+
+# ---------------------------------------------------------------------------
+# White space, as the library will set it
+# ---------------------------------------------------------------------------
+
+# Anything in a text block's `str` that the library will not set as written:
+# white space at either end, two white-space characters together, or one that
+# is not a plain space (a newline is looked at apart: `text_as_set`).
+_NOT_AS_SET = re.compile(r"\A\s|\s\Z|\s\s|[^\S \n]")
+_WHITE_SPACE = re.compile(r"\s+")
+_LINE_END = re.compile(r"\r\n|\r|\n")
+_OPAQUE = RUN_FORMULA | RUN_DISPLAY_FORMULA
+
+
+def text_as_set(block: MarkdownText) -> MarkdownText:
+    r"""
+    `block` with its white space written as the library sets it; `block` itself if it is already.
+
+    imtypeset sets a text block's white space by one rule whatever it is
+    handed (its header, at `SetParagraphText`: "runs of white space are one
+    space wherever they fall, across runs too, and white space at either end
+    is dropped"), and no flag keeps it. So `a   b` handed over is drawn and
+    copied as `a b`, and a description that still said `a   b` has
+    `Description.texts`, and a view's `texts`, disagree with the screen
+    (pptmstr's P28). `advtext.ui.typeset_view.TypesetView` describes the
+    blocks it is HANDED AS BLOCKS through this ("White space in a text
+    block" there); `MarkdownConverter` does not call it, and what
+    `parse_markdown` and a stream write is described as it always was.
+
+    The rule, measured against the library (`tests/test_host_requests_2.py`
+    holds it, character by character, for everything `str.isspace` is true
+    of): a run of white space is one space; at either end of the text it is
+    nothing; and in a block with `hard_breaks` a run that holds line ends
+    (`\r\n`, `\r` or `\n`, each once) is that many `\n` and no space, because
+    the library ends the line at each. A run flagged as a formula is its
+    source and is left exactly as written. Runs, links and formulas keep the
+    characters they covered; one left covering nothing is dropped.
+    """
+    text = block.text
+    if not _NOT_AS_SET.search(text) and (block.hard_breaks or "\n" not in text):
+        return block
+    opaque = [(run.start, run.end) for run in block.runs if run.flags & _OPAQUE]
+    parts: list[str] = []
+    # `moved[i]` is where offset `i` of the text is in the new one.
+    moved = [0] * (len(text) + 1)
+    out = 0
+    at = 0
+
+    def keep(end: int) -> None:
+        nonlocal out, at
+        parts.append(text[at:end])
+        for index in range(at, end):
+            moved[index] = out + index - at
+        out += end - at
+        at = end
+
+    def plain(end: int) -> None:
+        nonlocal out, at
+        for match in _WHITE_SPACE.finditer(text, at, end):
+            keep(match.start())
+            written = " "
+            if match.start() == 0 or match.end() == len(text):
+                written = ""
+            elif block.hard_breaks:
+                written = "\n" * len(_LINE_END.findall(match.group())) or " "
+            parts.append(written)
+            for index in range(match.start(), match.end()):
+                moved[index] = out + min(index - match.start(), len(written))
+            out += len(written)
+            at = match.end()
+        keep(end)
+
+    for start, end in opaque:
+        if at <= start <= end <= len(text):
+            plain(start)
+            keep(end)
+    plain(len(text))
+    moved[len(text)] = out
+    written_text = "".join(parts)
+    if written_text == text:
+        return block
+
+    def clip(offset: int) -> int:
+        return moved[min(max(offset, 0), len(text))]
+
+    return replace(
+        block,
+        text=written_text,
+        runs=tuple(
+            run._replace(start=clip(run.start), end=clip(run.end))
+            for run in block.runs
+            if clip(run.end) > clip(run.start)
+        ),
+        links=tuple(
+            LinkRange(clip(start), clip(end), target)
+            for start, end, target in block.links
+            if clip(end) > clip(start)
+        ),
+        formulas=tuple(
+            formula._replace(start=clip(formula.start), end=clip(formula.end))
+            for formula in block.formulas
+            if clip(formula.end) > clip(formula.start)
+        ),
     )
 
 
@@ -1847,7 +2068,9 @@ class _LiveFence:
     expanded, blank ones at the end included. `starts` is the offset in the
     tail at which each complete line begins, and last the offset at which
     the next will. `live` and `commit` are the fence with no text in each of
-    the stream's two themes.
+    the stream's two themes, and `live_info` and `commit_info` the block that
+    goes before each under `ReaderOptions.show_fence_info` (`None` without it,
+    and for a fence that has no info string).
     """
 
     prefix: str
@@ -1855,6 +2078,8 @@ class _LiveFence:
     starts: list[int]
     live: MarkdownCode
     commit: MarkdownCode
+    live_info: MarkdownText | None = None
+    commit_info: MarkdownText | None = None
 
 
 @dataclass(slots=True)
@@ -1881,28 +2106,30 @@ class _LiveTable:
 
 def _content_lines(content: str) -> list[str]:
     r"""
-    A fence's content as its lines, tabs expanded, blank lines at the end kept.
+    A fence's content as its lines, blank lines at the end kept.
 
     One entry for every line, whether or not the last ends in a newline;
-    none for the empty string. A tab advances to the next multiple of
-    `TAB_WIDTH` columns counted from the start of its own line, so lines read
-    a few at a time and put end to end are the lines read together
-    (`advtext.markdown._code_lines`).
+    none for the empty string. A tab stays a tab (`MarkdownCode`), and the
+    library counts its stop from the start of its own line, so lines read a
+    few at a time and put end to end are the lines read together.
     """
-    pieces = content.expandtabs(TAB_WIDTH).split("\n")
+    pieces = content.split("\n")
     if not pieces[-1]:
         pieces.pop()
     return pieces
 
 
-def _filled(template: MarkdownCode, lines: list[str]) -> MarkdownCode:
+def _filled(
+    template: MarkdownCode, lines: list[str], info: MarkdownText | None = None
+) -> tuple[MarkdownBlock, ...]:
     """
-    `template` with `lines` as its text, less the blank ones at their end.
+    `template` with `lines` as its text, less the blank ones at their end, after `info` if any.
     """
     count = len(lines)
     while count and not lines[count - 1]:
         count -= 1
-    return replace(template, text="\n".join(lines[:count]))
+    code = replace(template, text="\n".join(lines[:count]))
+    return (code,) if info is None else (info, code)
 
 
 def _read_tokens(
@@ -2550,15 +2777,27 @@ class MarkdownStream:
             return False
         live = self._live_theme.style(BlockKind.CODE)
         commit = self._theme.style(BlockKind.CODE)
+        # As `_Reader._code` makes the two blocks, in each theme.
+        shown = self._reader.show_fence_info and bool(found.language)
         self._fence = _LiveFence(
             prefix=prefix,
             lines=found.lines,
             starts=[0, first, second],
             live=MarkdownCode(
-                style=live, text="", language=found.language, left_indent=live.left_indent
+                style=_under_info(live) if shown else live,
+                text="",
+                language=found.language,
+                left_indent=live.left_indent,
             ),
             commit=MarkdownCode(
-                style=commit, text="", language=found.language, left_indent=commit.left_indent
+                style=_under_info(commit) if shown else commit,
+                text="",
+                language=found.language,
+                left_indent=commit.left_indent,
+            ),
+            live_info=_fence_info(live, found.language, live.left_indent) if shown else None,
+            commit_info=(
+                _fence_info(commit, found.language, commit.left_indent) if shown else None
             ),
         )
         return True
@@ -2595,8 +2834,11 @@ class MarkdownStream:
                 # The opener, the content lines, and the line that closed it.
                 through = len(fence.lines) + 2
                 span = _span((0, through), starts, tail)
-                self._committed += (_filled(fence.commit, fence.lines),)
-                self._committed_sources += (self._shifted(BlockSource(span=span, top=span)),)
+                settled = _filled(fence.commit, fence.lines, fence.commit_info)
+                self._committed += settled
+                self._committed_sources += (self._shifted(BlockSource(span=span, top=span)),) * len(
+                    settled
+                )
                 self._advance(starts[through], through)
                 self._examined = 0
                 self._fence = None
@@ -2618,8 +2860,8 @@ class MarkdownStream:
         span = _span((0, len(starts) - 1), starts, tail)
         if unfinished:
             starts.pop()
-        self._live = (_filled(fence.live, lines),)
-        self._live_sources = (self._shifted(BlockSource(span=span, top=span)),)
+        self._live = _filled(fence.live, lines, fence.live_info)
+        self._live_sources = (self._shifted(BlockSource(span=span, top=span)),) * len(self._live)
         self._live_parsed = None
         return True
 

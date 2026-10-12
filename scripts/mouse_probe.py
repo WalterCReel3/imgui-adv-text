@@ -1049,8 +1049,11 @@ The Document page draws its text through the imtypeset library and draws one
 line without it. Build the pinned library and run with it:
 
   make typeset-lib
-  IMTYPESET_LIBRARY=build/imtypeset-bundle/libimtypeset_bundle.so \\
+  IMTYPESET_LIBRARY=<the library it built, in build/imtypeset-bundle> \\
   IMTYPESET_PYTHON=build/imtypeset-bundle/pysnap python scripts/mouse_probe.py --xvfb
+
+`make typeset-lib` ends by saying where it installed the pair; the library's
+file name is the build's and differs by platform.
 """
 
 NO_DISPLAY = """\

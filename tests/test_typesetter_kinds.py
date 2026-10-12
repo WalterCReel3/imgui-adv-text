@@ -59,6 +59,7 @@ _STATE = (
     "_installed",
     "_reason",
     "_why",
+    "_their_kind",
     "_unsupported",
     "_disabled",
     "_ready",
@@ -213,7 +214,7 @@ def test_kind_is_ready_exactly_when_module_answers(
     assert typesetter.kind() is Kind.READY
 
 
-# -- unsupported: only a host can say it ----------------------------------
+# -- unsupported: a host says it, or imtypeset does (`wrong-platform`) -----
 
 
 def test_unsupported_is_the_hosts_to_say_and_only_when_nothing_is_found(gate: Gate) -> None:
@@ -246,6 +247,62 @@ def test_unsupported_said_after_the_first_question_is_heard_at_once(gate: Gate) 
     typesetter.unsupported("no library here")
     assert typesetter.reason() == "no library here"
     assert typesetter.kind() is Kind.UNSUPPORTED
+
+
+def _refusing(word: Any) -> Any:
+    """An `import imtypeset` that raises what imtypeset's `_bundle.refusal(word, ...)` makes."""
+
+    def refuse(name: str) -> Any:
+        error = ImportError(
+            "imtypeset: This copy of imtypeset 0.3.0 was built for Darwin arm64, and this "
+            "computer is Linux x86_64.\n'/site/imtypeset/_attestation.json'",
+            name="imtypeset",
+        )
+        error.kind = word  # type: ignore[attr-defined]
+        raise error
+
+    return refuse
+
+
+def test_unsupported_is_also_imtypesets_to_say_and_the_way_back_forgets_its_word(
+    gate: Gate, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    imtypeset's answer to H26: a package built for another system refuses
+    with the kind `wrong-platform`. That is `Kind.UNSUPPORTED` with no host
+    having said anything, in imtypeset's sentence; and where the host HAS
+    spoken, what was found is still the evidence.
+    """
+    typesetter.unsupported("the host's own sentence")
+    gate.name_a_library()
+    with monkeypatch.context() as patch:
+        patch.setattr(typesetter.importlib, "import_module", _refusing("wrong-platform"))
+        assert typesetter.kind() is Kind.UNSUPPORTED
+        assert typesetter.reason() == (
+            "ImportError: imtypeset: This copy of imtypeset 0.3.0 was built for Darwin arm64, "
+            "and this computer is Linux x86_64."
+        )
+        found = typesetter.pairing()
+        assert found["kind"] == "unsupported" and found["imtypeset_kind"] == "wrong-platform"
+    typesetter.reset()
+    gate.offer(_package())
+    assert typesetter.kind() is Kind.READY
+    assert typesetter.pairing()["imtypeset_kind"] is None, "reset() kept a refusal's word"
+
+
+@pytest.mark.parametrize("word", [None, "", 3, b"damaged"], ids=repr)
+def test_a_kind_that_is_not_a_word_is_no_kind_and_the_reason_is_the_whole_message(
+    gate: Gate, monkeypatch: pytest.MonkeyPatch, word: Any
+) -> None:
+    """
+    Any exception may have an attribute called `kind`. Only a string is
+    imtypeset's word; without one nothing of the message is dropped.
+    """
+    gate.name_a_library()
+    monkeypatch.setattr(typesetter.importlib, "import_module", _refusing(word))
+    assert typesetter.kind() is Kind.REFUSED
+    assert typesetter.pairing()["imtypeset_kind"] is None
+    assert typesetter.reason().endswith("Linux x86_64.\n'/site/imtypeset/_attestation.json'")
 
 
 @pytest.mark.parametrize("given", [None, 3, b"no", ["no"]], ids=repr)

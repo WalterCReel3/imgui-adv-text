@@ -226,7 +226,9 @@ def test_plain_spans_are_the_tokens_with_their_inks_in_plain_offsets() -> None:
     `MarkdownCode` is the text the view holds for the block.
     """
     block = _code("```python\ndef f():\n\treturn 'a'  # b\n```\n")
-    assert "\t" not in block.text and block.language == "python"
+    # A tab is a tab since 2026-10-12 (pptmstr's P29; until then the reader
+    # had expanded it): the offsets are into the text with the tab in it.
+    assert block.text == "def f():\n\treturn 'a'  # b" and block.language == "python"
     spans = syntax.plain_spans(block.text, INKS, block.language)
     assert spans == [
         (start, end, INKS.ink(kind)) for start, end, kind in syntax.tokens(block.text, "python")
@@ -273,7 +275,11 @@ OLD_SPANS = (
 def test_plain_spans_ink_what_the_old_cores_colour_spans_inked() -> None:
     for source, text, inks in OLD_SPANS:
         block = _code(source)
-        assert block.text == text, source
+        # The old core's text had a tab as spaces to its stop; the block has
+        # the tab since 2026-10-12 (pptmstr's P29). Written the old way
+        # (`tests/material_frozen.with_the_old_tabs`'s expression) it is the
+        # frozen text, and the tokens inked are the same ones in order.
+        assert block.text.expandtabs(4) == text, source
         assert [ink for _, _, ink in syntax.plain_spans(block.text, INKS, block.language)] == inks
     # The fence's own language unless told another: `sh` has no keywords, Python has.
     block = _code(OLD_SPANS[3][0])

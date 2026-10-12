@@ -151,6 +151,51 @@ def description(
     )
 
 
+#: `advtext.markdown_rules.TAB_WIDTH` on the day the old core was frozen.
+FROZEN_TAB_WIDTH = 4
+_KIND_CODE = 3
+
+
+def with_the_old_tabs(described: Description) -> Description:
+    r"""
+    `described`, a description made today, with a code block's tabs as the old core wrote them.
+
+    THE ONE NORMALISATION between a description made now and a frozen one,
+    and it is applied to the description made NOW, never to the frozen file.
+    The old core expanded each tab of a fenced or indented block to spaces
+    before it described the block (`advtext.markdown._code_lines`:
+    `source.expandtabs(TAB_WIDTH)`, the column counted from the start of the
+    tab's own line). Since 2026-10-12 `advtext.typeset_markdown` hands the
+    tab to the library (pptmstr's P29: a copy gives a tab back), so a code
+    block's `text` holds `\t` where the frozen one holds one to four spaces.
+    This puts the spaces back by the old core's own expression, in
+    `KIND_CODE` blocks and their entries of `texts` and nowhere else: no
+    other block's text, no run, no style, no link and no count is touched,
+    and a description with no tab in a code block is returned as the object
+    it is.
+
+    What makes the two descriptions the same on screen is not this function
+    but the library, and `tests/test_host_requests_2.py` measures it: a tab
+    handed over and the old core's spaces put every character of the block
+    at the same place, at every size and under every code overflow.
+    """
+    if not any(block.kind == _KIND_CODE and "\t" in block.text for block in described.blocks):
+        return described
+    blocks = [
+        (
+            block._replace(text=block.text.expandtabs(FROZEN_TAB_WIDTH))
+            if block.kind == _KIND_CODE
+            else block
+        )
+        for block in described.blocks
+    ]
+    texts = [
+        block.text if block.kind == _KIND_CODE else text
+        for block, text in zip(blocks, described.texts, strict=True)
+    ]
+    return described._replace(blocks=blocks, texts=texts)
+
+
 def targets(
     source: str,
     theme: str = "default",

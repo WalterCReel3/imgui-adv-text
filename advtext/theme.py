@@ -668,6 +668,19 @@ class Theme:
     # the arithmetic and says why there are two numbers.
     inline_code_scale: float = 0.0
     inline_code_step: Scaled = 0
+    # The space below the LAST item of a list, in scaled points, in place of
+    # the item style's own `space_below`; `None` leaves the item's, which is
+    # what every theme gave before the field existed (2026-10-12; pptmstr's
+    # P26). The gap between two blocks is the upper one's space below plus
+    # the lower one's space above, and a list item's space below is the gap
+    # between two ITEMS (0.2 of the body), so by default whatever follows a
+    # list sits that close under it where a paragraph would have left its own
+    # 0.55. `dataclasses.replace(theme, space_after_list=theme.style(
+    # BlockKind.PARAGRAPH).space_below)` is "a paragraph's gap after a list".
+    # It is the outermost list's last item that takes it: a nested list
+    # ending inside an item is followed at the item gap, as before.
+    # `advtext.typeset_markdown` reads it (`_Reader._end_list`).
+    space_after_list: Scaled | None = None
 
     def __post_init__(self) -> None:
         """
@@ -677,8 +690,18 @@ class Theme:
         document is being parsed, which for a stream is inside a draw. So a
         value that cannot be a size is an error here, at `Theme(...)` or
         `dataclasses.replace(theme, ...)`, and never there. With both fields
-        at their defaults nothing is looked at.
+        at their defaults nothing is looked at. `space_after_list` is held
+        the same way: `None`, or whole scaled points that are not negative.
         """
+        after = self.space_after_list
+        if after is not None:
+            if isinstance(after, bool) or not isinstance(after, int):
+                raise TypeError(
+                    "space_after_list is whole scaled points (an int) or None, "
+                    f"not {type(after).__name__}"
+                )
+            if after < 0:
+                raise ValueError(f"space_after_list is {after!r}: it is 0 or more scaled points")
         scale, step = self.inline_code_scale, self.inline_code_step
         if scale == 0 and step == 0 and type(scale) is float and type(step) is int:
             return

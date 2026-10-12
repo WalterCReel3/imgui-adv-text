@@ -63,6 +63,28 @@ answers for, and a `KIND_HOST` block of a host's own description.
 describes what it does not know as a Host block and counts it in
 `Description.misfits`; a view refuses a description that has any.
 
+### White space in a text block (pptmstr's P28)
+
+The library sets a text block's white space one way whatever it is handed:
+every run of it is one space and there is none at either end (with
+`hard_breaks`, a run holding line ends is those line ends). No flag keeps
+it. So a `MarkdownText` whose text is `a   b    c` is drawn and copied as
+`a b c`, and since 2026-10-12 **`texts`, `block_text` and every offset the
+view answers for such a block are of the text AS IT IS SET**: blocks handed
+over as blocks are described through
+`advtext.typeset_markdown.text_as_set`, which writes the white space as the
+library will set it and moves the block's runs, links and formulas to the
+characters they covered. `blocks` still answers the objects given. Until
+then `texts` showed every space the host wrote and the screen did not, so a
+test of `texts` passed with the screen wrong. A `MarkdownCode` keeps every
+character, tabs too, and is what literal text goes in as; a literal part in
+a proportional face that keeps its spaces is not something the library
+offers. **Not covered**: a table cell's text (the library sets its white
+space the same way and `texts` has it as written), and what the reader
+itself writes for a markdown string or a stream, which is described as it
+always was (two spaces can stand where an image or a tag was left out, and
+are set as one).
+
 ## A description a host made
 
     from advtext.description import BlockDescription, StyleDescription, description_of
@@ -537,6 +559,7 @@ from advtext.typeset_markdown import (
     MarkdownTable,
     MarkdownText,
     parse_markdown,
+    text_as_set,
 )
 from advtext.ui.ownership import (
     MIN_WIDTH_PX,
@@ -903,6 +926,12 @@ class TypesetView:
         self._source: str | None = None
         self._sources: tuple[BlockSource, ...] = ()
         self._given: Any = None  # a document handed over that answers `source_of`
+        # Whether the blocks on show were handed over as blocks: their text
+        # is then described as the library sets it (`text_as_set`). And, for
+        # the one `_set_blocks` after that changed, the first block on show
+        # that the other rule describes differently (`_handed_as_blocks`).
+        self._as_set = False
+        self._redo_from: int | None = None
         self._blocks: tuple[object, ...] = ()
         self._converter: MarkdownConverter = self._new_converter()
         self._described: list[BlockDescription] = []
@@ -1033,6 +1062,7 @@ class TypesetView:
             if reader is not _UNSET:
                 self.reader = reader
             emptied = self._leave_description(None)
+            self._handed_as_blocks(False)
             # Before the blocks: a `host_for` asked about them reads `source`.
             self._source = document
             self._given = None
@@ -1067,6 +1097,7 @@ class TypesetView:
         if reader is not _UNSET:
             self.reader = reader
         emptied = self._leave_description(None)
+        self._handed_as_blocks(True)
         held = (self._source, self._given, self._sources)
         self._source = None
         self._given = document if callable(getattr(document, "source_of", None)) else None
@@ -1106,6 +1137,27 @@ class TypesetView:
         self._description = description
         self._forget()
         return emptied
+
+    def _handed_as_blocks(self, handed: bool) -> None:
+        """
+        Go between blocks the view read from a string and blocks handed over as blocks.
+
+        The second are described as the library sets their white space
+        (`text_as_set`) and the first as the reader wrote them. Almost every
+        block is described alike by both, so the document on show is kept
+        and edited as ever; `_redo_from` is the first block on show that the
+        two describe differently, which the next `_set_blocks` describes
+        again even where it is the block it was.
+        """
+        if handed == self._as_set:
+            return
+        self._as_set = handed
+        if self._description is not None:
+            return
+        for at, block in enumerate(self._blocks):
+            if isinstance(block, MarkdownText) and text_as_set(block) is not block:
+                self._redo_from = at
+                return
 
     def _set_description(self, description: Description) -> bool:
         """
@@ -1189,7 +1241,9 @@ class TypesetView:
         self._sources = tuple(sources)
         first = self._kept(blocks)
         old = self._blocks
-        if first == len(old) == len(blocks):
+        if self._redo_from is not None:
+            first, self._redo_from = min(first, self._redo_from), None
+        elif first == len(old) == len(blocks):
             return False
         try:
             # Every way in comes through here (a stream's blocks too): what is
@@ -1202,7 +1256,12 @@ class TypesetView:
         # asked once per object, and a stream's selection rule reads identity.
         blocks = old[:first] + blocks[first:]
         known = len(self._styles)
-        described = self._converter.describe(blocks[first:], base=first)
+        fresh: Sequence[object] = blocks[first:]
+        if self._as_set and self._description is None:
+            fresh = [
+                text_as_set(block) if isinstance(block, MarkdownText) else block for block in fresh
+            ]
+        described = self._converter.describe(fresh, base=first)
         removed = len(old) - first
         self._blocks = blocks
         self._described[first:] = described.blocks

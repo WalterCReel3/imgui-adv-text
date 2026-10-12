@@ -879,7 +879,7 @@ def test_a_theme_that_says_nothing_about_inline_code_sizes_it_as_it_always_did()
     from `build`, from `at_pixel_height` and from a mono table.
     """
     names = [field.name for field in fields(Theme)]
-    assert names[-2:] == ["inline_code_scale", "inline_code_step"]
+    assert names[-3:] == ["inline_code_scale", "inline_code_step", "space_after_list"]
     for theme in (
         Theme.build(),
         Theme.at_pixel_height(16.0),

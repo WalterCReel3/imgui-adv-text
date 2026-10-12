@@ -6,9 +6,12 @@ r"""
 shows what a host does to draw through the imtypeset library:
 
     make typeset-lib                       # once: builds the sidecar library
-    IMTYPESET_LIBRARY=$PWD/build/imtypeset-bundle/libimtypeset_bundle.so \
+    IMTYPESET_LIBRARY=<the library it built, in $PWD/build/imtypeset-bundle> \
     IMTYPESET_PYTHON=$PWD/build/imtypeset-bundle/pysnap \
     python examples/typeset_minimal.py
+
+(The library's file name is the build's and differs by platform; `make
+typeset-lib` says where it installed the pair.)
 
     python examples/typeset_minimal.py     # no library: says why, exits 1, opens no window
 

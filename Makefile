@@ -98,7 +98,19 @@ IMTYPESET_BUNDLE  ?= $(CURDIR)/build/imtypeset-bundle
 # and fail at the last rename, after the whole build. `override` because a
 # variable from the command line otherwise outranks an assignment in this file.
 override IMTYPESET_BUNDLE := $(abspath $(IMTYPESET_BUNDLE))
-IMTYPESET_BUILT   := $(IMTYPESET_BUNDLE)/libimtypeset_bundle.so
+# The library's FILE NAME is the build script's to say, not this file's: it
+# differs by platform (imtypeset's H16: .so on Linux, .dylib on macOS). From
+# imtypeset 03b5cd4 on the script writes it to <out>/LIBRARY, and what
+# `make typeset-lib` installs keeps that file (see there); the name is read
+# from it. Only the NAME is taken: the directory is IMTYPESET_BUNDLE, so a
+# bundle that was moved or copied still names its own library.
+#
+# Where there is no LIBRARY file -- a pair built from a commit before 03b5cd4
+# (the script wrote none), or nothing built yet -- the name is the one that
+# script gives on this system. That is a guess only in the second case, and
+# only `make typeset-lib test TYPESET=1` in one invocation depends on it.
+typeset_named     := $(if $(wildcard $(IMTYPESET_BUNDLE)/LIBRARY),$(notdir $(shell sed -n 1p "$(IMTYPESET_BUNDLE)/LIBRARY" 2>/dev/null)))
+IMTYPESET_BUILT   := $(IMTYPESET_BUNDLE)/$(or $(typeset_named),libimtypeset_bundle.$(if $(filter Darwin,$(shell uname -s)),dylib,so))
 TYPESET           ?=
 
 ifneq ($(filter-out 0,$(strip $(TYPESET))),)
@@ -126,7 +138,7 @@ ifneq ($(strip $(IMTYPESET_LIBRARY)),)
   TYPESET_ENV := IMTYPESET_LIBRARY=$(NEED_TYPESET) IMTYPESET_PYTHON=$(IMTYPESET_PYTHON)$(typeset_empty) $(typeset_empty)
 
 $(NEED_TYPESET):
-	@echo "No $@. 'make typeset-lib' builds $(IMTYPESET_BUILT) (needs $(IMTYPESET_ROOT))." >&2; exit 2
+	@echo "No $@. 'make typeset-lib' builds the library and its package into $(IMTYPESET_BUNDLE) (needs $(IMTYPESET_ROOT))." >&2; exit 2
 
   # A stale pair, refused. `make typeset-lib` ends by writing the library's
   # checksum into BUILT-FROM. Something else that replaces the library where it
@@ -161,7 +173,9 @@ endif
 
 # One library per interpreter: it is linked against that interpreter's
 # imgui-bundle wheel and refuses any other at import. The script reads
-# IMTYPESET_ROOT's WORKING TREE and writes only under IMTYPESET_BUNDLE; it ends
+# IMTYPESET_ROOT's WORKING TREE and writes only under IMTYPESET_BUNDLE (and,
+# from imtypeset 03b5cd4 on, the headers it fetched under
+# IMTYPESET_HEADER_CACHE); it ends
 # by running the import gate and fails if the gate refuses. Its first argument
 # is a Dear ImGui Bundle checkout and its second the interpreter.
 #
@@ -196,6 +210,10 @@ endif
 # Dear ImGui clone (IMTYPESET_IMGUI_CLONE). With a sibling imtypeset both are
 # looked for beside IT, as before; with IMTYPESET_REF there is no sibling, and
 # both are looked for beside THIS repository (../imgui_bundle, ../imgui).
+# A script from before imtypeset 03b5cd4 needs both. From 03b5cd4 on neither
+# need exist where the script can fetch (IMTYPESET_HEADERS, below): the
+# checkout is then only a way to read the bundle's configuration header
+# without network, and the clone is read only for stand-in headers.
 IMTYPESET_REPO  ?= https://github.com/WalterCReel3/imtypeset.git
 IMTYPESET_REF   ?=
 IMTYPESET_CACHE ?= $(CURDIR)/build/imtypeset-cache
@@ -229,14 +247,52 @@ IMGUI_BUNDLE_CHECKOUT ?= $(typeset_beside)/imgui_bundle
 IMTYPESET_COMMIT      ?=
 IMTYPESET_IMGUI_CLONE ?= $(typeset_beside)/imgui
 
+# Which Dear ImGui headers the library is compiled against is said HERE, to
+# the script, and never left to it (imtypeset's T1). From imtypeset 03b5cd4 on
+# the script fetches the wheel's own headers (the fork, by commit id; network,
+# once per wheel version) and no longer falls back to upstream's by itself.
+#
+#   IMTYPESET_HEADERS=            (the default) the script's own choice, which
+#                                 is the fetch. No network and nothing cached:
+#                                 the build stops there and says so.
+#   IMTYPESET_HEADERS=stand-in    upstream Dear ImGui's headers, from
+#                                 IMTYPESET_IMGUI_CLONE: what every pair built
+#                                 here before 03b5cd4 was, and the only choice
+#                                 without network. `typesetter.pairing()`
+#                                 says `headers: stand-in:...` of such a pair.
+#   IMTYPESET_HEADERS=fork        the fetch, said aloud.
+#
+# The word is handed over as IMTYPESET_BUNDLE_HEADERS, the script's name for
+# it; a script from before 03b5cd4 does not read it and chooses as it always
+# did (the fork when a checkout beside it has it, stand-in otherwise).
+#
+# What is fetched is kept in IMTYPESET_HEADER_CACHE, under this repository's
+# build/. The script's own default is build/bundle-headers of the tree it runs
+# from: with IMTYPESET_COMMIT or IMTYPESET_REF that is the staging directory,
+# gone at the next build, and with neither it is a write into the sibling
+# checkout, which this target otherwise never makes.
+IMTYPESET_HEADERS      ?=
+IMTYPESET_HEADER_CACHE ?= $(CURDIR)/build/imtypeset-headers
+
 # The library and the Python package that calls it are a PAIR. The package is
 # ctypes declarations of the library's exports, both come from one working
 # tree that other people change, and a package newer than the library fails at
 # import on the first function the library lacks (2026-10-10: every
 # with-library test, on ImTypeset_GetFontAtlasIndex). So the target leaves
-# three things in IMTYPESET_BUNDLE, not one:
+# these in IMTYPESET_BUNDLE, not only the first:
 #
-#   libimtypeset_bundle.so   the library
+#   the library              under the name the build script gave it
+#   LIBRARY                  one line, the library's path where it is
+#                            installed (from imtypeset 03b5cd4 on; the script
+#                            writes it naming the staging directory and this
+#                            target rewrites it; IMTYPESET_BUILT above reads
+#                            the name from it)
+#   <library>.attestation.json
+#                            the script's record that its full probe accepted
+#                            this library beside this wheel (from 03b5cd4 on).
+#                            It is about content, not paths, so it is carried
+#                            as it is; without it every import probes the
+#                            library in a child interpreter
 #   pysnap/imtypeset/        the package as it was when the library was built
 #                            (what IMTYPESET_PYTHON defaults to, above)
 #   BUILT-FROM               the checkout, its HEAD (or IMTYPESET_COMMIT), how
@@ -262,9 +318,11 @@ IMTYPESET_IMGUI_CLONE ?= $(typeset_beside)/imgui
 # IMTYPESET_BUNDLE is therefore this target's own directory: anything else in
 # it goes when a build succeeds.
 #
-# The gate's stamp (<library>.gate) names the library by path, so the one
-# written while staging is dropped; the first import from the final place
-# writes its own.
+# Nothing here writes, removes or expects <library>.gate (imtypeset's T3). A
+# pair built from a commit before 03b5cd4 has one: that package's own memory
+# of its gate, keyed on the library's path. The one its script writes while
+# staging names the staging path and is left where it is; that package finds
+# it stale at the first import from the final place and writes its own.
 IMTYPESET_STAGE   := $(IMTYPESET_BUNDLE).building
 IMTYPESET_EXTRACT := $(IMTYPESET_STAGE)/src
 IMTYPESET_SOURCE  := $(if $(strip $(IMTYPESET_COMMIT)$(IMTYPESET_REF)),$(IMTYPESET_EXTRACT),$(IMTYPESET_ROOT))
@@ -340,12 +398,22 @@ else
 endif
 	cp -R "$(IMTYPESET_SOURCE)/python/imtypeset/." "$(IMTYPESET_STAGE)/pysnap/imtypeset/"
 	find "$(IMTYPESET_STAGE)/pysnap" -name __pycache__ -type d -prune -exec rm -rf {} +
-	$(if $(strip $(IMTYPESET_COMMIT)$(IMTYPESET_REF)),IMTYPESET_IMGUI_CLONE="$(IMTYPESET_IMGUI_CLONE)" )IMTYPESET_BUNDLE_OUT=$(IMTYPESET_STAGE) sh $(IMTYPESET_SOURCE)/python/host/build_bundle_library.sh \
+	$(if $(strip $(IMTYPESET_COMMIT)$(IMTYPESET_REF)),IMTYPESET_IMGUI_CLONE="$(IMTYPESET_IMGUI_CLONE)" )$(if $(strip $(IMTYPESET_HEADERS)),IMTYPESET_BUNDLE_HEADERS=$(strip $(IMTYPESET_HEADERS)) )IMTYPESET_HEADER_CACHE="$(IMTYPESET_HEADER_CACHE)" IMTYPESET_BUNDLE_OUT=$(IMTYPESET_STAGE) sh $(IMTYPESET_SOURCE)/python/host/build_bundle_library.sh \
 	  "$(IMGUI_BUNDLE_CHECKOUT)" "$(abspath $(PY))"
-	IMTYPESET_LIBRARY="$(IMTYPESET_STAGE)/libimtypeset_bundle.so" "$(abspath $(PY))" -P -B -c \
-	  'import sys; sys.path.insert(0, sys.argv[1]); import imtypeset' "$(IMTYPESET_STAGE)/pysnap"
-	rm -f "$(IMTYPESET_STAGE)/libimtypeset_bundle.so.gate"
-	@echo "library cksum: $$(cksum < "$(IMTYPESET_STAGE)/libimtypeset_bundle.so")" >> "$(IMTYPESET_STAGE)/BUILT-FROM"
+	@set -e; \
+	named=$$(sed -n 1p "$(IMTYPESET_STAGE)/LIBRARY" 2>/dev/null || true); \
+	name=$$(basename "$${named:-libimtypeset_bundle.so}"); \
+	staged="$(IMTYPESET_STAGE)/$$name"; \
+	test -f "$$staged" || { \
+	  echo "The build script left no library at $$staged ($${named:+its LIBRARY file names $$named; }nothing was installed)." >&2; exit 2; }; \
+	echo "import $$staged with $(IMTYPESET_STAGE)/pysnap"; \
+	IMTYPESET_LIBRARY="$$staged" "$(abspath $(PY))" -P -B -c \
+	  'import sys; sys.path.insert(0, sys.argv[1]); import imtypeset' "$(IMTYPESET_STAGE)/pysnap"; \
+	if [ -n "$$named" ]; then \
+	  echo "$(IMTYPESET_BUNDLE)/$$name" > "$(IMTYPESET_STAGE)/LIBRARY"; \
+	  [ -f "$$staged.attestation.json" ] || echo "note: the build left no $$name.attestation.json; every import of this pair probes the library in a child interpreter" >&2; \
+	fi; \
+	echo "library cksum: $$(cksum < "$$staged")" >> "$(IMTYPESET_STAGE)/BUILT-FROM"
 	@rm -rf "$(IMTYPESET_BUNDLE).previous"; \
 	if [ -e "$(IMTYPESET_BUNDLE)" ]; then mv "$(IMTYPESET_BUNDLE)" "$(IMTYPESET_BUNDLE).previous" || exit 1; fi; \
 	if mv "$(IMTYPESET_STAGE)" "$(IMTYPESET_BUNDLE)"; then \
@@ -356,6 +424,8 @@ endif
 	fi
 	@cat "$(IMTYPESET_BUNDLE)/BUILT-FROM"
 	@echo "installed: $(IMTYPESET_BUNDLE) (the build script's 'use it with' line above names the staging directory)"
+	@named=$$(sed -n 1p "$(IMTYPESET_BUNDLE)/LIBRARY" 2>/dev/null || true); \
+	echo "use it with: IMTYPESET_LIBRARY=$${named:-$(IMTYPESET_BUNDLE)/libimtypeset_bundle.so} IMTYPESET_PYTHON=$(IMTYPESET_BUNDLE)/pysnap (what 'make ... TYPESET=1' sets)"
 
 # ---------------------------------------------------------------------------
 # Looking at the GUI: `make shot`, and `make shot-headless` when there is no

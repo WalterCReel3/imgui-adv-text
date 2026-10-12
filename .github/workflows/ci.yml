@@ -30,6 +30,29 @@
 # namespaces through AppArmor, and the step "User namespaces" lifts that one
 # setting with sudo only when `unshare -rm true` fails without it.
 #
+# THE HEADERS THE LIBRARY IS COMPILED AGAINST. Nothing below says which, and
+# that is the choice: `make typeset-lib` hands the build script a headers
+# choice only when IMTYPESET_HEADERS is given (Makefile), and a runner has
+# network, so the script decides. From imtypeset 03b5cd4 on that is to fetch
+# the wheel's own Dear ImGui headers (github.com/pthom/imgui by commit id, and
+# one file of pthom/imgui_bundle) and to stop if it cannot; the pair then says
+# `headers: fork:<commit>`. No job here asks for stand-in headers. A script
+# from before 03b5cd4 chooses as it always did: the fork when the bundle
+# checkout beside it has the submodule, which the step "Fetch what the build
+# script reads" does not give it, so stand-in.
+#
+# That step is what a ref BEFORE 03b5cd4 needs and cannot build without (its
+# script reads the bundle's tag and upstream's docking tag from two local
+# repositories). From 03b5cd4 on the script needs neither: it reads the
+# bundle checkout, when there is one, in place of one download, and the Dear
+# ImGui clone only for stand-in headers. The step stays while imtypeset.ref
+# may name either kind of ref, and can go, with the two variables it feeds
+# `make typeset-lib`, once the ref is 03b5cd4 or later.
+#
+# The gate's last step before the window does not name the library's file:
+# the name is the build's (it differs by platform) and the Makefile reads it.
+# `make shot TYPESET=1` stops with "No <library>" when the pair has none.
+#
 # SOFTWARE GL. No GPU on a runner: Mesa's llvmpipe, selected by the two
 # variables under `env:` (the same two scripts/mouse_probe.py::xvfb_command
 # sets). The package list is in each job's "System packages" step and is named
@@ -160,7 +183,7 @@ jobs:
           path: build/imtypeset-bundle
           key: "imtypeset-pair-${{ runner.os }}-${{ runner.arch }}-py3.11-${{ steps.pair.outputs.ref }}-bundle-${{ steps.pair.outputs.wheel }}-${{ hashFiles('.venv/lib/python3.11/site-packages/imgui_bundle/_imgui_bundle*.so') }}-${{ hashFiles('Makefile') }}"
 
-      - name: "Fetch what the build script reads beside imtypeset (one commit each, no worktree)"
+      - name: "Fetch what a build script from before imtypeset 03b5cd4 reads beside it (one commit each, no worktree)"
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           IMGUI_BUNDLE_REPO: https://github.com/pthom/imgui_bundle
@@ -201,7 +224,6 @@ jobs:
         run: |
           cat build/imtypeset-bundle/BUILT-FROM
           grep -qx "ref: $PAIR_REF" build/imtypeset-bundle/BUILT-FROM
-          test -f build/imtypeset-bundle/libimtypeset_bundle.so
           test -f build/imtypeset-bundle/pysnap/imtypeset/__init__.py
 
       - name: "One window before the gate (red here: no GL context, or the library does not draw)"

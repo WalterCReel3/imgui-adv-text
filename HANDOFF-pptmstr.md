@@ -125,12 +125,26 @@ pptmstr" when it exists. Nothing below has run against GitHub or on macOS.
 
 ## Known and open, as it bears on pptmstr
 
-- Text set by imtypeset advances by the font's own metrics, not ImGui's
-  hinted advance (imtypeset's plan measured Inconsolata at size 16 as 7.63 px
-  a character against ImGui's 8.01). pptmstr's experiment took a position on
-  exactly this ("pptmstr keeps the hinted atlas, by the operator's eye";
-  `planning/patches/advtext-hinting.patch`). That patch is against the
-  deleted Python core. See A2.
+- **Correction (2026-10-12): what this file said about advances was wrong
+  for advtext.** It said text set by imtypeset advances Inconsolata at size
+  16 by 7.63 px a character against ImGui's 8.01, quoting imtypeset's plan.
+  That figure is the library's default, where "16" is a line height and the
+  em is 15.25 px. Every advtext view states the em (`EmSize`), and measured
+  by advtext's PH-GATE builder through the library at `c9f8902`: 40
+  characters of the code face lay out at exactly half an em each, 280, 300,
+  320, 340, 360 and 400 px at ems of 14 to 20. **At an em of 16 the advance
+  is 8.0 px.** Measure in pptmstr before building A2 on the old figure.
+  Still true: the advance is the font's own, unhinted and not rounded per
+  glyph by ImGui's rasteriser, which is the question pptmstr's experiment
+  took a position on ("pptmstr keeps the hinted atlas, by the operator's
+  eye"; `planning/patches/advtext-hinting.patch`, against the deleted Python
+  core). See A2.
+- **A native ImGui line in a typeset face** (your P14, A3): the size to push
+  is the em times the font file's line-height ratio, not the em. Measured by
+  the same builder in a real window on a software renderer, three rows only:
+  the code face at em 16 sets 13 characters 104 x 14 px of ink; pushed at 16
+  ImGui draws them 11 px high; pushed at 16.78 (rounded to 17), 104 x 14. The
+  prose face at em 16: push 18.75.
 - A streamed table stays as wide as its columns want (the user: "Let's go
   with that for now during dogfooding").
 - Copying a numbered list does not carry the item markers.

@@ -208,6 +208,16 @@ at `c9f8902`, with the behaviour pinned by a named test on its old seam.
 | H23 | **A run that cannot break at a space and is wider than the measure is broken at the measure**, and copies without the breaks. Say first what the library does today. (P10) | A long path, hash or URL in prose runs off the edge of a pane that does not scroll sideways; an approver cannot see its end. Not checked by advtext; your plan's "a word is never split mid-row" reads as "it overflows". |
 | H24 | **A rule under every row of a table, as an option.** (P15; the header rule's height is H8) | Rows of wrapped cells cannot be told from a cell's own lines. |
 
+Found by advtext's builders while building pptmstr's requests (2026-10-12;
+each measured by the builder named, at `c9f8902`, on imgui-bundle 1.92.900):
+
+| # | request | what was measured |
+|---|---|---|
+| H25 | **`destroy_context` leaves the fonts its context added in Dear ImGui's atlas.** Should it remove what its context added, or is that the host's to do; and if the host's, is `remove_font` safe for a font that is `io.FontDefault` or pushed? | PH-GATE's builder, in a hello_imgui window: each `create_context` plus seven `add_font` adds 7 fonts and neither `destroy_context` nor the next context removes any: 8, 15, 22, 29, 36 fonts after five loads, and 29 before and after a `destroy_context` with no load. `remove_font(face)` for each role before the destroy does take them off (8 became 1). It bears on a host that reloads fonts from a settings dialog (pptmstr's P17). |
+| H26 | **How does an installed distribution say "there is no library for this platform"**, as distinct from "this library was refused"? | advtext now has kinds for why the library is not drawing (pptmstr's P1): ready, not installed, refused, failed, unsupported, unchecked. It cannot tell "unsupported" from "not installed" by itself and does not guess from the platform; today only a host can say it. Part of H3. |
+| H27 | **In a Code block, `Document.caret_rect` at the offset of a line's end, for a line that is not the block's last, answers the start of the next line.** Is that intended? | PH-DIFF's builder: `CodeOverflow.Grow`, text "abcdef\nxy", default block style: offset 5 gives x 39.99994, y 0.0; offset 6 (after 'f', before the newline) gives x 0.0, y 21.59999; offset 7 gives the same rectangle. So the end of a line has no caret position of its own and a line's set width cannot be read from a caret there. Not a blocker: advtext gives each diff header a block of its own. |
+| H28 | **`Document.edit_error` as a class attribute default.** | PH-GATE's builder: it is set in `__init__`, so advtext's check that the imtypeset it found has every name advtext calls (pptmstr's P3) cannot ask for it without making a document. Small. |
+
 Also from pptmstr, on requests already here:
 - **On H15** (its P6, its words): "In a frozen application the gate's child
   would be the application itself, relaunched with `-P -B -c`, which pptmstr's

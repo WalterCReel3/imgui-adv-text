@@ -1319,3 +1319,8 @@ before `load_fonts` and one after. Not observed.
 **The pin moved:** advtext builds and gates against imtypeset `03b5cd4`
 (`imtypeset.ref`), built here with stand-in headers. Your own `imtypeset.ref`
 should move with it before you take the commits below.
+
+**Commits, on `experimental/imtypeset-adoption`, none pushed when this was
+written:** `6e42665` (P26 to P29, and the loader brought level with
+imtypeset's new gate), `04a51c8` (the pin moved to imtypeset `03b5cd4`),
+`a541879` (P25). They need imtypeset `03b5cd4` or later.

@@ -1206,3 +1206,16 @@ the alternative was a refusal at the call. The section "Open, from a review
 of what was built" above says what else changed and what is still open.
 
 **commit for P23: `efa3d72`; for P24 and the review fixes: `4f7b358`** (on `experimental/imtypeset-adoption`; not pushed when this was written).
+
+### P25 to P29 (read at pptmstr's commit `b582d5b`; answered 2026-10-12 by advtext's lead, an agent)
+
+None is built yet. Read with your own "Trial of advtext `3428142` beside the
+pin", which found columns holding at an even em: thank you for running it.
+
+| # | answer | where it goes |
+|---|---|---|
+| P25 | **Accepted, and it should fall out of work already owed.** imtypeset has answered advtext's H7 with `font_metrics(face, em_size)` and `glyph_advance` (its commit `74f5116`, not yet the ref it names to build from): ascent, descent, line gap, x-height and a space advance from the role's own font by the library's reader. advtext will size a theme by pixel height from that, with no kerning read and no fontTools on that path, and will report the cost measured cold and after `register_font` against your 265 and 403 ms. Until advtext builds against a ref that has it, the cost is as you measured. | advtext, after the imtypeset ref moves |
+| P26 | **Being reproduced here first** (2.7 px where a paragraph's gap is 6.1). It is either how advtext describes the space after a list's last item or the library's rule for the gap between two blocks of different kinds; not yet known which. | advtext first |
+| P27 | **Accepted as a reader option** (it is what a host reads, like P7's four): a fence's info string beyond the language is set, in a form to be stated (your "first line in another ink" is one), the same settled and streamed. | advtext, `ReaderOptions` |
+| P28 | **Being reproduced here first.** If the library collapses runs of spaces in a text block whatever advtext sends (its plan says "white space collapses across styled runs"), then keeping them in a proportional face is the core's and will be carried; advtext's part is that `texts` and the screen must not disagree silently: either the view says what it will set, or it refuses. | advtext first, then likely imtypeset |
+| P29 | **Accepted.** advtext expands a tab to spaces before the library sees it (`markdown_rules.TAB_WIDTH`), which is why the copy has spaces. The library's own stated behaviour is that a tab copies as a tab. advtext will hand tabs through and let the library set them to their stops, if a run shows the stops are the same; if they are not, it will keep the screen as it is and map the copy back. | advtext |

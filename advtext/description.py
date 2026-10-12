@@ -44,11 +44,32 @@ when there is one.
 
 Offsets are indices into a block's `str` (codepoints). The Python package
 converts to the library's byte offsets itself.
+
+**What the package can pack, and the check holds a description to it**
+(2026-10-12, after a review found values that passed the check and raised
+`struct.error` or `OverflowError` in the middle of a draw): the package
+writes a block, a run and a column as C structs, so an integer field is at
+most `INT_MAX`, a real one at most `FLOAT_MAX` either side of zero, and a
+colour is 32 bits. `check_description` and `check_runs` refuse anything
+else, and a view runs them where a document is handed over.
+
+**Text that cannot be encoded.** A Python `str` can hold what UTF-8 cannot:
+a surrogate code point (U+D800 to U+DFFF), which is what
+`bytes.decode(errors="surrogateescape")` makes of each undecodable byte and
+so what tool output and file names read that way carry. The package encodes
+a block's text and raises `UnicodeEncodeError` on one. `encodable(text)` is
+the text with each replaced by `REPLACEMENT` (U+FFFD), one character for
+one, so every offset still names what it named; `settled(block)` does that
+to a whole block. **The views do it to everything they hand the library**
+(`advtext.ui.typeset_view`), so a host does nothing. `check_description`
+PASSES such text, since a view can show it; a host that hands a description
+straight to `imtypeset.Document` calls `settled` on its blocks first.
 """
 
 from __future__ import annotations
 
 import collections
+import re
 from collections.abc import Iterable, Sequence
 from typing import Any, Final, NamedTuple
 
@@ -65,6 +86,8 @@ __all__ = [
     "Description",
     "FACE_DEFAULT",
     "FACE_ROLES",
+    "FLOAT_MAX",
+    "INT_MAX",
     "KIND_CODE",
     "KIND_HEADING",
     "KIND_HOST",
@@ -74,6 +97,7 @@ __all__ = [
     "KIND_TABLE",
     "LinkRow",
     "MISFIT_BLOCK",
+    "REPLACEMENT",
     "RUN_DISPLAY_FORMULA",
     "RUN_FORMULA",
     "RUN_NO_BREAK",
@@ -86,7 +110,9 @@ __all__ = [
     "check_runs",
     "column_aligns",
     "description_of",
+    "encodable",
     "face_role",
+    "settled",
     "table_text",
     "with_tags",
 ]
@@ -351,17 +377,96 @@ def description_of(
     return made
 
 
+INT_MAX: Final = 2**31 - 1
+"""The most an integer field of a block, a run or a mark holds: the package packs a C `int`."""
+
+FLOAT_MAX: Final = 3.4028234663852886e38
+"""The most a real field holds, either side of zero: the package packs a C `float`."""
+
+REPLACEMENT: Final = "\ufffd"
+"""What stands for a character that cannot be encoded (`encodable`): U+FFFD."""
+
+_SURROGATE: Final = re.compile("[\ud800-\udfff]")
+
+
+def encodable(text: str) -> str:
+    """
+    `text` as the library can be handed it: each surrogate code point is `REPLACEMENT`.
+
+    One character for one, so an offset into the one is an offset into the
+    other. The same object when there is nothing to replace, which for ASCII
+    is known without reading it. The module docstring says where such text
+    comes from.
+    """
+    if text.isascii() or _SURROGATE.search(text) is None:
+        return text
+    return _SURROGATE.sub(REPLACEMENT, text)
+
+
+def _settled_runs(runs: Any) -> Any:
+    return runs if type(runs) is tuple else tuple(runs)
+
+
+def settled(block: BlockDescription) -> BlockDescription:
+    """
+    `block` as a view keeps it: nothing in it a host still holds, and all of it encodable.
+
+    `runs`, `rows`, each row, each cell's `runs` and `columns` are tuples
+    (a list a host goes on appending to would otherwise change a block
+    after it was checked), and `text`, `marker` and each cell's text are
+    `encodable`. **The same object when it already is**, which is the usual
+    case and costs a few comparisons. For a block `check_description` or a
+    converter has passed; it checks nothing itself.
+    """
+    text, marker = encodable(block.text), encodable(block.marker)
+    runs, columns = _settled_runs(block.runs), _settled_runs(block.columns)
+    rows = block.rows
+    if rows or type(rows) is not tuple:
+        made = []
+        same = type(rows) is tuple
+        for row in rows:
+            cells = []
+            kept = type(row) is tuple
+            for cell in row:
+                cell_text, cell_runs = encodable(cell.text), _settled_runs(cell.runs)
+                if cell_text is not cell.text or cell_runs is not cell.runs:
+                    cell, kept = CellDescription(cell_text, cell_runs), False
+                cells.append(cell)
+            same = same and kept
+            made.append(row if kept else tuple(cells))
+        if not same:
+            rows = tuple(made)
+    if (
+        text is block.text
+        and marker is block.marker
+        and runs is block.runs
+        and columns is block.columns
+        and rows is block.rows
+    ):
+        return block
+    return block._replace(text=text, marker=marker, runs=runs, rows=rows, columns=columns)
+
+
+def _brief(value: object) -> str:
+    """`repr(value)`, cut where it would bury the message: an integer of 400 digits has one."""
+    try:
+        said = repr(value)
+    except ValueError:  # an int past the interpreter's limit for digits
+        return f"<{type(value).__name__} too long to print>"
+    return said if len(said) <= 80 else f"{said[:60]}... ({len(said)} characters)"
+
+
 def _whole(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _real(value: object) -> bool:
-    """A finite number that is no `bool`: what a C `float` field is given."""
+    """A finite number a C `float` holds, and no `bool`: what a real field is given."""
     return (
         isinstance(value, (int, float))
         and not isinstance(value, bool)
         and value == value
-        and value not in (float("inf"), float("-inf"))
+        and -FLOAT_MAX <= value <= FLOAT_MAX
     )
 
 
@@ -373,8 +478,9 @@ def check_runs(runs: object, length: int, where: str) -> None:
     characters: integers `0 <= start <= end <= length`, ascending and not
     overlapping (the library takes one run for a character), a face that is
     0 or one of `FACE_ROLES`' seven, a `scale` that is a finite number of
-    zero or more, and integers of zero or more for `color`, `flags` and
-    `tag`. `TypeError` for a wrong type, `ValueError` for a wrong value.
+    zero or more (at most `FLOAT_MAX`), a `color` that is a packed colour
+    of 32 bits, and integers of zero to `INT_MAX` for `flags` and `tag`.
+    `TypeError` for a wrong type, `ValueError` for a wrong value.
     """
     if not isinstance(runs, (tuple, list)):
         raise TypeError(
@@ -389,7 +495,10 @@ def check_runs(runs: object, length: int, where: str) -> None:
             if not _whole(getattr(run, name)):
                 raise TypeError(f"{here}: {name} is {getattr(run, name)!r}; it is an integer")
         if not _real(run.scale):
-            raise TypeError(f"{here}: scale is {run.scale!r}; it is a finite number")
+            raise TypeError(
+                f"{here}: scale is {_brief(run.scale)}; it is a finite number of at most "
+                f"{FLOAT_MAX:.3g}"
+            )
         if not 0 <= run.start <= run.end <= length:
             raise ValueError(f"{here} is [{run.start}, {run.end}) of a text of {length} characters")
         if run.start < reached:
@@ -402,6 +511,8 @@ def check_runs(runs: object, length: int, where: str) -> None:
             raise ValueError(f"{here}: face is {run.face}; it is 0 or one of FACE_ROLES")
         if run.scale < 0.0 or not 0 <= run.color <= 0xFFFFFFFF or run.flags < 0 or run.tag < 0:
             raise ValueError(f"{here}: scale, color, flags and tag are zero or more: {run!r}")
+        if run.flags > INT_MAX or run.tag > INT_MAX:
+            raise ValueError(f"{here}: flags and tag are at most {INT_MAX}: {run!r}")
 
 
 def _check_block(block: object, at: int, styles: int) -> None:
@@ -417,7 +528,10 @@ def _check_block(block: object, at: int, styles: int) -> None:
     for name in ("left_indent", "extent"):
         value = getattr(block, name)
         if not _real(value):
-            raise TypeError(f"{where}: {name} is {value!r}; it is a finite number of pixels")
+            raise TypeError(
+                f"{where}: {name} is {_brief(value)}; it is a finite number of pixels, at most "
+                f"{FLOAT_MAX:.3g}"
+            )
         if value < 0.0:
             raise ValueError(f"{where}: {name} is {value!r}; it is zero or more")
     if not KIND_PARAGRAPH <= block.kind <= KIND_TABLE:
@@ -429,6 +543,10 @@ def _check_block(block: object, at: int, styles: int) -> None:
         )
     if min(block.quote_depth, block.container, block.item, block.flags, block.level) < 0:
         raise ValueError(f"{where}: quote_depth, container, item, flags and level are zero or more")
+    if max(block.quote_depth, block.container, block.item, block.flags, block.level) > INT_MAX:
+        raise ValueError(
+            f"{where}: quote_depth, container, item, flags and level are at most {INT_MAX}"
+        )
     check_runs(block.runs, len(block.text), where)
     for name in ("rows", "columns"):
         if not isinstance(getattr(block, name), (tuple, list)):
@@ -460,7 +578,10 @@ def _check_block(block: object, at: int, styles: int) -> None:
         if not isinstance(column, ColumnDescription):
             raise TypeError(f"{here} is a {type(column).__name__}; it is a ColumnDescription")
         if not _whole(column.align) or not _real(column.width) or not _real(column.share):
-            raise TypeError(f"{here} is {column!r}; it is an integer and two finite numbers")
+            raise TypeError(
+                f"{here} is {_brief(column)}; it is an integer and two finite numbers of at "
+                f"most {FLOAT_MAX:.3g}"
+            )
         if column.align not in ALIGNS.values() or column.width < 0.0 or column.share < 0.0:
             raise ValueError(f"{here} is {column!r}; an ALIGNS integer, a width and a share >= 0")
 
@@ -476,10 +597,14 @@ def check_description(description: object) -> None:
 
     - every block is a `BlockDescription` of the types its fields name, a
       `kind` that is one of the seven, a `style` that indexes `styles`,
-      lengths that are finite and zero or more, runs as `check_runs` has
-      them, and `rows` / `columns` only on a `KIND_TABLE` block, whose
-      `text` is `table_text` of its cells;
-    - every style is a `StyleDescription` of numbers;
+      lengths that are finite and zero or more, integers of zero to
+      `INT_MAX`, runs as `check_runs` has them, and `rows` / `columns` only
+      on a `KIND_TABLE` block, whose `text` is `table_text` of its cells;
+    - every style is a `StyleDescription` of numbers a C `float` holds
+      (the library's struct takes a larger one as infinity, silently);
+    - **not checked: whether the text can be encoded.** A surrogate code
+      point passes; a view sets it as U+FFFD (`encodable`, and the module
+      docstring);
     - every link is a `LinkRow` naming a block there is, a range of its text,
       a tag above zero and a `str` target;
     - `texts` are the blocks' texts and `tables` the table blocks' numbers
@@ -511,10 +636,14 @@ def check_description(description: object) -> None:
         for name in ("Scale", "LineHeight", "FirstLineIndent", "SpaceAbove", "SpaceBelow"):
             if not _real(getattr(style, name)):
                 raise TypeError(
-                    f"style {number}: {name} is {getattr(style, name)!r}; it is a finite number"
+                    f"style {number}: {name} is {_brief(getattr(style, name))}; it is a finite "
+                    f"number of at most {FLOAT_MAX:.3g}"
                 )
         if not _real(style.MarkerGap):
-            raise TypeError(f"style {number}: MarkerGap is {style.MarkerGap!r}; a finite number")
+            raise TypeError(
+                f"style {number}: MarkerGap is {_brief(style.MarkerGap)}; a finite number of "
+                f"at most {FLOAT_MAX:.3g}"
+            )
         if (
             not 0 <= style.Face <= max(FACE_ROLES.values())
             or style.Align not in ALIGNS.values()
@@ -543,6 +672,8 @@ def check_description(description: object) -> None:
             raise ValueError(f"{here} names block {row.block} of {len(blocks)}")
         if not 0 <= row.start <= row.end <= len(blocks[row.block].text) or row.tag < 1:
             raise ValueError(f"{here} is {row!r}: a range of its block's text and a tag above zero")
+        if row.tag > INT_MAX:
+            raise ValueError(f"{here}: tag is {row.tag}; a run's tag is at most {INT_MAX}")
 
 
 def table_text(rows: Iterable[Iterable[str]]) -> str:

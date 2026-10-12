@@ -354,8 +354,13 @@ class TypesetStreamView(TypesetView):
         revision = self.stream.revision
         if revision == self._stream_revision:
             return False
+        # The revision is the view's only once the blocks were taken: a block
+        # that is refused raises here at every call until the stream moves
+        # on, and not once, with the view then drawing the older blocks and
+        # every later call answering False.
+        changed = self._set_blocks(self.stream.blocks)
         self._stream_revision = revision
-        return self._set_blocks(self.stream.blocks)
+        return changed
 
     def set_document(self, document: object, *, reader: Any = None) -> bool:
         """Refused: the stream is the document, and the next `sync` would put it back."""

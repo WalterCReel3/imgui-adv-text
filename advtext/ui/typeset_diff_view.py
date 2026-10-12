@@ -490,7 +490,14 @@ def _shown_slowly(text: str) -> tuple[str, tuple[int, ...]]:
     for at, character in enumerate(text):
         if character == "\t" or " " <= character <= "~":
             out.append(character)
-        elif has_control(character) or has_invisible(character):
+        elif (
+            has_control(character)
+            or has_invisible(character)
+            # A surrogate code point: what an undecodable byte is read as
+            # (`errors="surrogateescape"`). UTF-8 cannot hold it, so handing
+            # it over raised `UnicodeEncodeError` from every draw.
+            or "\ud800" <= character <= "\udfff"
+        ):
             out.append(CONTROL_PLACEHOLDER)
             marked.append(at)
         else:
@@ -1588,7 +1595,7 @@ def code_face_lacks(text: str) -> tuple[str, ...]:
     if text.isascii():
         return ()
     if not typesetter.ready():
-        why = typesetter.reason() or "typesetter.load_fonts() has not succeeded"
+        why = typesetter.why_not_ready()
         raise TypesetUnavailable(f"imtypeset cannot be asked: {why}")
     ts: Any = typesetter.module()
     face = int(ts.Face.Code)
@@ -1699,7 +1706,7 @@ class TypesetDiffView(DiffRows):
 
     def _ready(self) -> Any:
         if not typesetter.ready():
-            why = typesetter.reason() or "typesetter.load_fonts() has not succeeded"
+            why = typesetter.why_not_ready()
             raise TypesetUnavailable(f"imtypeset cannot draw: {why}")
         return typesetter.module()
 

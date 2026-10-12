@@ -410,6 +410,17 @@ draws your 17 px raster scaled to 16.784 at fractional pens, where
 sentence in your header beside `FontSize` / `EmSize`, for a host that sets a
 native line next to typeset text?
 
+### From fixing what a review found in advtext (added 2026-10-12)
+
+Each measured by advtext's PH-FIX / Q-CTX builder, an agent, at `c9f8902`.
+
+| # | request | what was measured |
+|---|---|---|
+| H36 | **A `ValueError` from the Python package naming the block and the field, for a description it cannot pack; and a stated rule for surrogates.** | `Document._pack` raises built-in exceptions after the caller has made the `Document`: `struct.error` for an integer past 2**31-1 (a run's `tag` or `flags`; a block's `quote_depth`, `container`, `item`, `level`, `flags`), `OverflowError` for a real past 3.4e38 (`scale`, `left_indent`, `extent`, a column's `width` or `share`), and `UnicodeEncodeError` for text holding a surrogate code point. Through advtext's view, 13 such descriptions each raised at the first draw. advtext now refuses each at its own door and sets a surrogate as U+FFFD, one for one; the same in the package would serve every host. |
+| H37 | **Values the package takes silently.** | `imtypeset.BlockStyle(Scale=1e39)` raises nothing: ctypes stores infinity, and the document laid out and drew (12 vertices for "abc"). `pack_marks` raises `struct.error` for a colour of -1 or 2**32, at every draw. |
+| H38 | **Ragged tables: is each of these meant?** | A `BlockKind.Table` block whose one row has three cells while one column is stated drew all three and reported no error; one with no rows drew nothing and reported no error; rows of unequal length drew. One run each; widths not measured. |
+| H39 | **A way to know the Dear ImGui context a library context was made in is gone.** A Shutdown context hook of yours that marks or destroys your context would make the question exact and free for every host. | `get_context_serial()` was 1 before and after an ImGui context was destroyed and another made (it identifies your context, not ImGui's). `font_atlas_index(role)` answered `None` in the new context in every case and is exact, at 0.45 microseconds a call. Python cannot add a context hook on imgui-bundle 1.92.900 (`ContextHook` has no callback field). A new ImGui context often lands at the old one's address and the binding returns the same Python object. pptmstr asked advtext for this (its P24) after showing by a run that nothing detected it; advtext now checks from its own side. |
+
 ## Answers to imtypeset
 
 Nothing asked yet under this channel. Standing facts imtypeset's oracle relies

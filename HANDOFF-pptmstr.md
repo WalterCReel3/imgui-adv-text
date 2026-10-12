@@ -322,6 +322,22 @@ tests. pptmstr named no test for P1.
 - What it does not do: load fonts or draw. And the library's gate writes
   its stamp beside the library file from the child, as it would from the
   application.
+- **It blocks the calling thread for up to `timeout` seconds, and the
+  default is 120** (added 2026-10-12 after a review; the code is as it
+  was). The default is long because the first time a library meets a wheel
+  its gate runs a child of its own. For `--version`, or anything an
+  operator waits on, pass a short `timeout` and read `"unchecked"` as "not
+  known"; do not call it on the UI thread.
+- **The child inherits your whole environment, `PYTHONPATH` included**, and
+  imports the advtext IT finds: if another advtext comes earlier on the
+  child's path than the one that asked, that one answers, by its own
+  `REQUIRED`. This package's directory is offered only when the child finds
+  no advtext at all.
+- The answer is the last line of the child's output that IS an answer
+  (changed 2026-10-12; it was "the last line"). Settled by looking: the
+  pinned library imports no C stdio (`nm -D`: no `printf`, `puts`, `fwrite`,
+  `write`), so it cannot write after Python's line today; a later library
+  that does will not hide the answer.
 
 Tests: `test_the_command_line_prints_the_pairing_and_exits_by_its_kind`,
 `test_a_verdict_is_a_childs_answer_and_leaves_the_asking_process_as_it_was`,
@@ -353,8 +369,17 @@ was refused.
 fields advtext sets of `BlockStyle`, `Style`, `DocumentOptions`, `Columns`;
 the members advtext names of seven enums; that `Block`, `Run`, `Cell` and
 `TableColumn` BEGIN with advtext's fields in advtext's order (the package
-reads the description's tuples by position); and that `imtypeset.demo` can
-be found (it is not imported, and its members are not checked).
+reads the description's tuples by position).
+
+**Changed 2026-10-12 (a review, and the lead's decision): `imtypeset.demo`
+is no longer asked for.** It was the one submodule on the list, and only
+advtext's own Specimen gallery page draws it; that page imports it by a
+computed name, which no freezer collects, so a frozen application was the
+likely place for the WHOLE library to be `REFUSED` over a page you do not
+show. The page catches the failed import and says so in a caption. **And
+`Style.SelectionColor` is now on the list** (five fields of `Style`): a view
+sets it at every layout, and on a library without the field ctypes would
+have taken the assignment silently and drawn no highlight.
 
 **What is NOT checked:** the fields of what the library answers
 (`DocumentHit`, `BlockGeometry`, ...); the keywords of its functions;
@@ -364,9 +389,10 @@ answers "new advtext, old imtypeset" for names that are missing, and not
 for names whose meaning changed.
 
 Two things the builder is least sure of, which bear on you: one missing
-name refuses the WHOLE library, including a name only a gallery page of
-advtext's demo uses; and in a run without the library the test that keeps
-the list complete knows a library document by its variable's name.
+name refuses the WHOLE library (the gallery page's `demo` was the case in
+point and is off the list since 2026-10-12, above); and in a run without
+the library the test that keeps the list complete knows a library document
+by its variable's name.
 
 Tests: `test_a_package_that_lacks_a_name_is_refused_with_a_sentence_that_names_it`,
 `test_the_sentence_names_five_and_counts_the_rest`,
@@ -513,6 +539,83 @@ rule ink, table padding and rule; selection, copy, marks, inks, hit tests,
 its `LinkRow`s. It cannot give: the source map (`source` None, `source_of`
 None, `selected_source` ""), `Palette.roles` (a style keeps the `Color` it
 states), `Palette.link` / `style_links`, a re-reading by `set_theme`.
+
+**Changed 2026-10-12, after a review of this section's code (PH-FIX's
+builder; each line reproduced by a run before it was changed, and held by
+`tests/test_typeset_host_mistakes.py`).** "Checked field by field" above was
+not true of what the library's Python package can PACK, and three more
+things were wrong:
+
+- **What is refused at the call now, and was not.** The package writes a
+  block, a run, a column and a mark as C structs. A description whose
+  integer is past `advtext.description.INT_MAX` (a run's `tag` or `flags`;
+  a block's `quote_depth`, `container`, `item`, `level`, `flags`) or whose
+  real number is past `FLOAT_MAX` either side (`scale`, `left_indent`,
+  `extent`, a column's `width` and `share`, every length of a
+  `StyleDescription`) passed `check_description` and raised `struct.error`
+  or `OverflowError` from the first draw; fourteen such descriptions are
+  now a `TypeError` or `ValueError` at `set_document`, the view as it was.
+  A style's `Scale=1e39` did not even raise: ctypes made it infinity. A
+  `MarkdownText` or `MarkdownCell` whose `formulas` holds anything but
+  `FormulaRange`s was an `AttributeError` out of the converter; it is a
+  `TypeError` before the view is touched. `MarkdownText.quote_depth` is
+  held to `INT_MAX` (found by giving every field of every block seventeen
+  things it is not: 510 cases, 406 refused at the call, 104 taken and
+  drawn, none anything else).
+- **A list you keep is copied.** `runs`, `rows`, a cell's `runs` and
+  `columns` may be lists; the view now keeps tuples of its own
+  (`advtext.description.settled`), so appending to your list after the call
+  changes nothing. Before, a later rebuild of the document (a palette's
+  roles, `close()`, `load_fonts()`) read your list as it then was, past the
+  check.
+- **Undecodable bytes: you do nothing. They are SET, as U+FFFD.** A Python
+  `str` can hold what UTF-8 cannot: a surrogate code point (U+D800 to
+  U+DFFF), which is what `bytes.decode(errors="surrogateescape")` makes of
+  each undecodable byte, so tool output and file names read that way carry
+  them. Every way into a view used to raise `UnicodeEncodeError` for one
+  (at the call for a view with a document, **at every draw** for one
+  without). Decided by PH-FIX's builder, an agent: every view sets each as
+  U+FFFD, one character for one, so every offset, selection, mark and link
+  range still names what it named. `texts`, `selected_text()` and a copy
+  have U+FFFD; your own blocks, `source` and `selected_source()` are not
+  touched. Why not a refusal: one bad byte in a long log would be a view
+  that shows nothing, and a stream would raise at every `sync` until you
+  rewrote the text; and U+FFFD is what your own
+  `decode("utf-8", errors="replace")` gives everywhere else, and what the
+  diff view already shows for a control character. `check_description`
+  PASSES such text for the same reason. **If you hand a description
+  straight to `imtypeset.Document`, call
+  `advtext.description.settled(block)` on each block first** (or
+  `encodable(text)` on a text): the package itself still raises.
+  `TypesetDiffView` shows one as its `CONTROL_PLACEHOLDER` in the warning
+  ink, in a line and in a file's name, where `draw` and `headers()` raised;
+  its `selected_text()` still returns the characters of the diff, and what
+  any view puts on the clipboard has U+FFFD (the binding refuses a text
+  holding a surrogate with a `TypeError`, by a run, and a copy is a key
+  press inside your frame).
+- **A call into the library that raises something that is not the
+  library's no longer leaves a wrong document.** The view made
+  `imtypeset.Document()` its own before `set_blocks`, so when the package
+  raised a built-in exception while packing, frame 1 raised and **from
+  frame 2 the view drew blank** while `texts` still reported text; on the
+  edit path the OLD document stayed under the new `texts`. Now the document
+  is kept only once it took the blocks, and an edit, a palette's roles, a
+  stream's append or `set_table_columns` that raises closes it: the next
+  draw makes it again from the view's record, or raises the same error
+  again. Reproduced with the values above before they were refused, and
+  held now by making the package raise. (The reviewer inferred that a
+  `scroll_to` on the empty document would raise the library's error and
+  switch the library off. That did not reproduce: it drew nothing and
+  `kind()` stayed READY. A hosted block or grow on it was not tried.)
+- **`TypesetView.set_marks` and `set_colours`** (older than this tranche):
+  a colour of `-1` or `2**32`, a place past `INT_MAX`, a thickness of
+  `1e39` or NaN was kept and raised `struct.error` / `OverflowError` from
+  EVERY draw. Each is a `ValueError` at the call, the marks or inks as they
+  were.
+- **A `TypesetStreamView` whose stream holds a block that is refused**
+  raises `TypeError` at every `sync` (and so at every `draw`) until the
+  stream moves on. It raised once, and every later `sync` answered False
+  with the view drawing the older blocks and no sign.
 
 Not done, said by the builder: `set_theme(theme, document)` with a document
 that is refused has already forgotten the old one when it raises (the view
@@ -880,7 +983,12 @@ pptmstr's `test_a_table_that_fits_keeps_its_natural_widths_settled_as_it_had_str
 - **What closes it today is the host's**: state the stream's widths on the
   settled view, `settled.set_table_columns(at, [c.max - c.min, ...])` from
   the stream's columns; tested to 0.001 px. It gives up the refit when the
-  pane is later too narrow. (Under `"natural"` a table whose columns are
+  pane is later too narrow. **The widths you compute are checked at that
+  call since 2026-10-12** (a review): NaN, infinity, a width below zero or
+  past a C float, an alignment that is none of `ALIGNS` are a `ValueError`
+  and `True` or `(1, "wide")` a `TypeError`, the table as it was. Before,
+  NaN and infinity were taken, and `1e39` raised `OverflowError` AFTER it
+  was stored, so every later rebuild of the document raised too. (Under `"natural"` a table whose columns are
   stated is not held, because the library ignores stated widths on a held
   table: H31.)
 
@@ -912,6 +1020,41 @@ those are built as far as the entries above say. What is left:
 - Nothing was run on macOS, on a GPU, at a display scale other than 1, or
   frozen; nothing was run through pptmstr's code; nobody looked at a
   screen.
+
+### Open, from a review of what was built (2026-10-12; recorded, not fixed)
+
+A reviewer read the code behind P1 to P19. What it found wrong is fixed and
+said in the sections above (P2, P3, P8, P19). What it found that is NOT
+fixed:
+
+- **`show_link_destinations` (P7), three things.** (1) "Left unsaid only
+  when the text IS the destination character for character" compares text
+  built from the link's `text` and `code_inline` tokens only, so a link
+  text broken across a line (a soft break inside the brackets) is shown
+  WITHOUT its destination even though it differs. (2) The destination is
+  written into the block's text, so a copy, `texts` and find include
+  characters your source does not have; `selected_source()` is unaffected.
+  (3) A settled view reads a `str` with `references=True` by default and a
+  stream reads with `references=False`: pass `references=False` to the
+  settled view for the two to read alike.
+- **"A `Description` is used as it is given" is not quite true.** A view's
+  `fixed_line_height` and `table_widths="natural"` lay their flags over
+  your blocks; and since 2026-10-12 a surrogate in your text is U+FFFD and
+  your lists are tuples (above). Nothing else is changed.
+- **In a frozen application** `verdict()` starts nothing, but `kind()`,
+  `module()` and every view constructor still run the library's own gate
+  (which starts a child of its own the first time a library meets a wheel).
+- **A table whose rows and columns disagree passes the checks.** Run on the
+  pinned library (PH-FIX's builder, 2026-10-12, one run each, no test): a
+  row with three cells in a table that states one column drew all three
+  cells and raised nothing; a `KIND_TABLE` block with no rows drew nothing
+  and raised nothing; rows of unequal length drew. What widths the library
+  chose was not measured.
+- **Other numbers a host hands a view are held to "finite" by
+  `math.isfinite`, which raises `OverflowError` for an integer too large
+  for a float** (`10**400`): `set_columns`' height and gutter,
+  `column_pos`' point, `TypesetDiffView.headers(width_px=...)`. Seen while
+  fixing the above; not changed.
 
 ### P21 to P24 (read at pptmstr's commit `e73f087`; answered 2026-10-12 by advtext's lead, an agent)
 
@@ -1020,3 +1163,46 @@ fix your 52 spaces are 52 at 7.626. `tests/test_typeset_spacing.py`. A fenced
 block's spaces were one width before and are after. `NONFRENCH` now reaches
 the library too (its `TeX` rule, where it had `Sentence`); a justified
 `NONFRENCH` line was not measured.
+
+### P24, built (2026-10-12)
+
+By advtext's Q-CTX builder, an agent; both gates green after it (`make
+check` 3328 passed, `make check TYPESET=1` 3640 passed, load about 3).
+Reproduced first: with a new context at the old address `ready()` was True
+and the kept view drew 0 vertices without raising; with a second context
+alive beside the first the draw raised the library's error and switched the
+library off for every view until `reset()`.
+
+**Built.** `typesetter.ready()` is now false, and a kept view's `draw()`
+raises `TypesetUnavailable` before anything is handed to the library,
+whenever the Dear ImGui context that is current is not the one
+`load_fonts()` succeeded in: none current, another current, or that one
+destroyed, with or without `unload()`; `typesetter.why_not_ready()` is the
+sentence, `kind()` stays `READY` (the package is as usable as it was,
+exactly as after `unload()`), and `load_fonts()` in the new context is the
+whole way back, kept views making their documents again at their next draw.
+It is not latched: with two contexts alive it is true in the one and false
+in the other.
+
+**About your own gate.** A new Dear ImGui context often lands at the address
+of the one just destroyed (it is the allocator's: in this builder's runs the
+same child landed there 6 of 6 times, and 0 of 30 after an unrelated edit),
+and the binding then returns the very same Python object, so `is` and `==`
+cannot tell the two apart. A comparison of `get_current_context()` with the
+one remembered has that hole. advtext also checks that the font it loaded is
+still in the current atlas, the same object with the same byte count (the
+font object alone was fooled in 3 and 5 of 12 runs when a host loaded 8 or 12
+fonts into the new context; with the byte count, 0 of 12).
+`imtypeset.get_context_serial()` does not help: it was 1 before and after.
+
+The check costs 0.76 microseconds a call and no library call.
+
+**Lone surrogates** (the review's caution about tool output handed over as
+host blocks): every way into a view, the diff view and the clipboard now set
+a surrogate code point as U+FFFD, one for one, so no offset moves and one
+undecodable byte in a long log does not blank a view. A copy therefore gives
+U+FFFD, not the byte. An agent's decision (the builder's, kept by the lead);
+the alternative was a refusal at the call. The section "Open, from a review
+of what was built" above says what else changed and what is still open.
+
+**commit for P23, P24 and the review fixes: named below by the lead.**

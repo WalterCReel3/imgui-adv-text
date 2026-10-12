@@ -62,6 +62,7 @@ _STATE = (
     "_unsupported",
     "_disabled",
     "_ready",
+    "_home",
     "_trouble",
 )
 
@@ -355,7 +356,9 @@ def test_a_package_with_every_name_lacks_nothing() -> None:
         (("CodeOverflow.Grow",), ["CodeOverflow.Grow"]),
         # An owner that is absent is said once, not once per name it would hold.
         (("Document",), ["Document"]),
-        (("demo",), ["demo"]),
+        # The package's demo is not asked for (2026-10-12, the lead's decision
+        # D1 of PH-FIX): only the Specimen page draws it, and says so itself.
+        (("demo",), []),
     ],
     ids=lambda value: value[0] if isinstance(value, tuple) else None,
 )

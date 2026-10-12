@@ -249,6 +249,37 @@ not version-controlled), measured while four builders shared the machine
 - With HTML read as HTML (the default), a paragraph followed by an unclosed
   `<!--` stays live in a stream until the comment closes, and is re-read at
   every piece (PH-MD's builder; as it was before this work; pinned).
+- **From a review of this revision's code** (2026-10-12, task PH-R, by
+  reading; what it found wrong and was reproduced is fixed by PH-FIX and
+  said in `HANDOFF-pptmstr.md`, P2, P3, P8 and P19). Recorded and not
+  fixed:
+  - `show_link_destinations`: the text compared with the destination is
+    built from `text` and `code_inline` tokens only, so a link text broken
+    across a line is shown without its destination; the destination is
+    written into the block's text, so copy, `texts` and find hold
+    characters the source does not (`selected_source()` does not); a
+    settled view reads a `str` with `references=True` by default and a
+    stream with `references=False`.
+  - "A `Description` is used as it is given" is not quite true:
+    `fixed_line_height` and `table_widths="natural"` lay flags over the
+    host's blocks (and since PH-FIX a surrogate is U+FFFD and a list a
+    tuple).
+  - In a frozen application `verdict()` starts nothing, but `kind()`,
+    `module()` and every view constructor still run the library's own gate.
+  - A table row with more cells than columns, a `KIND_TABLE` block with no
+    rows, and rows of unequal length pass the checks. One run each on the
+    pinned library (PH-FIX's builder): each drew or drew nothing, none
+    raised; the widths were not measured and no test holds it.
+  - `math.isfinite` on a host's number raises `OverflowError` for an
+    integer too large for a float (`set_columns`, `column_pos`,
+    `TypesetDiffView.headers(width_px=...)`).
+  - After a call into the library raises something that is not the
+    library's, the view has NO document and its record is the new one (not
+    "the view as it was"): the next draw makes the document again or raises
+    the same error. The reviewer's "build then swap" is done for a new
+    document; for an edit, restoring every field of the record was judged
+    more likely to be wrong than closing the document
+    (PH-FIX's builder's decision).
 
 ## 0e. Revision of 2026-10-12: Level 1. The pairing with imtypeset is pinned, found three ways, and buildable from GitHub; none of it has run there
 

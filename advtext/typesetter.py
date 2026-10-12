@@ -49,8 +49,9 @@ renderer since tranche 5). Importing this module imports nothing of imtypeset
 and cannot raise because of it.
 
 **What a host asks, beside `module()` and `reason()`** (2026-10-12, asked for
-by pptmstr, the first host; none of these is on the facade, reach them as
-`advtext.typesetter.<name>`):
+by pptmstr, the first host). On the facade, beside `load_fonts`, `ready` and
+`reason`: `Kind`, `kind`, `reset`, `unsupported` and `verdict`. The rest is
+reached as `advtext.typesetter.<name>`:
 
 - `kind()`, a `Kind`: ready, not installed, refused, failed, unsupported.
   The sentence is still `reason()`; the kind is what to branch on.
@@ -58,7 +59,8 @@ by pptmstr, the first host; none of these is on the facade, reach them as
   the host's word that this platform has no library.
 - `missing(package)` and `REQUIRED`: the names of imtypeset this advtext
   calls. `module()` refuses a package that lacks one, so that a partial
-  update falls back at the gate and does not fail inside a draw.
+  update falls back at the gate and does not fail inside a draw. The
+  package's `demo` is NOT one of them: only the Specimen page draws it.
 - `verdict(library, python_path)`: what a NEW process would say, asked of a
   child, with nothing loaded here and nothing remembered. The same from a
   shell: `python -m advtext.typesetter` prints `pairing()` as one line of
@@ -69,8 +71,9 @@ by pptmstr, the first host; none of these is on the facade, reach them as
 files. It belongs in hello_imgui's `load_additional_fonts` callback, after the
 host's own faces, and **never in `post_init`**: the runner empties the atlas
 before it calls `load_additional_fonts`, so a face added earlier is gone by the
-first frame. `ready()` says whether that has happened; a view checks it before
-it draws.
+first frame. `ready()` says whether that has happened **in the Dear ImGui
+context that is current**; a view checks it before it draws, and
+`why_not_ready()` is the sentence when it has not.
 
 **The description.** imtypeset takes *text* with runs, a block at a time.
 `advtext.typeset_markdown` makes that description straight from markdown
@@ -198,6 +201,7 @@ __all__ = [
     "unload",
     "unsupported",
     "verdict",
+    "why_not_ready",
     "window_draw_list",
 ]
 
@@ -347,7 +351,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "table_row",
     ),
     "BlockStyle": (*StyleDescription._fields, "Color"),
-    "Style": ("EmSize", "PixelsPerInch", "Color", "Spacing"),
+    "Style": ("EmSize", "PixelsPerInch", "Color", "Spacing", "SelectionColor"),
     "DocumentOptions": (
         "CodeOverflow",
         "QuoteBarColor",
@@ -376,10 +380,13 @@ _IN_ORDER: dict[str, tuple[str, ...]] = {
     "TableColumn": ColumnDescription._fields,
 }
 
-# The package's own demo, which advtext's gallery pages draw. Only that the
-# submodule can be found is asked, and it is not imported to ask: a host that
-# shows no gallery pays nothing for it.
-_SUBMODULES = ("demo",)
+# Submodules of the package the gate asks for: none. Until 2026-10-12 it was
+# `imtypeset.demo`, which only advtext's Specimen page draws
+# (`advtext.ui.pages.specimen`, which catches a failed import and says so in
+# a caption). A frozen application is the likely place for it to be absent:
+# the page imports it by a computed name, which no freezer collects, and the
+# whole library was then REFUSED for a gallery page the host does not show.
+_SUBMODULES: tuple[str, ...] = ()
 
 
 def __getattr__(name: str) -> Any:
@@ -435,7 +442,18 @@ _why = Kind.NOT_INSTALLED
 _unsupported = ""
 _disabled = False
 _ready = False
+# Where `load_fonts()` last succeeded, as (the `imgui` module, the Dear ImGui
+# context that was current, the `ImFont` of the last role that was given a
+# font or `None`, where that font stood in the atlas, how many bytes of font
+# data it had): what `ready()` holds the current context to. `None` while
+# there is no such load to speak of.
+_home: tuple[Any, Any, Any, int, int] | None = None
 _trouble = ""
+_NOT_LOADED = "typesetter.load_fonts() has not succeeded"
+_ELSEWHERE = (
+    "the Dear ImGui context typesetter.load_fonts() loaded the fonts in is not the current "
+    "one (destroyed, or another is current); call typesetter.load_fonts() in this one"
+)
 _logged: set[str] = set()
 _log = logging.getLogger("advtext.typesetter")
 
@@ -727,6 +745,20 @@ def verdict(
     interpreter is asked with the command line**, which is the same answer:
     `<that python> -m advtext.typesetter`.
 
+    **It blocks the calling thread until the child answers, for up to
+    `timeout` seconds, 120 by default.** The first time a library meets a
+    wheel its gate runs a child of its own, so the default is long; for a
+    `--version` or anything an operator waits on, pass a short one (a
+    second run of the same pair answered in about a third of a second
+    here) and treat `"unchecked"` as "not known". Call it off the UI
+    thread.
+
+    **The child inherits the whole environment, `PYTHONPATH` included.** It
+    imports the advtext IT finds: where another advtext comes earlier on
+    its path than this one, that one answers, by its own `REQUIRED`. This
+    package's directory is offered only when the child finds no advtext at
+    all.
+
     The answer has `pairing()`'s keys. Its `kind` is the child's, or:
 
     - `"unchecked"` (`Kind.UNCHECKED`) when no child could be asked: a frozen
@@ -789,12 +821,21 @@ def verdict(
         return unchecked(f"the child interpreter did not answer in {timeout:g} seconds")
     except Exception as exc:  # noqa: BLE001 -- it did not start: that is the answer
         return unchecked(f"the child interpreter did not start: {type(exc).__name__}: {exc}")
-    lines = done.stdout.strip().splitlines()
-    try:
-        said = json.loads(lines[-1]) if lines else None
-    except ValueError:
-        said = None
+    # The answer is the LAST line that is one: anything written to the
+    # standard output after Python's own line (a shared library's C stdio is
+    # flushed at exit when the output is a pipe) must not hide it. The pinned
+    # library imports no stdio at all (2026-10-12, `nm -D`); this is for one
+    # that does.
     kinds = {member.value for member in Kind}
+    said = None
+    for line in reversed(done.stdout.strip().splitlines()):
+        try:
+            heard_line = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(heard_line, dict) and heard_line.get("kind") in kinds:
+            said = heard_line
+            break
     if isinstance(said, dict) and said.get("kind") in kinds:
         answer: dict[str, str | None] = dict.fromkeys(_PAIRING_KEYS)
         for key in _PAIRING_KEYS:
@@ -877,11 +918,127 @@ def unsupported(why: str) -> None:
 
 def ready() -> bool:
     """
-    Whether `load_fonts()` has made the context and added the faces.
+    Whether `load_fonts()` has made the context and added the faces, in the CURRENT ImGui context.
 
-    False again once `disable` has switched the library off.
+    False again once `disable` has switched the library off, after
+    `unload()`, and **whenever the Dear ImGui context that is current is not
+    the one `load_fonts()` succeeded in**: with none current, with another
+    current, and after that one was destroyed, whether or not `unload()` was
+    called first (asked for by pptmstr, the first host, which found by a run
+    that a view kept across a destroyed context went on drawing). The
+    library's context and its fonts belong to that one ImGui context;
+    `why_not_ready()` has the sentence, and `load_fonts()` in the new context
+    is the way back. `kind()` and `module()` do not change with any of this:
+    they are about the package, and the package is as usable as it was.
+
+    **It is not latched.** A host with two ImGui contexts alive is ready in
+    the one it loaded in and not in the other, every time it switches.
+
+    **How the context is known**, measured 2026-10-12 on the pinned pair
+    (`tests/test_typesetter_context.py` makes both runs again). Two questions
+    of Dear ImGui, because neither is enough, and none of the library:
+
+    1.  Is the current context the very object that was current at the load?
+        A context made while that one was alive is another object. But a
+        context made AFTER it was destroyed often lands at its address
+        (in every run of one script here and in none of another that
+        differed by a line: it is the allocator's), and the binding then
+        answers the same Python object for it: comparing contexts, by `is`
+        or by `==`, takes the new one for the old.
+    2.  So: is the font the library added last at that load still in the
+        current atlas -- the very object, with as many bytes of font data as
+        it had? A new context has a new atlas, empty until somebody loads
+        into it. The font is looked for where it stood and, when another
+        stands there (a host took one of its own off the atlas), along the
+        whole list. **The object alone is not enough either**: with a host
+        that loaded eight or twelve fonts of its own into the new context,
+        one of them was the same Python object as the library's old font in
+        3 runs of 12, and in 5 the next time (the allocator again). The bytes are what a host's font
+        does not share: the library adds a rewritten COPY of each file, and
+        for all seven roles its size differed from the file's (Inconsolata:
+        109 192 bytes in the atlas, 102 176 on disk).
+
+    What does NOT tell the two apart: `imtypeset.get_context_serial()`, which
+    is the library context's and was 1 before and after. What would, and is
+    not asked here: `imtypeset.font_atlas_index(role)` answered `None` in the
+    new context in both runs, at 0.45 microseconds a call; it is a call into
+    the library on every draw of every view, and a view's frame is held to
+    three.
+
+    Which means `ready()` is also false after a host emptied the atlas or
+    took that font off it: nothing can be set in its role then either. When
+    no role was given a font at all (every file was missing) only the first
+    question is asked.
+
+    **Where it can still be wrong**, reasoned and not reproduced: a new
+    context at the old address, in whose atlas the allocator put a font of
+    the host's at the old font's address, that font having exactly as many
+    bytes of data as the library's copy had, and no `load_fonts()` since.
+    The library itself is not fooled there (its fonts carry a mark; every
+    role is empty and text is laid out with a `NoFont` error on each block,
+    nothing of the host's is touched), so the cost would be a view that
+    draws nothing where it should have raised.
+
+    **What it costs**: no call into the library, and ten reads of Dear
+    ImGui through the binding. Measured on that pair, 200 000 calls:
+    0.76 microseconds an answer when true (it was 0.04 as a flag),
+    0.11 when the current context is another object or none. A view asks
+    once a draw.
     """
-    return _ready and _ts is not None
+    return _ready and _ts is not None and _at_home()
+
+
+def _at_home() -> bool:
+    """
+    Whether the current Dear ImGui context is the one `load_fonts()` succeeded in (`ready`).
+
+    True when no load is recorded: `_ready` is then somebody else's word.
+    Never raises, and switches nothing off: a question that fails is "no".
+    Nothing kept from the load is READ here, only compared: the context and
+    the font may both have been freed.
+    """
+    global _home
+    home = _home
+    if home is None:
+        return True
+    imgui, context, font, index, size = home
+    try:
+        if imgui.get_current_context() is not context:
+            return False
+        if font is None:
+            return True
+        fonts = imgui.get_io().fonts.fonts
+        count = len(fonts)
+        # `found` is read only once it is known to stand in the atlas that is
+        # current, which is alive; `font` itself is never read.
+        found = fonts[index] if index < count else None
+        if found is font:
+            return bool(found.sources[0].font_data_size == size)
+        for at in range(count):
+            found = fonts[at]
+            if found is font and found.sources[0].font_data_size == size:
+                _home = (imgui, context, font, at, size)
+                return True
+        return False
+    except Exception:  # noqa: BLE001 -- a question must not be what fails
+        return False
+
+
+def why_not_ready() -> str:
+    """
+    Why `ready()` is false, as one sentence; empty when it is true.
+
+    `reason()` while the library is not in use; that `load_fonts()` has not
+    succeeded, before it has and after `unload()`; and that the Dear ImGui
+    context the fonts were loaded in is not the current one, which is what a
+    view kept across a destroyed context says when it is drawn. A view's
+    `TypesetUnavailable` carries this sentence.
+    """
+    if _ts is None:
+        return _reason or _NOT_LOADED
+    if not _ready:
+        return _NOT_LOADED
+    return "" if _at_home() else _ELSEWHERE
 
 
 def load_fonts(faces: Iterable[Face] | None = None) -> bool:
@@ -905,6 +1062,10 @@ def load_fonts(faces: Iterable[Face] | None = None) -> bool:
     Any other failure -- the library refusing a font -- switches the library
     off for the run (`disable`), because a view that drew with half its faces
     would be wrong in a way nobody asked for.
+
+    `faces` holding anything that is not a `Face` (`load_fonts(["prose"])`)
+    is a `TypeError` here, **before anything is touched**: `ready()`, the
+    library's context and every open document are as they were.
 
     **Every call makes a new imtypeset context, in the Dear ImGui context
     that is current, and destroys the one there was.** A handle says a
@@ -965,14 +1126,38 @@ def load_fonts(faces: Iterable[Face] | None = None) -> bool:
     `unload()` is still what whoever destroys the ImGui context calls first,
     so that nothing of the library outlives its atlas.
     """
-    global _ready
+    global _ready, _home
+    # Before anything is touched: what is no `Face` is the caller's slip, told
+    # at the call with everything as it was (as `font()` does). Inside the
+    # `try` below it used to close every open document and then switch the
+    # library off for the run, for a typo.
+    if faces is not None:
+        known = importlib.import_module("advtext.primitives").Face
+        if isinstance(faces, (str, bytes, known)):
+            raise TypeError(
+                f"load_fonts() takes an iterable of advtext Face, not one {type(faces).__name__}"
+            )
+        try:
+            faces = tuple(faces)
+        except TypeError:
+            raise TypeError(
+                f"load_fonts() takes an iterable of advtext Face, not {type(faces).__name__}"
+            ) from None
+        for face in faces:
+            if not isinstance(face, known):
+                raise TypeError(
+                    f"load_fonts() takes advtext Face members, not {type(face).__name__} "
+                    f"({face!r}); Face.PROSE, say"
+                )
     _ready = False
+    _home = None
     ts = module()
     if ts is None:
         return False
     try:
-        imgui_bundle = importlib.import_module("imgui_bundle")
-        if imgui_bundle.imgui.get_current_context() is None:
+        imgui = importlib.import_module("imgui_bundle").imgui
+        context = imgui.get_current_context()
+        if context is None:
             note("load_fonts was called with no Dear ImGui context; nothing was loaded")
             return False
         fontlib = importlib.import_module("advtext.fontlib")
@@ -982,6 +1167,7 @@ def load_fonts(faces: Iterable[Face] | None = None) -> bool:
             ts.destroy_context()
         ts.create_context()
         missing: list[str] = []
+        given: int | None = None
         for face in faces:
             try:
                 path = fontlib.font_file(face)
@@ -989,11 +1175,23 @@ def load_fonts(faces: Iterable[Face] | None = None) -> bool:
                 missing.append(face.value)
                 continue
             ts.add_font(FACE_ROLES[face.name], str(path))
+            given = FACE_ROLES[face.name]
         if missing:
             note(f"no font file for {', '.join(missing)}; set in the document's face")
     except Exception as exc:  # noqa: BLE001 -- any failure here means "draw as before"
         disable(f"{type(exc).__name__}: {exc}")
         return False
+    # What `ready()` knows this ImGui context by afterwards. A library that
+    # cannot say where the font is leaves the context alone to go by.
+    mark, at, size = None, 0, 0
+    try:
+        index = None if given is None else ts.font_atlas_index(given)
+        if index is not None:
+            added = imgui.get_io().fonts.fonts[index]
+            mark, at, size = added, int(index), int(added.sources[0].font_data_size)
+    except Exception as exc:  # noqa: BLE001 -- a question must not be what fails
+        note(f"load_fonts: {type(exc).__name__}: {exc}")
+    _home = (imgui, context, mark, at, size)
     _ready = True
     return True
 
@@ -1011,7 +1209,8 @@ def font(face: Face) -> Any:
     `None` when the library is not `ready()`, when the role has no font (no
     file for it at `load_fonts`: see `trouble()`), and when the library
     cannot say; a library that raises when asked is a `trouble()` and `None`,
-    never an exception.
+    never an exception. `ready()` is about the Dear ImGui context that is
+    current, so this is `None` in any other than the one the fonts are in.
 
     **Ask every time; do not keep the answer across a `load_fonts()`.** A
     later load gives the role another entry in the atlas, and the one kept is
@@ -1046,7 +1245,7 @@ def font(face: Face) -> Any:
     if not isinstance(face, faces):
         raise TypeError(f"font() takes an advtext Face, not {type(face).__name__}")
     ts = _ts
-    if ts is None or not _ready:
+    if ts is None or not ready():
         return None
     try:
         index = ts.font_atlas_index(FACE_ROLES[face.name])
@@ -1074,8 +1273,9 @@ def unload() -> None:
     atlas** (measured in a window, 2026-10-12: 22 fonts before this call and
     22 after); they go when the atlas does.
     """
-    global _ready
+    global _ready, _home
     _ready = False
+    _home = None
     package = _package
     if package is None:
         return
@@ -1105,6 +1305,8 @@ def window_draw_list() -> int | None:
     `RuntimeError` when `load_fonts()` has not succeeded.
     """
     if not ready():
+        if _ts is not None and _ready:
+            raise RuntimeError(_ELSEWHERE)
         raise RuntimeError("advtext.typesetter.load_fonts() has not succeeded; see reason()")
     return None
 
@@ -1136,9 +1338,10 @@ def disable(why: str) -> None:
     It releases nothing: the context, its documents and its fonts stay as
     they are until `unload()`, which still works afterwards.
     """
-    global _ts, _reason, _why, _disabled, _ready
+    global _ts, _reason, _why, _disabled, _ready, _home
     _ts = None
     _ready = False
+    _home = None
     _disabled = True
     _reason = why
     _why = Kind.FAILED
@@ -1181,8 +1384,9 @@ def reset() -> None:
 
     A warning that was logged once is logged again if it happens again.
     """
-    global _ts, _tried, _installed, _reason, _why, _disabled, _ready
+    global _ts, _tried, _installed, _reason, _why, _disabled, _ready, _home
     _ts = None
+    _home = None
     _tried = False
     _installed = None
     _reason = _unsupported or _NOT_SET

@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from advtext.description import encodable
+
 __all__ = [
     "AT_BOTTOM_PX",
     "CLIPBOARD_NUL",
@@ -110,7 +112,16 @@ def clipboard_text(text: str) -> str:
     through here, a host's own `copy(text)` and `copy_as` included.
     `selected_text()` is not changed: it returns the characters that are
     there, NUL and all, for a host that does something else with them.
+
+    And each surrogate code point as U+FFFD
+    (`advtext.description.encodable`): the clipboard is UTF-8, which cannot
+    hold one, and the binding refuses the whole text with a `TypeError`
+    ("incompatible function arguments", measured 2026-10-12) -- from inside
+    a draw, when the copy is a key press. A diff view's
+    `selected_text()` returns the characters of the diff, an undecodable
+    byte's surrogate included.
     """
+    text = encodable(text)
     return text.replace("\0", CLIPBOARD_NUL) if "\0" in text else text
 
 

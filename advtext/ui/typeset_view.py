@@ -178,6 +178,20 @@ which run a white-space character is in.
   `TypesetDiffView` already sorted them, and the three views now share the
   one rule.
 
+- **A view never keeps a library document that is not what `texts` says.**
+  The document is the view's only once it took the blocks, and a later call
+  into the library that raises (an edit, a palette's roles, a table's
+  columns) closes it: the next `draw` makes it again from the view's own
+  record, or raises what was raised. Until 2026-10-12 an exception out of
+  the package's own packing left an EMPTY document, which drew blank from
+  the next frame on.
+- **Text UTF-8 cannot hold is set, each surrogate code point as U+FFFD**,
+  one character for one (`advtext.description.encodable`), by every way in:
+  a `str`, a host's blocks, a `Description`, a stream, a hosted widget's
+  text. Undecodable bytes arrive so (`errors="surrogateescape"`). `texts`
+  and a copy have U+FFFD; the host's own blocks and `source` are not
+  touched.
+
 There is no other renderer to draw with instead (the old views are deleted);
 **this class never silently draws nothing.** `draw()` opens no window, pushes
 no ID and no style, so an exception out of it leaves ImGui's stacks as the
@@ -489,8 +503,11 @@ from typing import TYPE_CHECKING, Any, Final, NamedTuple, NoReturn, Protocol
 from advtext import typeset_markdown as _markdown
 from advtext import typesetter
 from advtext.description import (
+    ALIGNS,
     BLOCK_FIXED_LINE_HEIGHT,
     BLOCK_TABLE_HELD,
+    FLOAT_MAX,
+    INT_MAX,
     KIND_CODE,
     KIND_HEADING,
     KIND_HOST,
@@ -503,13 +520,16 @@ from advtext.description import (
     Description,
     LinkRow,
     StyleDescription,
+    _brief,
     check_description,
     check_runs,
+    settled,
 )
 from advtext.markdown_rules import BlockSource
 from advtext.primitives import px_from_sp
 from advtext.theme import BlockKind, BlockStyle
 from advtext.typeset_markdown import (
+    FormulaRange,
     MarkdownCell,
     MarkdownCode,
     MarkdownConverter,
@@ -992,7 +1012,12 @@ class TypesetView:
         else, and for a sequence holding something that is not one of those
         blocks, naming its type and its number (it is NOT shown as an empty
         gap); `TypeError` or `ValueError` for a block or a description whose
-        fields the library could not be handed (`check_description`).
+        fields the library could not be handed (`check_description`): a
+        wrong type, a run outside its text, a number the library's structs
+        cannot hold, `formulas` that are not `FormulaRange`s. **Not
+        refused**: text UTF-8 cannot hold, which is set as U+FFFD (the
+        module docstring); and lists where tuples are named, which are
+        copied, so a list the caller goes on changing changes nothing here.
         """
         reread = False
         if reader is not _UNSET:
@@ -1192,6 +1217,7 @@ class TypesetView:
         self._flag_blocks(first)
         self._describe_more(first)
         self._ink_blocks(first)
+        self._settle_blocks(first)
         # How far the code from here on reaches is not known any more.
         self._grow_from = first if self._grow_from is None else min(self._grow_from, first)
         self.revision += 1
@@ -1233,7 +1259,7 @@ class TypesetView:
                     self._styles[known:],
                 )
             except Exception as exc:  # noqa: BLE001 -- see `_failed`
-                self._failed(exc)
+                self._abandon(exc)
         return True
 
     def _ask_hosts(self, first: int) -> None:
@@ -1279,6 +1305,43 @@ class TypesetView:
             if taken:
                 self._links = [row for row in self._links if row.block not in taken]
                 self._tables = [at for at in self._tables if at not in taken]
+
+    def _settle_blocks(self, first: int) -> None:
+        """
+        Make the descriptions from `first` on the view's own, and all of them encodable.
+
+        `advtext.description.settled`: tuples where a host may have given
+        lists, and U+FFFD for each character UTF-8 cannot hold (a surrogate
+        code point, which is how undecodable bytes arrive), one for one, in
+        what goes to the library AND in `texts`, so the two never differ.
+        The host's own blocks and `source` are not touched. Every way in
+        comes through here, a hosted widget's text included.
+        """
+        for at in range(first, len(self._described)):
+            was = self._described[at]
+            now = settled(was)
+            if now is not was:
+                self._described[at] = now
+                self._texts[at] = now.text
+
+    def _abandon(self, exc: Exception) -> NoReturn:
+        """
+        An edit of the library's document raised: the document goes, and `exc` is passed on.
+
+        The view's record is already what it was asked to be, and the
+        library's document is now behind it or half made. A view never keeps
+        a document that is not what `texts` says it is: it is closed here and
+        the next `draw` makes it again from the record, or raises what this
+        raised. Then `_failed`, which sorts `exc` by whose it is.
+        """
+        doc, self._doc = self._doc, None
+        self._drop_heights()
+        if doc is not None and not library_failed(exc):
+            try:
+                doc.close()
+            except Exception:  # noqa: BLE001, S110 -- what is passed on is `exc`
+                pass
+        self._failed(exc)
 
     def _ink_blocks(self, first: int) -> None:
         """
@@ -1375,19 +1438,26 @@ class TypesetView:
         `typesetter.unload()` closed it.
         """
         if not typesetter.ready():
-            why = typesetter.reason() or "typesetter.load_fonts() has not succeeded"
+            why = typesetter.why_not_ready()
             raise TypesetUnavailable(f"imtypeset cannot draw: {why}")
         if self._doc is None or self._doc.closed:
             ts = typesetter.module()
             # A new document has the guessed heights.
             self._drop_heights()
+            # Made whole and then kept: a document that did not take the
+            # blocks is never the view's (it would draw blank from the next
+            # frame on, under `texts` that still say there is text).
+            self._doc = None
+            doc = None
             try:
-                self._doc = ts.Document()
-                whole = self._doc.set_blocks(self._described, typesetter.block_styles(self._styles))
-                self.edits["set"] += 1
-                self._cut(whole)
+                doc = ts.Document()
+                whole = doc.set_blocks(self._described, typesetter.block_styles(self._styles))
             except Exception as exc:  # noqa: BLE001 -- see `_failed`
-                self._failed(exc)
+                self._doc = doc
+                self._abandon(exc)
+            self._doc = doc
+            self.edits["set"] += 1
+            self._cut(whole)
             self._rule = None
             self._columns_told = None  # a new document is shown uncut
             self._overflow_told = None
@@ -1516,10 +1586,17 @@ class TypesetView:
         block that is no table.
 
         Raises `TypeError`, and leaves the table as it was, for a column
-        that is none of those: `(1, "wide")`, say. It is refused here, as
-        `set_marks` refuses a mark, because the library's own refusal of it
-        could only be taken for a failure of the library and switch the
-        library off.
+        that is none of those: `(1, "wide")`, say, or `True`. Raises
+        `ValueError`, and leaves the table as it was, for one of the right
+        types that cannot be a column: a width or a share that is not a
+        number (NaN), infinite, below zero or more than a C `float` holds,
+        or an alignment that is none of `advtext.description.ALIGNS`. So a
+        width a host COMPUTED is checked where it is handed over: until
+        2026-10-12 `1e39` was kept in the description and raised
+        `OverflowError` from every later draw. They are refused here, as
+        `set_marks` refuses a mark, because the library's own refusal could
+        only be taken for a failure of the library and switch the library
+        off.
         """
         if block not in self._tables:
             raise ValueError(f"block {block} is not a table")
@@ -1533,11 +1610,13 @@ class TypesetView:
                 column: Any = None
                 if isinstance(one, ColumnDescription):
                     column = one
+                elif isinstance(one, bool):
+                    column = None
                 elif isinstance(one, (int, float)):
                     align = (
                         described[at].align if at < len(described) else ColumnDescription().align
                     )
-                    column = ColumnDescription(align, width=float(one))
+                    column = ColumnDescription(align, width=one)
                 else:
                     try:
                         column = ColumnDescription(*one)  # type: ignore[misc]
@@ -1545,11 +1624,17 @@ class TypesetView:
                         column = None
                 if not _is_column(column):
                     raise TypeError(
-                        f"set_table_columns: column {at} is {one!r}; a column is a width in "
+                        f"set_table_columns: column {at} is {_brief(one)}; a column is a width in "
                         "pixels, or (align, width, share) with an integer and two numbers, "
                         "which is an advtext.description.ColumnDescription"
                     )
-                made.append(column)
+                if not _column_in_range(column):
+                    raise ValueError(
+                        f"set_table_columns: column {at} is {_brief(one)}; an align that is one of "
+                        "advtext.description.ALIGNS' integers, and a width and a share that "
+                        f"are finite, zero or more and at most {FLOAT_MAX:.3g}"
+                    )
+                made.append(column._replace(width=float(column.width), share=float(column.share)))
             stated = tuple(made)
             self._described_columns.setdefault(block, was.columns)
         if stated == was.columns:
@@ -1570,7 +1655,7 @@ class TypesetView:
                 else:
                     doc.set_table_columns(block, stated)
             except Exception as exc:  # noqa: BLE001 -- see `_failed`
-                self._failed(exc)
+                self._abandon(exc)
         return True
 
     # ------------------------------------------------------------------
@@ -2171,10 +2256,10 @@ class TypesetView:
             return
         try:
             whole = self._doc.set_blocks(self._described, typesetter.block_styles(self._styles))
-            self.edits["set"] += 1
-            self._cut(whole)
         except Exception as exc:  # noqa: BLE001 -- see `_failed`
-            self._failed(exc)
+            self._abandon(exc)
+        self.edits["set"] += 1
+        self._cut(whole)
         # The heights the hosted blocks gave went with the blocks.
         self._drop_heights()
 
@@ -2275,8 +2360,10 @@ class TypesetView:
 
         Raises `TypeError`, and leaves the marks as they were, when one of a
         sequence has another shape (`advtext.typeset_find.Finder.matches` for
-        its `marks()`, say). It is refused here because `draw` could only
-        take it for a failure of the library and switch the library off.
+        its `marks()`, say), and `ValueError` when one has the shape and a
+        number the library's struct cannot hold: a colour of `-1` or
+        `2**32`, a thickness of `1e39`. It is refused here because `draw`
+        could only raise it, at every frame, from the middle of the frame.
         """
         if marks is not None and not _is_packed(marks):
             given: list[Any] = list(marks)  # type: ignore[call-overload]
@@ -2286,6 +2373,13 @@ class TypesetView:
                         f"set_marks: mark {number} is {mark!r}; a mark is (((block, offset), "
                         "(block, offset)), color[, place, thickness, offset]), which is what "
                         "advtext.typeset_find.Finder.marks() makes"
+                    )
+                if not _mark_in_range(mark):
+                    raise ValueError(
+                        f"set_marks: mark {number} is {_brief(mark)}; a colour is a packed "
+                        f"colour of 32 bits (0 to 0xFFFFFFFF), a block, an offset and a place "
+                        f"are within {INT_MAX} of zero, and a thickness and an offset are "
+                        f"finite numbers of at most {FLOAT_MAX:.3g}"
                     )
             marks = given
         self._marks = marks or None
@@ -2314,6 +2408,10 @@ class TypesetView:
         replaces**, so after a change colour the blocks from the first that
         changed. On a hosted block they draw nothing; in a table they ink
         the cells, by offsets into the table's text.
+
+        Raises `ValueError`, and leaves the block's inks as they were, for
+        a colour that is not 32 bits (`-1`, `2**32`): until 2026-10-12 it
+        was kept and raised `struct.error` from every draw.
         """
         taken: list[tuple[int, int, int]] = []
         for span in spans:
@@ -2325,7 +2423,17 @@ class TypesetView:
                 if colour is None:
                     colour = span.colour  # type: ignore[attr-defined]
             if end > start:
-                taken.append((int(start), int(end), int(colour)))
+                one = (int(start), int(end), int(colour))
+                if not 0 <= one[2] <= 0xFFFFFFFF:
+                    raise ValueError(
+                        f"set_colours: the colour of [{one[0]}, {one[1]}) is {colour!r}; it is "
+                        "a packed colour of 32 bits, 0 to 0xFFFFFFFF"
+                    )
+                if not -INT_MAX <= one[0] and one[1] <= INT_MAX:
+                    raise ValueError(
+                        f"set_colours: [{one[0]}, {one[1]}) is not a range of a block's text"
+                    )
+                taken.append(one)
         if taken:
             self._colours[int(block)] = tuple(sorted(taken))
         else:
@@ -3224,9 +3332,43 @@ def _length_sp(value: object) -> bool:
     return (
         isinstance(value, (int, float))
         and not isinstance(value, bool)
-        and math.isfinite(value)
-        and value >= 0
+        and value == value
+        and 0 <= value <= FLOAT_MAX
     )
+
+
+def _check_formulas(formulas: object, length: int, where: str) -> None:
+    """
+    Raise for `formulas` a converter could not read: a tuple of `FormulaRange` inside the text.
+
+    A converter reads each one's `state`; a `str` there was an
+    `AttributeError` out of the converter, after `set_document` had begun
+    to change the view.
+    """
+    if not isinstance(formulas, (tuple, list)):
+        raise TypeError(
+            f"{where}: formulas is a {type(formulas).__name__}; it is a tuple of FormulaRange"
+        )
+    for number, formula in enumerate(formulas):
+        here = f"{where}: formula {number}"
+        if not isinstance(formula, FormulaRange):
+            raise TypeError(
+                f"{here} is a {type(formula).__name__}; it is an "
+                "advtext.typeset_markdown.FormulaRange"
+            )
+        if (
+            isinstance(formula.start, bool)
+            or not isinstance(formula.start, int)
+            or isinstance(formula.end, bool)
+            or not isinstance(formula.end, int)
+            or not isinstance(formula.source, str)
+            or not isinstance(formula.state, str)
+        ):
+            raise TypeError(f"{here} is {formula!r}; two integers, a str, a bool and a str")
+        if not 0 <= formula.start <= formula.end <= length:
+            raise ValueError(
+                f"{here} is [{formula.start}, {formula.end}) of a text of {length} characters"
+            )
 
 
 def _check_links(links: object, length: int, where: str) -> None:
@@ -3292,6 +3434,7 @@ def _check_fields(block: object, at: int) -> None:
                     raise TypeError(f"{here}: text is {cell.text!r}; it is a str")
                 check_runs(cell.runs, len(cell.text), here)
                 _check_links(cell.links, len(cell.text), here)
+                _check_formulas(cell.formulas, len(cell.text), here)
         if not all(isinstance(getattr(align, "name", None), str) for align in block.aligns):
             raise TypeError(f"{where}: aligns are ColumnAlign members: {block.aligns!r}")
         if not all(_length_sp(one) for one in (*block.widths, *block.shares)):
@@ -3307,10 +3450,13 @@ def _check_fields(block: object, at: int) -> None:
             raise TypeError(f"{where}: marker is {block.marker!r}; it is a str")
         if isinstance(block.quote_depth, bool) or not isinstance(block.quote_depth, int):
             raise TypeError(f"{where}: quote_depth is {block.quote_depth!r}; it is an integer")
-        if block.quote_depth < 0:
-            raise ValueError(f"{where}: quote_depth is {block.quote_depth}; zero or more")
+        if not 0 <= block.quote_depth <= INT_MAX:
+            raise ValueError(
+                f"{where}: quote_depth is {_brief(block.quote_depth)}; zero to {INT_MAX}"
+            )
         check_runs(block.runs, len(text), where)
         _check_links(block.links, len(text), where)
+        _check_formulas(block.formulas, len(text), where)
 
 
 def _is_default(value: object, default: object) -> bool:
@@ -3341,6 +3487,22 @@ def _is_mark(mark: Any) -> bool:
         return False
 
 
+def _mark_in_range(mark: Any) -> bool:
+    """
+    Whether a mark `_is_mark` has passed holds numbers the library's struct can: `_MARK` there.
+
+    Four C `int`s, an unsigned 32-bit colour, an `int` place and two C
+    `float`s. A block that is not in the document is still left out at the
+    draw; only what cannot be packed is refused.
+    """
+    (b0, o0), (b1, o1) = mark[0]
+    return (
+        all(-INT_MAX <= value <= INT_MAX for value in (b0, o0, b1, o1, *mark[2:3]))
+        and 0 <= mark[1] <= 0xFFFFFFFF
+        and all(value == value and -FLOAT_MAX <= value <= FLOAT_MAX for value in mark[3:])
+    )
+
+
 def _is_column(column: Any) -> bool:
     """
     Whether `column` is a `ColumnDescription` of the types the library packs: an integer, two reals.
@@ -3348,8 +3510,24 @@ def _is_column(column: Any) -> bool:
     return (
         isinstance(column, ColumnDescription)
         and isinstance(column.align, int)
-        and isinstance(column.width, (int, float))
-        and isinstance(column.share, (int, float))
+        and not isinstance(column.align, bool)
+        and all(
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            for value in (column.width, column.share)
+        )
+    )
+
+
+def _column_in_range(column: ColumnDescription) -> bool:
+    """
+    Whether a column `_is_column` has passed states what a column can: `check_description`'s rule.
+
+    An alignment that is one of `ALIGNS`' integers, and a width and a share
+    that are numbers (not NaN), zero or more, and no more than a C `float`
+    holds.
+    """
+    return column.align in ALIGNS.values() and all(
+        value == value and 0 <= value <= FLOAT_MAX for value in (column.width, column.share)
     )
 
 

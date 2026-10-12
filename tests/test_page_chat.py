@@ -42,22 +42,22 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.description import FACE_ROLES
-from advtext.fontmetrics import Face
-from advtext.theme import Align, BlockKind
-from advtext.typeset_markdown import (
+from imscribe import typesetter
+from imscribe.description import FACE_ROLES
+from imscribe.fontmetrics import Face
+from imscribe.theme import Align, BlockKind
+from imscribe.typeset_markdown import (
     MarkdownCode,
     MarkdownStream,
     MarkdownTable,
     MarkdownText,
     parse_markdown,
 )
-from advtext.ui import pages
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import chat as page
-from advtext.ui.pages.chat import ASSISTANT, MONO, ROBOTO, USER, Conversation, Exchange
-from advtext.ui.pages.typeset import why_not
+from imscribe.ui import pages
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import chat as page
+from imscribe.ui.pages.chat import ASSISTANT, MONO, ROBOTO, USER, Conversation, Exchange
+from imscribe.ui.pages.typeset import why_not
 
 if TYPE_CHECKING:
     from conftest import Window
@@ -543,7 +543,7 @@ def _frames(draw: Any, count: int, seconds: float = FRAME) -> Any:
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(1300.0, 800.0))
-            imgui.begin("##advtext-chat-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+            imgui.begin("##imscribe-chat-page-test", None, imgui.WindowFlags_.no_title_bar.value)
             try:
                 draw()
             finally:
@@ -687,7 +687,7 @@ def test_a_typeset_unavailable_out_of_a_frame_or_a_post_stays_in_the_page(
     imgui.get_io().delta_time = FRAME
     imgui.new_frame()
     try:
-        imgui.begin("##advtext-chat-page-bug", None, 0)
+        imgui.begin("##imscribe-chat-page-bug", None, 0)
         try:
             with pytest.raises(ZeroDivisionError):
                 other.draw()
@@ -712,25 +712,25 @@ def test_the_page_imports_nothing_of_the_old_core_or_the_old_views_even_lazily()
     """
     from test_page_stream import OLD_MODULES, imports_of
 
-    found = imports_of(_ROOT / "advtext" / "ui" / "pages" / "chat.py")
-    assert "advtext.ui.typeset_hosts" in found and "advtext.typeset_markdown" in found
+    found = imports_of(_ROOT / "imscribe" / "ui" / "pages" / "chat.py")
+    assert "imscribe.ui.typeset_hosts" in found and "imscribe.typeset_markdown" in found
     for name in found:
         for old in OLD_MODULES:
             assert name != old and not name.startswith(old + "."), name
-    assert "advtext.ui.pages._syntax.colour_spans" not in found
+    assert "imscribe.ui.pages._syntax.colour_spans" not in found
 
 
 _CLOSURE = r"""
 import json, sys
-import advtext.ui.pages.chat
-print("REPORT " + json.dumps(sorted(name for name in sys.modules if name.startswith("advtext"))))
+import imscribe.ui.pages.chat
+print("REPORT " + json.dumps(sorted(name for name in sys.modules if name.startswith("imscribe"))))
 """
 
 
 def test_importing_the_page_loads_none_of_the_old_core() -> None:
     """
-    `advtext.ui.typeset_diff_view` is imported when a fenced diff is first
-    met. `advtext.ui.pages._syntax` is imported with the page and loads
+    `imscribe.ui.typeset_diff_view` is imported when a fenced diff is first
+    met. `imscribe.ui.pages._syntax` is imported with the page and loads
     nothing of the core itself.
     """
     from test_typeset_closure import OLD_CORE, THEME
@@ -747,16 +747,16 @@ def test_importing_the_page_loads_none_of_the_old_core() -> None:
     )
     assert done.returncode == 0, done.stdout + done.stderr
     loaded = set(json.loads(done.stdout.split("REPORT ", 1)[1]))
-    assert "advtext.ui.pages.chat" in loaded and "advtext.ui.typeset_hosts" in loaded
+    assert "imscribe.ui.pages.chat" in loaded and "imscribe.ui.typeset_hosts" in loaded
     assert loaded & OLD_CORE == THEME, sorted(loaded & OLD_CORE)
-    assert "advtext.ui.pages._syntax" in loaded
+    assert "imscribe.ui.pages._syntax" in loaded
     for name in (
-        "advtext.stream",
-        "advtext.markdown",
-        "advtext.mathtext",
-        "advtext.style",
-        "advtext.spans",
-        "advtext.ui.typeset_diff_view",
+        "imscribe.stream",
+        "imscribe.markdown",
+        "imscribe.mathtext",
+        "imscribe.style",
+        "imscribe.spans",
+        "imscribe.ui.typeset_diff_view",
     ):
         assert name not in loaded, name
 
@@ -785,12 +785,12 @@ import time
 
 from imgui_bundle import hello_imgui, imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
 
 WANT_LIBRARY = sys.argv[1] == "with"
 state = {"frames": 0, "turn": 0, "streaming": 0, "spent": 0.0}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def last_line(made):
@@ -845,8 +845,8 @@ def watched_gui(self):
             made.send()
 
 
-advtext_app.App.gui = watched_gui
-advtext_app.run(tab="chat:play,RATE")
+imscribe_app.App.gui = watched_gui
+imscribe_app.run(tab="chat:play,RATE")
 """
 
 
@@ -946,10 +946,10 @@ def test_with_the_library_three_replies_stream_through_imtypeset_in_a_real_windo
 _HEADLESS = r"""
 import json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.theme import Align, Theme
-from advtext.ui.pages import PageContext, demo_text
-from advtext.ui.pages import chat as page
+from imscribe import typesetter
+from imscribe.theme import Align, Theme
+from imscribe.ui.pages import PageContext, demo_text
+from imscribe.ui.pages import chat as page
 
 OLD = json.loads(sys.argv[1])
 SIZE = (1300.0, 800.0)
@@ -980,7 +980,7 @@ def frame(app, seconds=FRAME, **events):
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-chat-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-chat-page-test", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             app.gui()
         finally:
@@ -989,7 +989,7 @@ def frame(app, seconds=FRAME, **events):
         imgui.render()
 
 def opened(spec="chat"):
-    from advtext.ui.app import App
+    from imscribe.ui.app import App
     app = App(source="# t\n\nx\n", columns_source="x\n", open_tab=spec)
     made = app.page("chat")
     before = made.conversation is None
@@ -1057,7 +1057,7 @@ both = (talk.messages[1], talk.messages[3])
 report["references"] = [[len(m.blocks), len(m.view.links)] for m in both]
 
 # 4. The code reply is coloured; the diff reply is a hosted diff that grows.
-from advtext.ui.typeset_view import TypesetView
+from imscribe.ui.typeset_view import TypesetView
 coloured = {}
 real = TypesetView.set_colours
 def recording(view, block, spans):
@@ -1142,7 +1142,7 @@ report["preset_diff"] = {
     "copy": again.block_code(fence) == again.diff(fence).text,
 }
 report["old_before_app"] = sorted(name for name in sys.modules if name in OLD)
-report["advtext_before_app"] = sorted(n for n in sys.modules if n.startswith("advtext"))
+report["imscribe_before_app"] = sorted(n for n in sys.modules if n.startswith("imscribe"))
 
 # 6. The page in frames: a turn typed into the box and entered, the reply followed to its
 # end while the finished messages are left alone; the wheel lets go.
@@ -1285,7 +1285,7 @@ report["after"] = {"module": typesetter.module() is not None, "ready": typesette
 
 # 9. A draw that raises with the library still ready: the page keeps the sentence, finishes
 # the frame without an error, and is the one line from the next frame on.
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 real_draw = TypesetView.draw
 def failing(self, **kwargs):
     raise TypesetUnavailable("raised by the test")
@@ -1313,7 +1313,7 @@ report["middraw"] = {"ready": typesetter.ready(), "at_once": at_once, "shown": s
 
 # A post under which the library fails: nothing is posted, the page keeps the sentence
 # and what was typed, and is the one line from the next frame on.
-from advtext.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_stream_view import TypesetStreamView
 app, made = opened("chat:play")
 talk = made.conversation
 for _ in range(5):
@@ -1493,20 +1493,20 @@ def test_a_conversation_loads_no_old_view_and_no_old_stream(typeset: dict[str, A
     hosted, before the demo app was imported: NOTHING is loaded of the old
     core. Until 2026-10-12 it was what measuring a face loads (`MEASURING`
     of `tests/test_typeset_closure.py`): `typesetter.load_fonts` asked
-    `advtext.fontlib` where the font files are, and the mono preset's
+    `imscribe.fontlib` where the font files are, and the mono preset's
     `Theme.at_pixel_height` measured one through
-    `advtext.style.fontlib_metrics`. The files are `advtext.fontfiles`'
+    `imscribe.style.fontlib_metrics`. The files are `imscribe.fontfiles`'
     now, and the child has loaded the library's fonts before the preset
-    sizes its theme, so the library measures (`advtext.typeset_metrics`).
+    sizes its theme, so the library measures (`imscribe.typeset_metrics`).
     """
     loaded = set(typeset["old_before_app"])
     assert loaded == set(), sorted(loaded)
-    everything = set(typeset["advtext_before_app"])
-    for name in ("advtext.stream", "advtext.markdown", "advtext.mathtext", "advtext.spans"):
+    everything = set(typeset["imscribe_before_app"])
+    for name in ("imscribe.stream", "imscribe.markdown", "imscribe.mathtext", "imscribe.spans"):
         assert name not in everything, name
-    assert not {n for n in everything if n.startswith(("advtext.backends", "advtext.ui.bare"))}
+    assert not {n for n in everything if n.startswith(("imscribe.backends", "imscribe.ui.bare"))}
     # The mono preset was sized all the same, and by the library.
-    assert "advtext.style" not in everything and "advtext.typeset_metrics" in everything
+    assert "imscribe.style" not in everything and "imscribe.typeset_metrics" in everything
 
 
 def test_the_page_takes_a_typed_turn_follows_the_end_and_lets_go(
@@ -1578,7 +1578,7 @@ def test_a_nul_in_a_message_does_not_cut_what_the_buttons_put_on_the_clipboard(
     """
     Review 3, item 9. The clipboard is a C string: handed `key = 'ab\\0cd'`
     and a line after it, it kept `key = 'ab` and nothing else. The page's
-    buttons send a NUL as U+2400 (`advtext.ui.ownership.clipboard_text`).
+    buttons send a NUL as U+2400 (`imscribe.ui.ownership.clipboard_text`).
     What the method returns is still the message's source, NUL and all.
     """
     role, kept, returned, clipboard = typeset["nul"]

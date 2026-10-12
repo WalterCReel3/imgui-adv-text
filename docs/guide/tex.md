@@ -1,5 +1,7 @@
 # TeX, and which parts of it are here
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 `docs/tex-notes.md` is the transcription and the reference. This is the map: what
 was taken, where it lives, and what the resulting control surface is.
 

@@ -29,9 +29,9 @@ half of the contract: with no library the probe plays nothing, says the
 page's own sentence, and exits 2.
 
 **What left this file with tranche 5 (2026-10-11).** Until then the probe had a
-second gesture script for advtext's own `DocumentView`, which the Document
+second gesture script for imscribe's own `DocumentView`, which the Document
 page fell back to without the library, and this file ran that script in the
-pytest process: five pure tests of its aiming over `advtext.selection`
+pytest process: five pure tests of its aiming over `imscribe.selection`
 (`line_text`, `find_line`, `alone_in_its_band`, `cell_point`, `Seen.on_screen`)
 and five runs of it through `App.gui()`. The fallback is removed and so is
 that half of the probe; its five pure tests went with it, and the five runs
@@ -459,7 +459,7 @@ print("CHILD OK")
 
 _LOW = """
 from imgui_bundle import imgui
-from advtext.ui.typeset_view import TypesetView
+from imscribe.ui.typeset_view import TypesetView
 
 LOW = 22.0
 real_mouse = TypesetView._handle_mouse
@@ -509,7 +509,7 @@ def test_a_view_that_never_copies_fails_on_the_sentinel() -> None:
     _needs_the_library()
     done = _child(
         """
-from advtext.ui.typeset_view import TypesetView
+from imscribe.ui.typeset_view import TypesetView
 TypesetView._handle_keys = lambda self: None
 outcome = probe.run_without_a_window(SAMPLE)
 failed = {check.name: check.actual for check in outcome.checks if not check.ok}
@@ -537,7 +537,7 @@ def test_a_document_without_the_opening_line_stops_early_and_does_not_pass() -> 
     _needs_the_library()
     done = _child(
         """
-from advtext.ui.typeset_view import TypesetView
+from imscribe.ui.typeset_view import TypesetView
 before = TypesetView._handle_mouse
 PROSE = "Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima.\\n"
 outcome = probe.run_without_a_window(PROSE)

@@ -1,5 +1,5 @@
 r"""
-The demo app's fonts and imtypeset: the callback `advtext.ui.app.run` gives the runner.
+The demo app's fonts and imtypeset: the callback `imscribe.ui.app.run` gives the runner.
 
 Experimental (branch `experimental/imtypeset-adoption`). Since tranche 5
 (T5-APP) the rule is the other team's answer (f) in
@@ -46,10 +46,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.description import FACE_ROLES
-from advtext.fontmetrics import Face
-from advtext.ui import app
+from imscribe import typesetter
+from imscribe.description import FACE_ROLES
+from imscribe.fontmetrics import Face
+from imscribe.ui import app
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from conftest import Window
@@ -60,7 +60,7 @@ _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
 @pytest.fixture
 def forgotten() -> Any:
     """
-    `advtext.typesetter` as at import, before and after: these tests ask `module()`.
+    `imscribe.typesetter` as at import, before and after: these tests ask `module()`.
     """
     typesetter._forget()
     yield
@@ -70,10 +70,10 @@ def forgotten() -> Any:
 def test_the_ui_face_and_size_are_the_ones_the_old_loader_used() -> None:
     """
     `UI_FACE` names a `Face`, the running-text one, and `UI_FONT_PX` is the
-    size `advtext.ui.fonts` loads at: the app states both without importing
+    size `imscribe.ui.fonts` loads at: the app states both without importing
     either module, and this is what keeps the statements true.
     """
-    from advtext.ui.fonts import DEFAULT_LOAD_PX
+    from imscribe.ui.fonts import DEFAULT_LOAD_PX
 
     assert Face[app.UI_FACE] is Face.PROSE
     assert app.UI_FACE in FACE_ROLES
@@ -155,7 +155,7 @@ def test_without_the_library_a_role_the_app_did_not_load_has_no_font(
 
 class _Library:
     """
-    What `advtext.ui.app` asks of the imtypeset package: where a role's font is in the atlas.
+    What `imscribe.ui.app` asks of the imtypeset package: where a role's font is in the atlas.
     """
 
     def __init__(self, places: dict[int, int | None]) -> None:
@@ -191,7 +191,7 @@ def _stand_in(
     monkeypatch: pytest.MonkeyPatch, library: _Library, *, loads: bool = True
 ) -> list[str]:
     """
-    Make `advtext.typesetter` answer `library`, ready once `load_fonts` has been called.
+    Make `imscribe.typesetter` answer `library`, ready once `load_fonts` has been called.
     """
     calls: list[str] = []
     state = {"ready": False}
@@ -334,7 +334,7 @@ def test_what_the_pages_were_saying_when_the_window_closed_is_kept(
     the unload and kept for `scripts/shot.py` and `scripts/run_demo.py`:
     `not_drawing_at_exit()`, empty for a library that was drawing.
     """
-    from advtext.ui.pages.typeset import why_not
+    from imscribe.ui.pages.typeset import why_not
 
     monkeypatch.setenv(typesetter.LIBRARY_VARIABLE, str(tmp_path / "any.so"))
 
@@ -373,7 +373,7 @@ def test_a_library_with_no_font_for_the_ui_role_is_said_to_be_that(
     what happened: which role had no font, and that the app unloaded the
     library for it.
     """
-    from advtext.ui.pages.typeset import FONTS_NOT_LOADED, why_not
+    from imscribe.ui.pages.typeset import FONTS_NOT_LOADED, why_not
 
     monkeypatch.setenv(typesetter.LIBRARY_VARIABLE, str(tmp_path / "any.so"))
     _stand_in(monkeypatch, _Library({}), loads=True)
@@ -414,19 +414,19 @@ import sys
 
 from imgui_bundle import hello_imgui, imgui
 
-from advtext import typesetter
-from advtext.fontmetrics import Face
-from advtext.theme import Theme
-from advtext.typeset_markdown import describe_markdown
-from advtext.ui import app as advtext_app
+from imscribe import typesetter
+from imscribe.fontmetrics import Face
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import describe_markdown
+from imscribe.ui import app as imscribe_app
 
 WANT_LIBRARY = sys.argv[1] == "with"
 SAMPLE = "The quick brown fox, 0123456789"
 report = {"frames": 0}
-real_gui = advtext_app.App.gui
-real_fonts = advtext_app.load_fonts
-real_callback = advtext_app._load_fonts_for_run
-real_unload = advtext_app._unload_typesetter
+real_gui = imscribe_app.App.gui
+real_fonts = imscribe_app.load_fonts
+real_callback = imscribe_app._load_fonts_for_run
+real_unload = imscribe_app._unload_typesetter
 
 
 def names():
@@ -489,7 +489,7 @@ def watched_gui(self):
     report["current_font"] = imgui.get_font().get_debug_name()
     report["font_size"] = imgui.get_font_size()
     report["sample_width"] = imgui.calc_text_size(SAMPLE).x
-    report["own_faces"] = [face.name for face in advtext_app._FACES]
+    report["own_faces"] = [face.name for face in imscribe_app._FACES]
     report["context_fonts"] = {
         face.name: None if (font := self.context.fonts(face)) is None else font.get_debug_name()
         for face in Face
@@ -501,11 +501,11 @@ def watched_gui(self):
     hello_imgui.get_runner_params().app_shall_exit = True
 
 
-advtext_app.load_fonts = watched_fonts
-advtext_app._load_fonts_for_run = watched_callback
-advtext_app._unload_typesetter = watched_unload
-advtext_app.App.gui = watched_gui
-advtext_app.run(tab="typeset")
+imscribe_app.load_fonts = watched_fonts
+imscribe_app._load_fonts_for_run = watched_callback
+imscribe_app._unload_typesetter = watched_unload
+imscribe_app.App.gui = watched_gui
+imscribe_app.run(tab="typeset")
 report["ready_after_run"] = typesetter.ready()
 report["imported"] = "imtypeset" in sys.modules
 print(json.dumps(report))

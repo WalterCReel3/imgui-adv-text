@@ -10,12 +10,12 @@ exactly how far it retires it.
 
 ## What it does
 
-It runs **the real app** -- `advtext.ui.app.run`, through the real
+It runs **the real app** -- `imscribe.ui.app.run`, through the real
 `immapp.run`, with the real fonts, sidebar, scrolling child window and GLFW
 clipboard -- and before each frame posts input events to ImGui's own queue
 (`io.add_mouse_pos_event`, `add_mouse_button_event`, `add_mouse_wheel_event`,
 `add_key_event`). The positions are not guessed.
-`advtext.ui.typeset_view.TypesetView._handle_mouse` is wrapped for the length
+`imscribe.ui.typeset_view.TypesetView._handle_mouse` is wrapped for the length
 of the run so that the screen origin the view itself used on the last frame
 can be read back; the wrapper calls the real method and changes nothing.
 
@@ -56,11 +56,11 @@ the copy.
 ## It needs the imtypeset library, and says so when there is none
 
 The Document page draws a `TypesetView` when the library is loaded and its
-fonts are in the atlas (`advtext.typesetter.ready()`), and one line saying why
-not otherwise. Until tranche 5 (2026-10-11) it drew advtext's own
+fonts are in the atlas (`imscribe.typesetter.ready()`), and one line saying why
+not otherwise. Until tranche 5 (2026-10-11) it drew imscribe's own
 `DocumentView` then, and this script had a second gesture script for that
 view, with expectations built from the old core's shipped glyphs
-(`advtext.selection`, `advtext.shipout`). That half is gone with the fallback
+(`imscribe.selection`, `imscribe.shipout`). That half is gone with the fallback
 it probed. With no library there is nothing to play a mouse at: the run stops
 before the first gesture, prints the page's own sentence, and exits 2
 (`make typeset-lib`, then `IMTYPESET_LIBRARY=... IMTYPESET_PYTHON=...`, or
@@ -100,7 +100,7 @@ about two seconds.
 
 `--no-window` drives the same script through `App.gui()` inside frames of a
 bare `imgui.create_context()`. There is no runner there to call the app's
-font callback, so this mode calls it itself (`advtext.ui.app.
+font callback, so this mode calls it itself (`imscribe.ui.app.
 _load_fonts_for_run`, which loads the library's fonts into the bare context's
 atlas) and unloads the library afterwards. It is lower fidelity in the ways
 one would expect: nothing rasterises a glyph, the clipboard is ImGui's
@@ -357,7 +357,7 @@ def watch(seen: Seen) -> Iterator[None]:
     """
     from imgui_bundle import imgui
 
-    from advtext.ui.typeset_view import TypesetView
+    from imscribe.ui.typeset_view import TypesetView
 
     real_typeset = TypesetView._handle_mouse
 
@@ -462,7 +462,7 @@ class NotDrawing(ProbeError):
     No `TypesetView` drew a frame, so there was nothing to play a mouse at.
 
     The message is the Document page's own sentence
-    (`advtext.ui.pages.typeset.why_not`). `main` exits 2 on this when the
+    (`imscribe.ui.pages.typeset.why_not`). `main` exits 2 on this when the
     library was never asked for, and 1 when it was: the first is an absence,
     the second a failure.
     """
@@ -491,7 +491,7 @@ def script(
     for _ in range(SETTLE_FRAMES):
         yield []
     if seen.renderer != "TypesetView":
-        from advtext.ui.pages.typeset import not_drawing, why_not
+        from imscribe.ui.pages.typeset import not_drawing, why_not
 
         raise NotDrawing(
             "the Document page drew no TypesetView in "
@@ -819,7 +819,7 @@ def run_without_a_window(source: str, *, opening: str = OPENING) -> Outcome:
     is a constant sixtieth of a second, and nothing rasterises a glyph.
 
     **A context of its own, made here and destroyed here**, with the app's own
-    font callback run in it (`advtext.ui.app._load_fonts_for_run`): the
+    font callback run in it (`imscribe.ui.app._load_fonts_for_run`): the
     library's fonts go into this context's atlas and the library is unloaded
     before the context is destroyed, as `run` does through hello_imgui. The
     context that was current is put back. Without the library the callback
@@ -829,8 +829,8 @@ def run_without_a_window(source: str, *, opening: str = OPENING) -> Outcome:
     """
     from imgui_bundle import imgui
 
-    from advtext import typesetter
-    from advtext.ui import app as advtext_app
+    from imscribe import typesetter
+    from imscribe.ui import app as imscribe_app
 
     before = imgui.get_current_context()
     own = imgui.create_context()
@@ -845,9 +845,9 @@ def run_without_a_window(source: str, *, opening: str = OPENING) -> Outcome:
         io.delta_time = 1.0 / 60.0
         io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
         if typesetter.module() is not None:
-            advtext_app._load_fonts_for_run()
+            imscribe_app._load_fonts_for_run()
 
-        app = advtext_app.App(source=source)
+        app = imscribe_app.App(source=source)
         driver = Driver(script(seen, imgui, checks, source=source, opening=opening))
         with watch(seen):
             while not driver.done:
@@ -856,7 +856,7 @@ def run_without_a_window(source: str, *, opening: str = OPENING) -> Outcome:
                 try:
                     imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
                     imgui.set_next_window_size(size)
-                    imgui.begin("##advtext-mouse-probe")
+                    imgui.begin("##imscribe-mouse-probe")
                     app.gui()
                     imgui.end()
                 finally:
@@ -925,9 +925,9 @@ def run_in_a_window(
     """
     from imgui_bundle import hello_imgui, imgui, immapp
 
-    from advtext.ui import app as advtext_app
+    from imscribe.ui import app as imscribe_app
 
-    text = source or advtext_app.demo_text("sample.md") or advtext_app.DEFAULT_MARKDOWN
+    text = source or imscribe_app.demo_text("sample.md") or imscribe_app.DEFAULT_MARKDOWN
     seen = Seen()
     checks: list[Check] = []
     driver = Driver(script(seen, imgui, checks, source=text, opening=opening))
@@ -945,8 +945,8 @@ def run_in_a_window(
     began = time.perf_counter()
     immapp.run = patched_run  # type: ignore[assignment]
     try:
-        with watch(seen), tempfile.TemporaryDirectory(prefix="advtext-mouse-probe-") as folder:
-            advtext_app.run(text, ini_folder=folder)
+        with watch(seen), tempfile.TemporaryDirectory(prefix="imscribe-mouse-probe-") as folder:
+            imscribe_app.run(text, ini_folder=folder)
     finally:
         immapp.run = real_run
     seconds = time.perf_counter() - began
@@ -1068,7 +1068,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     Parse the arguments, run the probe one of three ways, print the report.
     """
-    parser = argparse.ArgumentParser(description="Play a mouse into the advtext demo.")
+    parser = argparse.ArgumentParser(description="Play a mouse into the imscribe demo.")
     parser.add_argument("--source", type=Path, default=None, help="a markdown file to display")
     parser.add_argument("--opening", default=OPENING, help="how the targeted paragraph begins")
     parser.add_argument(
@@ -1094,10 +1094,10 @@ def main(argv: list[str] | None = None) -> int:
     text = args.source.read_text(encoding="utf-8") if args.source else None
 
     if args.no_window:
-        from advtext.ui import app as advtext_app
+        from imscribe.ui import app as imscribe_app
 
         outcome = run_without_a_window(
-            text or advtext_app.demo_text("sample.md") or advtext_app.DEFAULT_MARKDOWN,
+            text or imscribe_app.demo_text("sample.md") or imscribe_app.DEFAULT_MARKDOWN,
             opening=args.opening,
         )
     else:

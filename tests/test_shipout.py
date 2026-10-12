@@ -17,7 +17,7 @@ glue node's share independently, with Python's `round` -- and the first fails by
 a whole scaled point on the right margin of every justified line.
 
 The sign conventions get their own tests for the same reason they get their own
-paragraph in `advtext.nodes`: height and depth are measured from the baseline,
+paragraph in `imscribe.nodes`: height and depth are measured from the baseline,
 `shift_amount` is positive downward in an hlist and rightward in a vlist, and
 each of those is a one-character change that produces plausible output.
 """
@@ -28,7 +28,7 @@ from collections.abc import Sequence
 
 import pytest
 
-from advtext.nodes import (
+from imscribe.nodes import (
     Box,
     BoxKind,
     CharNode,
@@ -43,7 +43,7 @@ from advtext.nodes import (
     Penalty,
     Rule,
 )
-from advtext.pack import (
+from imscribe.pack import (
     CharDimens,
     InterlineSkip,
     PackMode,
@@ -51,7 +51,7 @@ from advtext.pack import (
     hpack,
     vpack,
 )
-from advtext.shipout import (
+from imscribe.shipout import (
     DrawCmd,
     Glyph,
     Line,
@@ -61,7 +61,7 @@ from advtext.shipout import (
     pascal_round,
     ship,
 )
-from advtext.units import RUNNING, GlueOrder, Scaled, sp_from_pt
+from imscribe.units import RUNNING, GlueOrder, Scaled, sp_from_pt
 
 PT = sp_from_pt(1.0)
 
@@ -468,7 +468,7 @@ def test_a_character_in_a_vertical_list_is_refused() -> None:
 
 
 # --------------------------------------------------------------------------
-# Reading order: the contract with advtext.selection
+# Reading order: the contract with imscribe.selection
 # --------------------------------------------------------------------------
 
 
@@ -543,7 +543,7 @@ def test_a_line_reports_its_boxs_height_and_depth_and_not_the_ink_of_its_glyphs(
     # A line of lowercase letters and a line with a descender must highlight to
     # the same height, which they can only do if `Line` passes the box's own
     # dimensions through. Flooring those is the *document* layer's job --
-    # `advtext.style.Strut`, applied by `advtext.ui`, and
+    # `imscribe.style.Strut`, applied by `imscribe.ui`, and
     # `tests/test_selection.py` pins the end of it -- so what is checked here is
     # ship-out's half of the bargain: report what the box says even when the
     # glyphs on it say something smaller.

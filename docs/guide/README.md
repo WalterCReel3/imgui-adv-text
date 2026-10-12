@@ -1,5 +1,7 @@
 # The guide
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 Five documents for somebody arriving at this repository. They are orientation,
 not reference: each one explains a shape and then points at the document that
 carries the measurements.

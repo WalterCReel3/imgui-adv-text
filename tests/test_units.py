@@ -1,7 +1,7 @@
 r"""
 Claims about the dimension type, concentrated on the errors that stay quiet.
 
-`advtext.units` is six short functions and there is nothing subtle in any one of
+`imscribe.units` is six short functions and there is nothing subtle in any one of
 them. What is subtle is the seam they sit on, and every failure here is a failure
 that produces plausible output:
 
@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import pytest
 
-from advtext.units import (
+from imscribe.units import (
     BP_PER_INCH,
     DEFAULT_PX_PER_INCH,
     MAX_DIMEN,

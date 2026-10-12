@@ -1,7 +1,7 @@
 r"""
 Claims about the first-fit breaker, `LineBreakParams(first_fit=True)`.
 
-`advtext.linebreak` optimises a paragraph as a whole, and that is the point of
+`imscribe.linebreak` optimises a paragraph as a whole, and that is the point of
 it. This file is about the mode beside it that does the opposite: fill a line
 until the next breakpoint would overfull it, take the break, never look back.
 It was built because of two measurements, both about ragged-right setting
@@ -66,8 +66,8 @@ from pathlib import Path
 
 import pytest
 
-import advtext.linebreak as linebreak
-from advtext.linebreak import (
+import imscribe.linebreak as linebreak
+from imscribe.linebreak import (
     BreakPass,
     LineBreakParams,
     LineSpec,
@@ -75,8 +75,8 @@ from advtext.linebreak import (
     ParShape,
     break_paragraph,
 )
-from advtext.markdown import TextBlock, build_document
-from advtext.nodes import (
+from imscribe.markdown import TextBlock, build_document
+from imscribe.nodes import (
     EJECT_PENALTY,
     INF_PENALTY,
     Box,
@@ -92,9 +92,9 @@ from advtext.nodes import (
     Node,
     Penalty,
 )
-from advtext.pack import PackFitness, PackResult, hpack
-from advtext.style import Theme, char_measure, fontlib_metrics
-from advtext.units import GlueOrder, Scaled, pt_from_sp, sp_from_pt
+from imscribe.pack import PackFitness, PackResult, hpack
+from imscribe.style import Theme, char_measure, fontlib_metrics
+from imscribe.units import GlueOrder, Scaled, pt_from_sp, sp_from_pt
 
 PT = sp_from_pt(1.0)
 LINE = 100 * PT
@@ -111,7 +111,7 @@ The same glue with no shrink, which is what makes the optimiser's ragged answer 
 
 FIL = GlueSpec(stretch=PT, stretch_order=GlueOrder.FIL)
 r"""
-`0pt plus 1fil`: a `\rightskip` of this is ragged-right. `advtext.ui.RAGGED_RIGHT` by value.
+`0pt plus 1fil`: a `\rightskip` of this is ragged-right. `imscribe.ui.RAGGED_RIGHT` by value.
 """
 
 SHOWCASE = (12, 19, 27, 14, 12, 13, 19, 15, 18)
@@ -288,12 +288,12 @@ def paragraph(bundled_fonts: Path) -> tuple[Node, ...]:
 
 def _ragged_prose(*, first_fit: bool) -> LineBreakParams:
     """
-    What `advtext.ui._skips` hands the breaker for `Align.LEFT`, with the mode chosen.
+    What `imscribe.ui._skips` hands the breaker for `Align.LEFT`, with the mode chosen.
 
-    Built from `advtext.ui`'s own constants, imported here and not at the top so
+    Built from `imscribe.ui`'s own constants, imported here and not at the top so
     that the box-built half of this file opens neither a font nor the UI package.
     """
-    from advtext.ui import PROSE_BREAKING, RAGGED_RIGHT
+    from imscribe.ui import PROSE_BREAKING, RAGGED_RIGHT
 
     return replace(
         PROSE_BREAKING, left_skip=GlueSpec(), right_skip=RAGGED_RIGHT, first_fit=first_fit
@@ -671,7 +671,7 @@ def test_every_line_is_the_line_the_optimiser_builds_from_the_same_breaks(
     notice a mistake in how a line is built, because the optimiser would make
     the same one. (An earlier wording claimed that second thing. The reviewer
     read it as more than the test holds; the shared path was checked in
-    `advtext/linebreak.py` and it is.)
+    `imscribe/linebreak.py` and it is.)
 
     Whether a line is built *correctly* is what the tests after this one are
     for: they state the right answer by hand for the cases worth spelling out.
@@ -960,12 +960,12 @@ def _compare(
     """
     Break each block ragged both ways: blocks differing, lines differing, lines, and seconds.
 
-    Each block gets the shape `advtext.ui` would give it at this width, so list
+    Each block gets the shape `imscribe.ui` would give it at this width, so list
     items are compared in their hanging shape and not as bare paragraphs. A
     differing line is one position at which the two breakings hold different
     `PackResult`s, plus any difference in line count.
     """
-    from advtext.ui import _shape
+    from imscribe.ui import _shape
 
     measure = char_measure(fontlib_metrics)
     differing_blocks = differing_lines = lines = 0
@@ -1052,7 +1052,7 @@ def _report() -> None:
     """
     Reprint the module docstring's three tables. Not a test; about two minutes.
     """
-    from advtext.ui import PROSE_BREAKING
+    from imscribe.ui import PROSE_BREAKING
 
     paragraph = _material((DEMO / "sample.md").read_text(encoding="utf-8"))
     measure = char_measure(fontlib_metrics)

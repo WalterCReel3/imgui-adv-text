@@ -1,7 +1,7 @@
 """
 The version a host can read, and `make dist`: a wheel and an sdist of a commit.
 
-pptmstr's P31 asks for a name it can require. What advtext can give alone is
+pptmstr's P31 asks for a name it can require. What imscribe can give alone is
 a version that says something, and two files with hashes built from a commit
 by one target. This file holds both.
 
@@ -39,8 +39,8 @@ from typing import Any
 
 import pytest
 
-import advtext
-from advtext import typesetter
+import imscribe
+from imscribe import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts" / "make_dist.py"
@@ -70,27 +70,27 @@ def _pyproject() -> dict[str, Any]:
 
 def test_the_version_is_one_string_in_the_two_places_it_is_written() -> None:
     stated = _pyproject()["project"]["version"]
-    assert advtext.__version__ == stated
+    assert imscribe.__version__ == stated
     # PEP 440, the shape a requirement can name: release digits, then at most a
     # pre-release, a post-release and a development number.
     assert re.fullmatch(r"\d+\.\d+\.\d+((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?", stated), stated
-    assert "__version__" not in advtext.__all__
-    assert "__version__" in dir(advtext)
+    assert "__version__" not in imscribe.__all__
+    assert "__version__" in dir(imscribe)
 
 
 def test_the_script_reads_the_two_versions_the_way_this_file_does() -> None:
     """The regular expressions in the script, against the real files and not only a fixture."""
-    assert _script().declared_version(_ROOT) == (advtext.__version__, advtext.__version__)
+    assert _script().declared_version(_ROOT) == (imscribe.__version__, imscribe.__version__)
     assert _script().pins(_ROOT) == ["imgui-bundle==1.92.900"]
 
 
-def test_a_child_asked_for_the_pairing_says_which_advtext_answered() -> None:
-    """`python -m advtext.typesetter`, with nothing to find: the version is there all the same."""
+def test_a_child_asked_for_the_pairing_says_which_imscribe_answered() -> None:
+    """`python -m imscribe.typesetter`, with nothing to find: the version is there all the same."""
     environment = {
         name: value for name, value in os.environ.items() if not name.startswith("IMTYPESET_")
     }
     done = subprocess.run(
-        [sys.executable, "-B", "-m", "advtext.typesetter"],
+        [sys.executable, "-B", "-m", "imscribe.typesetter"],
         capture_output=True,
         text=True,
         timeout=120,
@@ -99,19 +99,19 @@ def test_a_child_asked_for_the_pairing_says_which_advtext_answered() -> None:
         cwd=str(_ROOT),
     )
     answer = json.loads(done.stdout.strip().splitlines()[-1])
-    assert answer["advtext_version"] == advtext.__version__
+    assert answer["imscribe_version"] == imscribe.__version__
     assert done.returncode == typesetter.EXIT_CODES[typesetter.Kind(answer["kind"])]
 
 
-def test_a_verdict_nobody_could_be_asked_for_still_names_this_advtext(
+def test_a_verdict_nobody_could_be_asked_for_still_names_this_imscribe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     answer = typesetter.verdict()
     assert answer["kind"] == typesetter.Kind.UNCHECKED.value
-    assert answer["advtext_version"] == advtext.__version__
+    assert answer["imscribe_version"] == imscribe.__version__
     assert set(answer) == set(typesetter._PAIRING_KEYS)
-    assert typesetter._PAIRING_KEYS[0] == "advtext_version"
+    assert typesetter._PAIRING_KEYS[0] == "imscribe_version"
 
 
 # ---------------------------------------------------------------------------
@@ -123,13 +123,13 @@ def test_what_pyproject_says_the_wheel_and_the_sdist_hold() -> None:
     project = _pyproject()
     assert project["build-system"]["build-backend"] == "hatchling.build"
     targets = project["tool"]["hatch"]["build"]["targets"]
-    assert targets["wheel"] == {"packages": ["advtext"]}
-    assert (_ROOT / "advtext" / "py.typed").is_file()
+    assert targets["wheel"] == {"packages": ["imscribe"]}
+    assert (_ROOT / "imscribe" / "py.typed").is_file()
     included = set(targets["sdist"]["include"])
     script = _script()
     for needed in script.SDIST_ONLY:
         assert "/" + needed.rstrip("/") in included, needed
-    assert "/advtext" in included
+    assert "/imscribe" in included
     # The two tools `make dist` runs are what the dev extra installs.
     dev = " ".join(project["project"]["optional-dependencies"]["dev"])
     for tool in script.TOOLS:
@@ -163,12 +163,12 @@ def files(*tops):
             found.extend(sorted(p for p in path.rglob("*") if p.is_file()))
     return found
 
-info_dir = f"advtext-{version}.dist-info"
-metadata = f"Metadata-Version: 2.1\nName: advtext\nVersion: {version}\n"
+info_dir = f"imscribe-{version}.dist-info"
+metadata = f"Metadata-Version: 2.1\nName: imscribe\nVersion: {version}\n"
 if fault == "path":
     metadata += f"Built-In: {source}\n"
-wheel_tops = ["advtext"] + (["tests"] if fault == "tests" else [])
-with zipfile.ZipFile(out / f"advtext-{version}-py3-none-any.whl", "w") as wheel:
+wheel_tops = ["imscribe"] + (["tests"] if fault == "tests" else [])
+with zipfile.ZipFile(out / f"imscribe-{version}-py3-none-any.whl", "w") as wheel:
     for path in files(*wheel_tops):
         name = path.relative_to(source).as_posix()
         if fault == "untyped" and name.endswith("py.typed"):
@@ -177,8 +177,8 @@ with zipfile.ZipFile(out / f"advtext-{version}-py3-none-any.whl", "w") as wheel:
     wheel.writestr(zipfile.ZipInfo(f"{info_dir}/METADATA", stamp), metadata)
     wheel.writestr(zipfile.ZipInfo(f"{info_dir}/WHEEL", stamp), "Wheel-Version: 1.0\n")
 
-top = f"advtext-{version}"
-sdist_tops = ["advtext", "tests", "docs", "demo", "README.md", "pyproject.toml",
+top = f"imscribe-{version}"
+sdist_tops = ["imscribe", "tests", "docs", "demo", "README.md", "pyproject.toml",
               "HANDOFF-imtypeset.md", "HANDOFF-pptmstr.md"]
 if fault != "bare":
     sdist_tops.append("examples")
@@ -211,14 +211,14 @@ def _git(where: Path, *args: str) -> str:
 
 _TREE = {
     "pyproject.toml": (
-        '[project]\nname = "advtext"\nversion = "9.8.7.dev6"\n'
+        '[project]\nname = "imscribe"\nversion = "9.8.7.dev6"\n'
         'dependencies = [\n    "imgui-bundle==1.92.900",\n    "fonttools>=4.50",\n]\n'
     ),
-    "advtext/__init__.py": '"""committed"""\n__version__ = "9.8.7.dev6"\n',
-    "advtext/py.typed": "",
-    "advtext/ui/view.py": "X = 1\n",
+    "imscribe/__init__.py": '"""committed"""\n__version__ = "9.8.7.dev6"\n',
+    "imscribe/py.typed": "",
+    "imscribe/ui/view.py": "X = 1\n",
     "tests/test_it.py": "def test_it():\n    pass\n",
-    "examples/minimal.py": "import advtext\n",
+    "examples/minimal.py": "import imscribe\n",
     "demo/sample.md": "# sample\n",
     "docs/status.md": "status\n",
     "README.md": "readme\n",
@@ -272,31 +272,31 @@ def test_it_builds_the_commit_and_not_the_working_tree(
     commit = _git(project, "rev-parse", "HEAD")
     epoch = int(_git(project, "log", "-1", "--format=%ct"))
     # Two things the commit does not have: an edit, and a file nobody added.
-    (project / "advtext" / "__init__.py").write_text(
+    (project / "imscribe" / "__init__.py").write_text(
         '"""edited"""\n__version__ = "0.0.0"\n', encoding="utf-8"
     )
-    (project / "advtext" / "stray.py").write_text("STRAY = 1\n", encoding="utf-8")
+    (project / "imscribe" / "stray.py").write_text("STRAY = 1\n", encoding="utf-8")
 
     code, said, out, _ = _run(project, monkeypatch)
     assert code == 0, said
 
-    wheel = out / "advtext-9.8.7.dev6-py3-none-any.whl"
-    sdist = out / "advtext-9.8.7.dev6.tar.gz"
+    wheel = out / "imscribe-9.8.7.dev6-py3-none-any.whl"
+    sdist = out / "imscribe-9.8.7.dev6.tar.gz"
     assert sorted(path.name for path in out.iterdir()) == sorted(
         [wheel.name, sdist.name, wheel.name + ".sha256", sdist.name + ".sha256", "BUILT-FROM"]
     )
     with zipfile.ZipFile(wheel) as archive:
         names = archive.namelist()
-        assert archive.read("advtext/__init__.py").decode().startswith('"""committed"""')
+        assert archive.read("imscribe/__init__.py").decode().startswith('"""committed"""')
         # A zip keeps a time to two seconds, so the commit's own second may be the one before.
-        written = archive.getinfo("advtext/__init__.py").date_time
+        written = archive.getinfo("imscribe/__init__.py").date_time
         assert written == tuple(time.gmtime(epoch - epoch % 2)[:6])
-    assert "advtext/stray.py" not in names and "advtext/py.typed" in names
-    assert all(name.startswith(("advtext/", "advtext-9.8.7.dev6.dist-info/")) for name in names)
+    assert "imscribe/stray.py" not in names and "imscribe/py.typed" in names
+    assert all(name.startswith(("imscribe/", "imscribe-9.8.7.dev6.dist-info/")) for name in names)
     with tarfile.open(sdist) as archive:
         inside = archive.getnames()
     for carried in ("examples/minimal.py", "HANDOFF-pptmstr.md", "HANDOFF-imtypeset.md"):
-        assert f"advtext-9.8.7.dev6/{carried}" in inside
+        assert f"imscribe-9.8.7.dev6/{carried}" in inside
     assert "2 path(s) of the working tree" in said and "NOT in what is built" in said
 
     # The hashes: beside each file in the form `sha256sum -c` reads, and in the record.
@@ -310,12 +310,12 @@ def test_it_builds_the_commit_and_not_the_working_tree(
 
     # The strings a host copies.
     repository = _script().REPOSITORY
-    assert f"advtext @ git+{repository}.git@{commit}" in said
+    assert f"imscribe @ git+{repository}.git@{commit}" in said
     assert (
-        f"advtext @ {repository}/releases/download/v9.8.7.dev6/{wheel.name}#sha256={_sha(wheel)}"
+        f"imscribe @ {repository}/releases/download/v9.8.7.dev6/{wheel.name}#sha256={_sha(wheel)}"
         in said
     )
-    assert f"advtext==9.8.7.dev6 --hash=sha256:{_sha(wheel)} --hash=sha256:{_sha(sdist)}" in said
+    assert f"imscribe==9.8.7.dev6 --hash=sha256:{_sha(wheel)} --hash=sha256:{_sha(sdist)}" in said
     assert "    imgui-bundle==1.92.900\n" in said + "\n" and "fonttools" not in said
     assert "development version" in said
     # Said of both lines that nothing was published.
@@ -329,12 +329,12 @@ def test_the_two_builds_are_made_from_two_exports_and_are_the_same_bytes(
     code, said, out, stage = _run(project, monkeypatch)
     assert code == 0, said
     assert "two builds from two exports: the same bytes" in said
-    for name in ("advtext-9.8.7.dev6-py3-none-any.whl", "advtext-9.8.7.dev6.tar.gz"):
+    for name in ("imscribe-9.8.7.dev6-py3-none-any.whl", "imscribe-9.8.7.dev6.tar.gz"):
         first, second = stage / "out-first" / name, stage / "out-second" / name
         assert _sha(first) == _sha(second) == _sha(out / name)
     exports = sorted(path.name for path in stage.iterdir() if path.name.startswith("export-"))
     assert exports == ["export-first", "export-second"]
-    assert not (stage / "export-first" / "advtext-src" / ".git").exists()
+    assert not (stage / "export-first" / "imscribe-src" / ".git").exists()
 
 
 @needs_git
@@ -342,9 +342,9 @@ def test_the_two_builds_are_made_from_two_exports_and_are_the_same_bytes(
     ("fault", "named"),
     [
         # The export's path written into a member: the two exports have two names.
-        ("path", ("advtext-9.8.7.dev6.dist-info/METADATA", "PKG-INFO", "sha256")),
+        ("path", ("imscribe-9.8.7.dev6.dist-info/METADATA", "PKG-INFO", "sha256")),
         # A clock in the gzip header and every member equal.
-        ("clock", ("advtext-9.8.7.dev6.tar.gz", "every member is equal", "container")),
+        ("clock", ("imscribe-9.8.7.dev6.tar.gz", "every member is equal", "container")),
     ],
 )
 def test_two_builds_that_differ_are_said_and_nothing_is_installed(
@@ -352,7 +352,7 @@ def test_two_builds_that_differ_are_said_and_nothing_is_installed(
 ) -> None:
     out = project.parent / "dist"
     out.mkdir()
-    (out / "advtext-0.0.1-py3-none-any.whl").write_text("the build before", encoding="utf-8")
+    (out / "imscribe-0.0.1-py3-none-any.whl").write_text("the build before", encoding="utf-8")
 
     code, said, _, stage = _run(project, monkeypatch, fault)
     assert code == _script().EXIT_REFUSED
@@ -361,7 +361,7 @@ def test_two_builds_that_differ_are_said_and_nothing_is_installed(
         assert word in said, said
     if fault == "clock":
         assert "whl" not in said.split("Both are under")[0], "the wheel did not differ"
-    assert [path.name for path in out.iterdir()] == ["advtext-0.0.1-py3-none-any.whl"]
+    assert [path.name for path in out.iterdir()] == ["imscribe-0.0.1-py3-none-any.whl"]
     assert (stage / "out-first").is_dir() and (stage / "out-second").is_dir()
 
 
@@ -369,8 +369,8 @@ def test_two_builds_that_differ_are_said_and_nothing_is_installed(
 @pytest.mark.parametrize(
     ("fault", "named"),
     [
-        ("tests", "1 member(s) outside advtext/ and advtext-9.8.7.dev6.dist-info/: tests/"),
-        ("untyped", "the wheel has no advtext/py.typed"),
+        ("tests", "1 member(s) outside imscribe/ and imscribe-9.8.7.dev6.dist-info/: tests/"),
+        ("untyped", "the wheel has no imscribe/py.typed"),
         ("bare", "the sdist has no examples/"),
     ],
 )
@@ -387,11 +387,11 @@ def test_a_build_that_is_not_what_pyproject_describes_is_not_installed(
 def test_a_commit_whose_two_versions_disagree_is_not_installed(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (project / "advtext" / "__init__.py").write_text('__version__ = "9.8.7"\n', encoding="utf-8")
+    (project / "imscribe" / "__init__.py").write_text('__version__ = "9.8.7"\n', encoding="utf-8")
     _git(project, "commit", "-q", "--no-gpg-sign", "-am", "one of the two")
     code, said, out, _ = _run(project, monkeypatch)
     assert code == _script().EXIT_REFUSED
-    assert "pyproject.toml states version '9.8.7.dev6' and advtext/__init__.py '9.8.7'" in said
+    assert "pyproject.toml states version '9.8.7.dev6' and imscribe/__init__.py '9.8.7'" in said
     assert not out.exists()
 
 
@@ -401,7 +401,7 @@ def test_a_build_replaces_the_files_of_the_build_before_and_nothing_else(
 ) -> None:
     out = project.parent / "dist"
     out.mkdir()
-    for name in ("advtext-0.0.1-py3-none-any.whl", "advtext-0.0.1.tar.gz.sha256", "BUILT-FROM"):
+    for name in ("imscribe-0.0.1-py3-none-any.whl", "imscribe-0.0.1.tar.gz.sha256", "BUILT-FROM"):
         (out / name).write_text("before", encoding="utf-8")
     (out / "somebody-elses.whl").write_text("kept", encoding="utf-8")
     code, said, _, _ = _run(project, monkeypatch)
@@ -417,13 +417,13 @@ def test_another_commit_can_be_named_and_one_that_does_not_exist_is_refused(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     first = _git(project, "rev-parse", "HEAD")
-    (project / "advtext" / "ui" / "view.py").write_text("X = 2\n", encoding="utf-8")
+    (project / "imscribe" / "ui" / "view.py").write_text("X = 2\n", encoding="utf-8")
     _git(project, "commit", "-q", "--no-gpg-sign", "-am", "a second")
 
     code, said, out, _ = _run(project, monkeypatch, rev=first)
     assert code == 0, said
-    with zipfile.ZipFile(out / "advtext-9.8.7.dev6-py3-none-any.whl") as archive:
-        assert archive.read("advtext/ui/view.py") == b"X = 1\n"
+    with zipfile.ZipFile(out / "imscribe-9.8.7.dev6-py3-none-any.whl") as archive:
+        assert archive.read("imscribe/ui/view.py") == b"X = 1\n"
     assert f"@{first}" in said
 
     shutil.rmtree(out)
@@ -439,7 +439,7 @@ def test_a_directory_that_is_not_the_top_of_a_checkout_is_refused(
 ) -> None:
     """Inside a checkout is not enough: an sdist unpacked under a repository is not it."""
     script = _script()
-    for where in (project / "advtext", project.parent):
+    for where in (project / "imscribe", project.parent):
         with pytest.raises(script.Stop) as stopped:
             script.make(where, project.parent / "dist", project.parent / "stage", "HEAD", ["true"])
         assert stopped.value.code == script.EXIT_CANNOT_START
@@ -502,7 +502,7 @@ def test_the_command_line_answers_with_the_exit_code_and_one_sentence(project: P
         arguments, capture_output=True, text=True, timeout=120, check=False, env=environment
     )
     assert good.returncode == 0, good.stderr
-    assert "advtext @ git+" in good.stdout
+    assert "imscribe @ git+" in good.stdout
     bad = subprocess.run(
         arguments,
         capture_output=True,

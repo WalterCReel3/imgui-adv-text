@@ -22,7 +22,7 @@ import itertools
 
 import pytest
 
-from advtext.nodes import (
+from imscribe.nodes import (
     Box,
     BoxKind,
     CharNode,
@@ -37,7 +37,7 @@ from advtext.nodes import (
     Penalty,
     Rule,
 )
-from advtext.pack import (
+from imscribe.pack import (
     IGNORE_DEPTH,
     OVERFULL_BADNESS,
     CharDimens,
@@ -49,7 +49,7 @@ from advtext.pack import (
     interline_glue,
     vpack,
 )
-from advtext.units import MAX_DIMEN, RUNNING, GlueOrder, Scaled, sp_from_pt
+from imscribe.units import MAX_DIMEN, RUNNING, GlueOrder, Scaled, sp_from_pt
 
 PT = sp_from_pt(1.0)
 

@@ -11,7 +11,7 @@ Four layers, cheapest first:
    with the reason, nobody asked `typesetter.module()`, and building and
    drawing it imports nothing.
 3. **With a stand-in for the library**, in this process (the real one is kept
-   out of it: `advtext/typesetter.py`): the section is called once a frame,
+   out of it: `imscribe/typesetter.py`): the section is called once a frame,
    inside the page's child, at the page's size; the counts are the
    differences of `stats()`; the ways the page gives the section up; and
    the size: the default and why, the combo, the launch integer, and one
@@ -25,7 +25,7 @@ the child's draw list, the library's own figures, calls of the section.
 The pages' old bodies (`_old_specimen.py`, `_old_formula.py`,
 `_old_mathtext.py`) and `tests/test_page_math.py` were deleted in tranche 5
 (T5-FB-C). `tests/test_specimen.py` and `tests/test_formulas.py` test
-`advtext/ui/specimen.py` and `formulas.py`, which no page draws any more.
+`imscribe/ui/specimen.py` and `formulas.py`, which no page draws any more.
 """
 
 from __future__ import annotations
@@ -43,21 +43,21 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.ui.app import App, parse_tab_request
-from advtext.ui.pages import PageContext, discover
-from advtext.ui.pages import formula as formula_page
-from advtext.ui.pages import mathtext as math_page
-from advtext.ui.pages import specimen as specimen_page
-from advtext.ui.pages import typeset as typeset_page
-from advtext.ui.pages.specimen import (
+from imscribe import typesetter
+from imscribe.ui.app import App, parse_tab_request
+from imscribe.ui.pages import PageContext, discover
+from imscribe.ui.pages import formula as formula_page
+from imscribe.ui.pages import mathtext as math_page
+from imscribe.ui.pages import specimen as specimen_page
+from imscribe.ui.pages import typeset as typeset_page
+from imscribe.ui.pages.specimen import (
     DEFAULT_SIZE,
     SIZES,
     STAT_NAMES,
     SectionPage,
     why_not,
 )
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe.ui.typeset_view import TypesetUnavailable
 from tests.test_typeset_closure import OLD_CORE, THEME, _loaded_by
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
@@ -121,7 +121,7 @@ def test_the_old_bodies_are_gone_and_the_scan_finds_nothing_in_their_place() -> 
     import importlib.util
 
     for old in ("_old_specimen", "_old_formula", "_old_mathtext"):
-        assert importlib.util.find_spec(f"advtext.ui.pages.{old}") is None
+        assert importlib.util.find_spec(f"imscribe.ui.pages.{old}") is None
     found = discover()
     assert not [name for name in found.modules.values() if "._old_" in name]
     assert not [failure for failure in found.failures if "_old_" in failure.module]
@@ -139,7 +139,7 @@ def test_importing_a_page_loads_no_old_core(name: str, form: str) -> None:
     assert module in loaded
     assert (loaded & OLD_CORE) == THEME, sorted(loaded & OLD_CORE)
     assert not {item for item in loaded if "._old_" in item}
-    assert not loaded & {"advtext.style", "advtext.markdown", "advtext.stream"}
+    assert not loaded & {"imscribe.style", "imscribe.markdown", "imscribe.stream"}
 
 
 # ----------------------------------------------------------------------
@@ -167,7 +167,7 @@ def _frame(draw: Any) -> int:
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-page-galleries-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-page-galleries-test", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             draw()
         finally:
@@ -192,7 +192,7 @@ def _context(spec: str) -> PageContext:
 @pytest.fixture
 def unasked(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """
-    `advtext.typesetter` as at import, and a `module()` that fails the test if asked.
+    `imscribe.typesetter` as at import, and a `module()` that fails the test if asked.
     """
     typesetter._forget()
     monkeypatch.setattr(typesetter, "module", lambda: pytest.fail("the page asked for the library"))
@@ -273,8 +273,8 @@ import sys
 
 from imgui_bundle import imgui
 
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import formula, mathtext, specimen
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import formula, mathtext, specimen
 
 context = PageContext.build()
 before = set(sys.modules)
@@ -292,8 +292,8 @@ for _ in range(3):
     imgui.end()
     imgui.render()
 print(json.dumps({
-    "added": sorted(name for name in set(sys.modules) - before if name.startswith("advtext")),
-    "loaded": sorted(name for name in sys.modules if name.startswith("advtext")),
+    "added": sorted(name for name in set(sys.modules) - before if name.startswith("imscribe")),
+    "loaded": sorted(name for name in sys.modules if name.startswith("imscribe")),
     "lines": [page.line() for page in made],
     "frames": [page.frames for page in made],
     "imtypeset": "imtypeset" in sys.modules,
@@ -306,7 +306,7 @@ def test_without_the_library_building_and_drawing_the_pages_import_nothing(
 ) -> None:
     """
     A fresh interpreter, the library's variables removed: three frames of the
-    three pages add no `advtext` module to what a `PageContext` loaded. In
+    three pages add no `imscribe` module to what a `PageContext` loaded. In
     particular none of what the old bodies stood on.
     """
     pytest.importorskip("imgui_bundle")
@@ -328,16 +328,16 @@ def test_without_the_library_building_and_drawing_the_pages_import_nothing(
     assert got["lines"] == [f"{typeset_page.NOT_DRAWING}: IMTYPESET_LIBRARY is not set"] * 3
     loaded = set(got["loaded"])
     for gone in (
-        "advtext.backends.imgui_draw",
-        "advtext.markdown",
-        "advtext.mathtext",
-        "advtext.shipout",
-        "advtext.stream",
-        "advtext.ui.bare_view",
-        "advtext.ui.document_view",
-        "advtext.ui.formulas",
-        "advtext.ui.specimen",
-        "advtext.ui.stream_view",
+        "imscribe.backends.imgui_draw",
+        "imscribe.markdown",
+        "imscribe.mathtext",
+        "imscribe.shipout",
+        "imscribe.stream",
+        "imscribe.ui.bare_view",
+        "imscribe.ui.document_view",
+        "imscribe.ui.formulas",
+        "imscribe.ui.specimen",
+        "imscribe.ui.stream_view",
     ):
         assert gone not in loaded
 
@@ -346,7 +346,7 @@ def test_without_the_library_building_and_drawing_the_pages_import_nothing(
 # 3. With a stand-in for the library
 # ----------------------------------------------------------------------
 
-_FAKE = "advtext_test_fake_imtypeset"
+_FAKE = "imscribe_test_fake_imtypeset"
 
 
 class _Library(types.ModuleType):
@@ -472,9 +472,9 @@ def test_the_default_is_the_smallest_size_whose_formulas_reach_the_document_text
     theme's body size; a section's em is the pushed height times the Regular
     face's em over its height; a formula is at that em in the math face.
     """
-    from advtext import fontlib
-    from advtext.primitives import Face, px_from_sp
-    from advtext.theme import BlockKind
+    from imscribe import fontlib
+    from imscribe.primitives import Face, px_from_sp
+    from imscribe.theme import BlockKind
 
     theme = PageContext.build().theme
     body_em = px_from_sp(theme.style(BlockKind.PARAGRAPH).font.size, theme.px_per_inch)
@@ -748,8 +748,8 @@ import sys
 
 from imgui_bundle import hello_imgui, imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
 
 WANT_LIBRARY = sys.argv[1] == "with"
 ORDER = ("Specimen", "Formula", "Math")
@@ -757,7 +757,7 @@ STAY = 8
 report = {"frames": 0, "pages": {}}
 seen = {"calls": 0, "child": 0, "size": 0.0, "first_size": 0.0, "window": ""}
 PICK_AT = 3
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def watch(demo):
@@ -823,16 +823,16 @@ def watched_gui(self):
             hello_imgui.get_runner_params().app_shall_exit = True
 
 
-advtext_app.App.gui = watched_gui
-advtext_app.run(tab="specimen")
+imscribe_app.App.gui = watched_gui
+imscribe_app.run(tab="specimen")
 report["imported"] = "imtypeset" in sys.modules
 report["old_loaded"] = sorted(
     name for name in sys.modules
-    if "._old_" in name or name in ("advtext.ui.specimen", "advtext.ui.formulas")
+    if "._old_" in name or name in ("imscribe.ui.specimen", "imscribe.ui.formulas")
 )
 report["old_core_loaded"] = sorted(
     name for name in sys.modules
-    if name in ("advtext.mathtext", "advtext.ui.stream_view")
+    if name in ("imscribe.mathtext", "imscribe.ui.stream_view")
 )
 print(json.dumps(report))
 """

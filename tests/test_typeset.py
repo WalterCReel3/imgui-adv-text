@@ -1,5 +1,5 @@
 """
-`advtext.typesetter`: the gate around imtypeset, and a document as it wants one.
+`imscribe.typesetter`: the gate around imtypeset, and a document as it wants one.
 
 Three groups, and which of them run depends on the environment the suite was
 started in (`make test`, or `make test TYPESET=1`):
@@ -8,8 +8,8 @@ started in (`make test`, or `make test TYPESET=1`):
     environment has the two variables removed, so they hold in both runs.
 2.  **The description.** Needs no library: the description is plain tuples.
     These run in both runs too. Until tranche 5 they described the old core's
-    node material with `advtext.typesetter.Converter`; that walk is deleted,
-    and they describe markdown with `advtext.typeset_markdown`, which is what
+    node material with `imscribe.typesetter.Converter`; that walk is deleted,
+    and they describe markdown with `imscribe.typeset_markdown`, which is what
     every view does. The tests whose subject was the walk itself went with it
     (`.concerns/T5-B1--builder--result.md` names them).
 3.  **The library.** Skipped, with the reason, when `IMTYPESET_LIBRARY` is not
@@ -35,9 +35,9 @@ from typing import Any
 import material_frozen
 import pytest
 
-from advtext import typesetter
-from advtext.theme import Align, BlockKind, Theme
-from advtext.typeset_markdown import (
+from imscribe import typesetter
+from imscribe.theme import Align, BlockKind, Theme
+from imscribe.typeset_markdown import (
     MarkdownCode,
     MarkdownConverter,
     MarkdownRule,
@@ -45,7 +45,7 @@ from advtext.typeset_markdown import (
     MarkdownText,
     parse_markdown,
 )
-from advtext.typesetter import (
+from imscribe.typesetter import (
     BLOCK_TABLE_HEADER,
     KIND_CODE,
     KIND_HEADING,
@@ -113,9 +113,9 @@ def _described(
 
 _GATE_CLOSED = """
 import json, sys
-import advtext
-from advtext import typesetter
-import advtext.typesetter
+import imscribe
+from imscribe import typesetter
+import imscribe.typesetter
 loaded = typesetter.module()
 fonts = typesetter.load_fonts()
 try:
@@ -144,7 +144,7 @@ def test_without_the_variable_nothing_of_imtypeset_is_imported() -> None:
     assert report["imtypeset"] == [], "something of imtypeset was imported"
     assert report["path"] == [], "sys.path was touched with no library named"
     # The module is the description too, and a description needs no ImGui.
-    assert report["imgui"] is False, "importing advtext.typesetter imported imgui_bundle"
+    assert report["imgui"] is False, "importing imscribe.typesetter imported imgui_bundle"
     assert "IMTYPESET_LIBRARY is not set" in report["raised"]
 
 
@@ -233,7 +233,7 @@ def test_a_demo_document_is_described_block_for_block_and_nothing_misfits(
 
     Restated in tranche 5 on the path the views take. It used to describe
     the old core's blocks with `Converter` and check each text against
-    `advtext.spans.material_text`; both are deleted. The description is made
+    `imscribe.spans.material_text`; both are deleted. The description is made
     from the markdown, held block for block to the blocks it was made from,
     and its texts to the ones the old converter gave (frozen), with the old
     math core's refusals handed in so that the comparison is of everything.
@@ -493,7 +493,7 @@ def test_a_block_of_no_known_type_described_first_names_a_style_that_exists(them
 _WITH_LIBRARY = r"""
 import json, sys
 from pathlib import Path
-from advtext import description, typesetter
+from imscribe import description, typesetter
 
 ts = typesetter.module()
 if ts is None:
@@ -501,9 +501,9 @@ if ts is None:
     sys.exit(0)
 
 from imgui_bundle import imgui
-from advtext.fontmetrics import Face
-from advtext.theme import Align, Theme
-from advtext.typeset_markdown import MarkdownConverter, parse_markdown
+from imscribe.fontmetrics import Face
+from imscribe.theme import Align, Theme
+from imscribe.typeset_markdown import MarkdownConverter, parse_markdown
 
 report = {"module": True, "host": ts.host_info().get("host"), "files": {}}
 report["enumerators"] = [
@@ -721,7 +721,7 @@ def test_unload_closes_the_documents_and_a_second_context_loads(
 _CONTEXTS = r"""
 import json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
+from imscribe import typesetter
 
 ts = typesetter.module()
 if ts is None:
@@ -895,7 +895,7 @@ def test_unload_after_disable_still_destroys_the_context(contexts_report: dict[s
     assert report["load_after_disable"] is False
 
 
-def test_importing_the_module_loads_the_description_and_nothing_else_of_advtext() -> None:
+def test_importing_the_module_loads_the_description_and_nothing_else_of_imscribe() -> None:
     """
     The gate, the description types and `block_styles` need no layout core.
     (The material walk that did, `Converter`, is deleted.)
@@ -905,8 +905,8 @@ def test_importing_the_module_loads_the_description_and_nothing_else_of_advtext(
     code = """
 import json, sys
 def loaded():
-    return sorted(n for n in sys.modules if n.startswith("advtext."))
-import advtext.typesetter as typesetter
+    return sorted(n for n in sys.modules if n.startswith("imscribe."))
+import imscribe.typesetter as typesetter
 at_import = loaded()
 typesetter.block_styles
 described = typesetter.BlockDescription(text="x")
@@ -914,18 +914,18 @@ after_types = loaded()
 roles = typesetter.FACE_ROLE
 after_roles = loaded()
 aligns = typesetter.ALIGN
-from advtext.theme import Theme
+from imscribe.theme import Theme
 print(json.dumps({"at_import": at_import, "after_types": after_types, "after_roles": after_roles,
                   "roles": sorted(roles.values()), "aligns": sorted(aligns.values()),
                   "same": typesetter.FACE_ROLE is roles and typesetter.ALIGN is aligns}))
 """
     report = _child(code, _without())
-    assert report["at_import"] == ["advtext.description", "advtext.typesetter"]
+    assert report["at_import"] == ["imscribe.description", "imscribe.typesetter"]
     assert report["after_types"] == report["at_import"]
     assert report["after_roles"] == [
-        "advtext.description",
-        "advtext.primitives",
-        "advtext.typesetter",
+        "imscribe.description",
+        "imscribe.primitives",
+        "imscribe.typesetter",
     ]
     assert report["roles"] == [1, 2, 3, 4, 5, 6, 7] and report["aligns"] == [0, 1, 2, 3]
     assert report["same"] is True

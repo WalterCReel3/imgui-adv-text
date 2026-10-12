@@ -7,7 +7,7 @@ Three claims, each of which was false or unchecked before the adoption work
 1.  Nothing in the build reaches into a sibling project. The `Makefile` used to
     fall back to `/home/wreel/Source/pptmstr/.venv/bin/python` when `./.venv`
     was absent, and `scripts/shot.sh` did the same. pptmstr is meant to depend
-    on advtext, which it cannot do while advtext's build depends on it.
+    on imscribe, which it cannot do while imscribe's build depends on it.
 2.  Without `./.venv` a target fails, quickly, with a line that names `make
     bootstrap` -- rather than with `make: .venv/bin/python: No such file`.
 3.  `pyproject.toml` pins imgui-bundle to exactly one version, and it is the
@@ -169,7 +169,7 @@ def _a_library(tmp_path: Path) -> Path:
 @pytest.mark.parametrize("target", _OPT_IN_TARGETS)
 def test_without_the_opt_in_no_recipe_mentions_imtypeset(target: str) -> None:
     """
-    The default is advtext as it was: neither variable reaches any command.
+    The default is imscribe as it was: neither variable reaches any command.
     `TYPESET=0` is the default said aloud.
     """
     plain = _recipe(target)
@@ -191,7 +191,7 @@ def test_typeset_1_puts_both_variables_in_front_and_changes_nothing_else(
     """
     Two assignments before the command, and the command as it was -- which is
     why `tests/test_shot_all.py` can read the shot-all recipe in either run.
-    `IMTYPESET_PYTHON` and not `PYTHONPATH`: `advtext/typesetter.py` says why.
+    `IMTYPESET_PYTHON` and not `PYTHONPATH`: `imscribe/typesetter.py` says why.
     """
     library = _a_library(tmp_path)
     opted = _recipe(target, "TYPESET=1", f"IMTYPESET_BUNDLE={library.parent}", "IMTYPESET_ROOT=/it")
@@ -526,8 +526,8 @@ def test_built_from_never_describes_a_repository_that_merely_encloses_the_checko
     tmp_path: Path,
 ) -> None:
     """
-    2026-10-11: an extract of imtypeset lay inside advtext's repository, and
-    BUILT-FROM gave advtext's HEAD and advtext's uncommitted paths as
+    2026-10-11: an extract of imtypeset lay inside imscribe's repository, and
+    BUILT-FROM gave imscribe's HEAD and imscribe's uncommitted paths as
     imtypeset's.
     """
     outer = tmp_path / "outer"
@@ -1237,8 +1237,8 @@ def test_imgui_bundle_is_pinned_to_exactly_the_version_that_is_installed() -> No
     this was written.
 
     Until that date this test also held the floor to a release that has
-    `ImDrawListFlags_.text_no_pixel_snap`, the flag advtext's own draw
-    backend set. That backend was deleted in tranche 5 and nothing in advtext
+    `ImDrawListFlags_.text_no_pixel_snap`, the flag imscribe's own draw
+    backend set. That backend was deleted in tranche 5 and nothing in imscribe
     names the flag now, so it is no longer asserted; the pin is still not
     allowed below 1.92.900, the release every measurement was taken on.
     """

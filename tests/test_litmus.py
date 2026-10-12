@@ -9,7 +9,7 @@ reads. This file is what stops either of them quietly stopping being true.
 a *real larger glyph selected from real font data*, and names the failure it is
 ruling out: emitting U+2211 at a bigger size, which looks almost right and is
 not the claim. So the test does not compare formula heights -- it finds the
-operator glyph in each rendering, resolves it back through `advtext.fontlib` to
+operator glyph in each rendering, resolves it back through `imscribe.fontlib` to
 the name the font gave it, and asserts that display style reached
 `summation.v1` while text style reached `summation`. A scaled-up body glyph
 fails that even though its rendered height would pass a height comparison.
@@ -27,20 +27,20 @@ from pathlib import Path
 
 import pytest
 
-from advtext import fontlib
-from advtext.backends.svg import render
-from advtext.fontmetrics import Face
-from advtext.linebreak import LineBreakParams, LineSpec, ParShape
-from advtext.markdown import CodeBlock, RuleBlock, TableBlock, TextBlock, build_document
-from advtext.math.atoms import Style, group, op, ord_, rel
-from advtext.math.mlist import math_fonts, mlist_to_hlist
-from advtext.nodes import Box, CharNode, Glue, GlueSign, GlueSpec
-from advtext.pack import CharMeasure, PackFitness, hpack
-from advtext.selection import SelectionModel
-from advtext.shipout import DrawCmd, Glyph, Line, Point, RuleRect, SetGlue, pascal_round, ship
-from advtext.style import Align, BlockKind, Theme, char_measure, fontlib_metrics, parse_font_key
-from advtext.ui import compose
-from advtext.units import Scaled, pt_from_sp
+from imscribe import fontlib
+from imscribe.backends.svg import render
+from imscribe.fontmetrics import Face
+from imscribe.linebreak import LineBreakParams, LineSpec, ParShape
+from imscribe.markdown import CodeBlock, RuleBlock, TableBlock, TextBlock, build_document
+from imscribe.math.atoms import Style, group, op, ord_, rel
+from imscribe.math.mlist import math_fonts, mlist_to_hlist
+from imscribe.nodes import Box, CharNode, Glue, GlueSign, GlueSpec
+from imscribe.pack import CharMeasure, PackFitness, hpack
+from imscribe.selection import SelectionModel
+from imscribe.shipout import DrawCmd, Glyph, Line, Point, RuleRect, SetGlue, pascal_round, ship
+from imscribe.style import Align, BlockKind, Theme, char_measure, fontlib_metrics, parse_font_key
+from imscribe.ui import compose
+from imscribe.units import Scaled, pt_from_sp
 from scripts.render_litmus import (
     MARGIN,
     MEASURE,
@@ -91,7 +91,7 @@ def _operator(rendered: Rendered) -> tuple[str, Scaled]:
     """
     The name the font gives the summation glyph in this rendering, and its ink height.
 
-    Resolved through `advtext.fontlib.glyph_name` because the display variant has
+    Resolved through `imscribe.fontlib.glyph_name` because the display variant has
     **no codepoint in the font**: it is reachable only by the synthetic codepoint
     the font library mints for it, and going back through a cmap would find
     nothing. That indirection is the thing under test.
@@ -244,8 +244,8 @@ def test_no_line_in_the_document_is_overfull(sample: str) -> None:
     # this cost: without hyphenation the tolerance had to be raised well past
     # plain TeX's 200, and seven lines come back loose. None comes back in the
     # margin, and this is the assertion that keeps it that way.
-    from advtext.linebreak import break_paragraph
-    from advtext.ui import PROSE_BREAKING, _shape, _skips
+    from imscribe.linebreak import break_paragraph
+    from imscribe.ui import PROSE_BREAKING, _shape, _skips
 
     theme = Theme.build()
     measure = char_measure(fontlib_metrics)
@@ -431,7 +431,7 @@ def test_the_margin_assertion_is_red_when_the_prose_is_set_to_a_finite_loose_rag
     glue sitting past the last glyph is no longer zero, and the thing that
     reached the margin was the `\rightskip` and not the text.
     """
-    from advtext import ui
+    from imscribe import ui
 
     body = Theme.build().style(BlockKind.PARAGRAPH).font.size
     unragged = ui._skips
@@ -473,7 +473,7 @@ def test_the_margin_assertion_is_red_when_each_glue_is_rounded_on_its_own(
             return spec.width - pascal_round(box.glue_set * spec.shrink), cur_glue, cur_g
         return spec.width, cur_glue, cur_g
 
-    monkeypatch.setattr("advtext.shipout._set_glue_width", independently_rounded)
+    monkeypatch.setattr("imscribe.shipout._set_glue_width", independently_rounded)
     measure = char_measure(fontlib_metrics)
     page = render_markdown(sample)
     # The classifier still recognises the same lines -- the damage is to where
@@ -512,7 +512,7 @@ def test_the_margin_assertion_is_red_when_every_line_stops_a_scaled_point_short(
             return spec.width - math.ceil(box.glue_set * spec.shrink), cur_glue, cur_g
         return spec.width, cur_glue, cur_g
 
-    monkeypatch.setattr("advtext.shipout._set_glue_width", rounded_short)
+    monkeypatch.setattr("imscribe.shipout._set_glue_width", rounded_short)
     measure = char_measure(fontlib_metrics)
     residues = [
         residue for _, residue in _justified_line_residues(render_markdown(sample), measure)
@@ -616,7 +616,7 @@ def test_a_list_markers_first_line_starts_left_of_the_text_it_labels(sample: str
     # TeX's `\item`: the marker hangs in the space the indent reserves, so every
     # item's text lines up whatever the marker's width -- which is what stops a
     # two-digit ordered marker pushing its own first line out of alignment.
-    from advtext.ui import PROSE_BREAKING, _text_boxes
+    from imscribe.ui import PROSE_BREAKING, _text_boxes
 
     theme = Theme.build()
     measure = char_measure(fontlib_metrics)
@@ -725,8 +725,8 @@ def test_a_ragged_block_keeps_its_interword_spaces_at_their_natural_width(
     # `fil` outranks every finite stretch in the line, the interword glue is
     # never asked to move, which is why ragged text has even colour and
     # justified text does not.
-    from advtext.linebreak import break_paragraph
-    from advtext.ui import PROSE_BREAKING, _shape, _skips
+    from imscribe.linebreak import break_paragraph
+    from imscribe.ui import PROSE_BREAKING, _shape, _skips
 
     theme = Theme.build()
     measure = char_measure(fontlib_metrics)
@@ -742,7 +742,7 @@ def test_a_ragged_block_keeps_its_interword_spaces_at_their_natural_width(
         _skips(heading.style.align, PROSE_BREAKING),
         measure=measure,
     )
-    from advtext.units import GlueOrder
+    from imscribe.units import GlueOrder
 
     assert all(line.box.glue_order is GlueOrder.FIL for line in paragraph.lines)
 

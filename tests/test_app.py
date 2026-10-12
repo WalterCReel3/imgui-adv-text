@@ -1,7 +1,7 @@
 r"""
 The demo application's pure parts: the tab grammar, and what the shell holds and hands on.
 
-**What this file can and cannot reach.** `advtext.ui.app` defers every
+**What this file can and cannot reach.** `imscribe.ui.app` defers every
 `imgui_bundle` import into the function that needs it, so the module imports
 and most of it runs with no window anywhere. `tests/test_pages.py` drives
 `gui` through frames of a context with no backend and once through a real
@@ -10,13 +10,13 @@ parts that need neither.
 
 **What left this file on 2026-10-11 (tranche 5, T5-APP).** Until then two
 thirds of it was the Columns page's arithmetic and caches, which lived on
-`App` and were built on advtext's own layout core: `column_page` against
+`App` and were built on imscribe's own layout core: `column_page` against
 `document_view.page_for`, the page estimate, the split through
-`advtext.columns` (glyph conservation, the cached layout, the block cache's
+`imscribe.columns` (glyph conservation, the cached layout, the block cache's
 laps), `_plate`, and the formula box. `App` holds none of that now: columns
 are the imtypeset core's (`Document.set_columns`; the Columns page and
 `tests/test_page_columns.py` are where they are tested), and the tests of the
-removed members went with them. What they established about `advtext.columns`
+removed members went with them. What they established about `imscribe.columns`
 itself is still held by `tests/test_columns.py` for as long as that module is
 in the tree.
 """
@@ -29,7 +29,7 @@ import re
 
 import pytest
 
-from advtext.ui.app import (
+from imscribe.ui.app import (
     TAB_NAMES,
     App,
     TabRequest,
@@ -38,7 +38,7 @@ from advtext.ui.app import (
     parse_tab_request,
     sidebar_rows,
 )
-from advtext.ui.palette import rgba
+from imscribe.ui.palette import rgba
 
 TINY = "# t\n\nOne short paragraph.\n"
 
@@ -135,7 +135,7 @@ def test_the_sidebar_lists_exactly_the_pages_tab_names_lists() -> None:
     This used to read the tab bar's body table out of `App.gui`'s source,
     because the names were literals there and `gui` needs a frame. The tab bar
     became a sidebar and the names are no longer written anywhere: `gui` draws
-    `sidebar_rows(self.discovery)`, the scan of `advtext.ui.pages`, and
+    `sidebar_rows(self.discovery)`, the scan of `imscribe.ui.pages`, and
     `TAB_NAMES` is computed from the same scan. So the comparison is between
     two values now, not a value and a regular expression, and the other half --
     that `gui` draws those rows and nothing else -- is a real frame in

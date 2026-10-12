@@ -1,5 +1,7 @@
 # Pitfalls
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 Most of these are here because somebody walked into them. Several are here
 because a confident claim did not survive a measurement, and one of those claims
 was repeated twice before anybody checked.

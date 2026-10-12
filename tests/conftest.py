@@ -10,7 +10,7 @@ and the argument is unchanged -- a test that hard-codes the path encodes one
 machine's layout into the suite.) So the fixture resolves the directory the way
 production code must: import `imgui_bundle` and walk from its `__file__`. That
 also makes the fixture a standing check that the two agree -- if
-`advtext.fontlib` ever resolves fonts some other way, the tests stop exercising
+`imscribe.fontlib` ever resolves fonts some other way, the tests stop exercising
 the path production uses.
 
 Skipping rather than failing when the directory is absent is deliberate. A

@@ -1,7 +1,7 @@
 r"""
-The import surface of `advtext`: what is promised, and that importing it is free.
+The import surface of `imscribe`: what is promised, and that importing it is free.
 
-`advtext/__init__.py` resolves a small set of names lazily. Five properties of
+`imscribe/__init__.py` resolves a small set of names lazily. Five properties of
 that are worth a test each because each is the kind that rots quietly:
 
 - **The surface is this list.** `SURFACE` below writes it out, in the three
@@ -16,7 +16,7 @@ that are worth a test each because each is the kind that rots quietly:
   the Python views, the draw backend and the LaTeX subset; their names are
   not aliased to something similar, and asking for one is an
   `AttributeError` like any other name the package does not have.
-- **Importing costs nothing.** `import advtext` loads no other module of the
+- **Importing costs nothing.** `import imscribe` loads no other module of the
   package; resolving the typeset layer's names loads none of the reference
   core; resolving the *whole* surface loads none of ImGui, fontTools and
   imtypeset. Checked in a fresh interpreter, because this one has had them
@@ -35,12 +35,12 @@ from pathlib import Path
 
 import pytest
 
-import advtext
+import imscribe
 
 REPO = Path(__file__).resolve().parent.parent
 
 TYPESET_LAYER = {
-    "advtext.typesetter": (
+    "imscribe.typesetter": (
         "load_fonts",
         "ready",
         "reason",
@@ -50,7 +50,7 @@ TYPESET_LAYER = {
         "pairing",
         "verdict",
     ),
-    "advtext.typeset_markdown": (
+    "imscribe.typeset_markdown": (
         "parse_markdown",
         "MarkdownDocument",
         "MarkdownStream",
@@ -62,12 +62,12 @@ TYPESET_LAYER = {
         "MarkdownTable",
         "MarkdownCell",
     ),
-    "advtext.markdown_rules": ("BlockSource", "SourceSpan", "ColumnAlign"),
-    "advtext.description": ("Description", "BlockDescription"),
-    "advtext.typeset_find": ("Finder", "FindIndex", "Match"),
-    "advtext.theme": ("Theme", "Faces", "Align", "Spacing", "BlockKind", "Emphasis"),
-    "advtext.primitives": ("Face", "Scaled", "sp_from_px", "px_from_sp"),
-    "advtext.ui.palette": (
+    "imscribe.markdown_rules": ("BlockSource", "SourceSpan", "ColumnAlign"),
+    "imscribe.description": ("Description", "BlockDescription"),
+    "imscribe.typeset_find": ("Finder", "FindIndex", "Match"),
+    "imscribe.theme": ("Theme", "Faces", "Align", "Spacing", "BlockKind", "Emphasis"),
+    "imscribe.primitives": ("Face", "Scaled", "sp_from_px", "px_from_sp"),
+    "imscribe.ui.palette": (
         "Palette",
         "DEFAULT_PALETTE",
         "DARK_PALETTE",
@@ -76,15 +76,15 @@ TYPESET_LAYER = {
         "DEFAULT_DIFF_PALETTE",
         "DARK_DIFF_PALETTE",
     ),
-    "advtext.ui.typeset_view": (
+    "imscribe.ui.typeset_view": (
         "TypesetView",
         "TypesetUnavailable",
         "SetLine",
         "HostFor",
         "Hosted",
     ),
-    "advtext.ui.typeset_stream_view": ("TypesetStreamView",),
-    "advtext.diff": (
+    "imscribe.ui.typeset_stream_view": ("TypesetStreamView",),
+    "imscribe.diff": (
         "Diff",
         "FileDiff",
         "Hunk",
@@ -95,14 +95,14 @@ TYPESET_LAYER = {
         "DiffApplyError",
         "ContextUnavailable",
     ),
-    "advtext.ui.typeset_diff_view": (
+    "imscribe.ui.typeset_diff_view": (
         "TypesetDiffView",
         "DiffLayout",
         "SyntaxColour",
         "language_for",
         "DiffHeader",
     ),
-    "advtext.ui.typeset_hosts": ("TypesetDiffFences", "HostedDiff"),
+    "imscribe.ui.typeset_hosts": ("TypesetDiffFences", "HostedDiff"),
 }
 """
 What a host draws with, by the module each name is fetched from: 65 names.
@@ -110,14 +110,14 @@ None of these modules is reference core, and none imports it.
 """
 
 HOST_REQUESTS = (
-    # advtext.typesetter: pptmstr's P1 (a kind), P18 (a way back), P2 (a verdict), and
+    # imscribe.typesetter: pptmstr's P1 (a kind), P18 (a way back), P2 (a verdict), and
     # `pairing`, which answers both and stood beside `reason` unpromised.
     "Kind",
     "kind",
     "reset",
     "pairing",
     "verdict",
-    # advtext.typeset_markdown: P7 (reader options) and P8 (blocks a host makes).
+    # imscribe.typeset_markdown: P7 (reader options) and P8 (blocks a host makes).
     "ReaderOptions",
     "MarkdownText",
     "MarkdownCode",
@@ -126,7 +126,7 @@ HOST_REQUESTS = (
     # What a `MarkdownTable` cannot be constructed without.
     "MarkdownCell",
     "ColumnAlign",
-    # advtext.ui.typeset_diff_view: P16 (whether a file header fit).
+    # imscribe.ui.typeset_diff_view: P16 (whether a file header fit).
     "DiffHeader",
 )
 """
@@ -136,14 +136,14 @@ added: all four homes were homes already.
 """
 
 FONT_FILES = {
-    # Until 2026-10-12 all four were `advtext.fontlib`'s, the reference core's
+    # Until 2026-10-12 all four were `imscribe.fontlib`'s, the reference core's
     # font reader. The table of files opens no font and has its own module; the
     # size conversion asks the library once it has fonts
-    # (`tests/test_typeset_metrics.py`). `advtext.fontlib` still has all four
+    # (`tests/test_typeset_metrics.py`). `imscribe.fontlib` still has all four
     # names, and the first three are these objects.
-    "advtext.fontfiles": ("register_font", "unregister_font", "registered_fonts"),
-    "advtext.typeset_metrics": ("em_size_for_pixel_height",),
-    "advtext.ui.fonts": ("load_faces", "LoadedFaces", "TEXT_FACES", "ALL_FACES"),
+    "imscribe.fontfiles": ("register_font", "unregister_font", "registered_fonts"),
+    "imscribe.typeset_metrics": ("em_size_for_pixel_height",),
+    "imscribe.ui.fonts": ("load_faces", "LoadedFaces", "TEXT_FACES", "ALL_FACES"),
 }
 """
 Where the font files are and the Python atlas loader: 8 names. Both modules
@@ -152,7 +152,7 @@ because the typeset layer is built on them.
 """
 
 REFERENCE_CORE = {
-    "advtext.markdown": (
+    "imscribe.markdown": (
         "build_document",
         "text_block",
         "code_block",
@@ -167,8 +167,8 @@ REFERENCE_CORE = {
         "FormulaSpan",
         "formula_spans",
     ),
-    "advtext.style": ("MetricsResolver", "fontlib_metrics", "char_measure"),
-    "advtext.ui": (
+    "imscribe.style": ("MetricsResolver", "fontlib_metrics", "char_measure"),
+    "imscribe.ui": (
         "compose",
         "compose_blocks",
         "ComposeParams",
@@ -180,7 +180,7 @@ REFERENCE_CORE = {
         "table_column_limits",
         "HostBlock",
     ),
-    "advtext.shipout": ("ship", "Point", "DrawCmd"),
+    "imscribe.shipout": ("ship", "Point", "DrawCmd"),
 }
 """
 The Python layout core's names, on the surface because their modules are in
@@ -195,26 +195,26 @@ SURFACE = {
 }
 
 REMOVED = (
-    # advtext.stream
+    # imscribe.stream
     "StreamDocument",
     "CommitPolicy",
     "live_theme",
-    # advtext.mathtext
+    # imscribe.mathtext
     "markdown_math",
     "typeset",
     "Typeset",
     "Refusal",
     "RefusalKind",
     "supported_commands",
-    # advtext.backends.imgui_draw
+    # imscribe.backends.imgui_draw
     "draw",
-    # advtext.ui.bare_view, stream_view, units, diff_view
+    # imscribe.ui.bare_view, stream_view, units, diff_view
     "BareView",
     "StreamView",
     "LayoutStats",
     "DiffView",
     "DiffFences",
-    # advtext.spans
+    # imscribe.spans
     "ColourSpan",
     "code_position",
     "colour_text",
@@ -228,20 +228,20 @@ form: the module that defined each was deleted.
 """
 
 REPLACED = {
-    "HostFor": "advtext.ui.typeset_view",
-    "SetLine": "advtext.ui.typeset_view",
-    "DiffLayout": "advtext.ui.typeset_diff_view",
-    "SyntaxColour": "advtext.ui.typeset_diff_view",
-    "language_for": "advtext.ui.typeset_diff_view",
-    "HostedDiff": "advtext.ui.typeset_hosts",
-    "FindIndex": "advtext.typeset_find",
-    "Hosted": "advtext.ui.typeset_view",
+    "HostFor": "imscribe.ui.typeset_view",
+    "SetLine": "imscribe.ui.typeset_view",
+    "DiffLayout": "imscribe.ui.typeset_diff_view",
+    "SyntaxColour": "imscribe.ui.typeset_diff_view",
+    "language_for": "imscribe.ui.typeset_diff_view",
+    "HostedDiff": "imscribe.ui.typeset_hosts",
+    "FindIndex": "imscribe.typeset_find",
+    "Hosted": "imscribe.ui.typeset_view",
 }
 """
 Eight names that were on the surface before and are on it now as the typeset
 layer's object of that name. For the first seven the old object's module was
 deleted (`bare_view`, `diff_view`, `spans`). `Hosted` is the exception:
-`advtext.ui.Hosted`, the protocol of the deleted `BareView`'s widgets, still
+`imscribe.ui.Hosted`, the protocol of the deleted `BareView`'s widgets, still
 exists for the reference compositor, and the surface's `Hosted` is no longer
 it.
 """
@@ -265,7 +265,7 @@ def _type_checking_imports() -> dict[str, str]:
     """
     Name to module for every import under `if TYPE_CHECKING:` in the package's `__init__`.
     """
-    tree = ast.parse((REPO / "advtext" / "__init__.py").read_text(encoding="utf-8"))
+    tree = ast.parse((REPO / "imscribe" / "__init__.py").read_text(encoding="utf-8"))
     found: dict[str, str] = {}
     for node in tree.body:
         if isinstance(node, ast.If) and getattr(node.test, "id", "") == "TYPE_CHECKING":
@@ -295,8 +295,8 @@ def test_the_surface_is_this_list_and_this_many() -> None:
     assert set(HOST_REQUESTS) <= set(SURFACE)
     assert len(set(SURFACE) - set(HOST_REQUESTS)) == 89
     assert {SURFACE[name] for name in HOST_REQUESTS} <= set(TYPESET_LAYER)
-    assert advtext._HOMES == SURFACE
-    assert sorted(advtext.__all__) == sorted(SURFACE)
+    assert imscribe._HOMES == SURFACE
+    assert sorted(imscribe.__all__) == sorted(SURFACE)
     assert not set(REMOVED) & set(SURFACE)
     assert len(REMOVED) == 21 and len(set(REMOVED)) == 21
     for name, home in REPLACED.items():
@@ -311,27 +311,27 @@ def test_the_three_lists_of_names_are_one_list() -> None:
     told `Theme` comes from one module while the runtime fetches it from another
     would be checking a different class from the one that runs.
     """
-    assert len(advtext.__all__) == len(set(advtext.__all__)), "a name is listed twice"
-    assert set(advtext.__all__) == set(advtext._HOMES)
-    assert _type_checking_imports() == advtext._HOMES
+    assert len(imscribe.__all__) == len(set(imscribe.__all__)), "a name is listed twice"
+    assert set(imscribe.__all__) == set(imscribe._HOMES)
+    assert _type_checking_imports() == imscribe._HOMES
 
 
 @pytest.mark.parametrize("name", sorted(SURFACE))
 def test_every_name_is_the_object_its_own_module_defines(name: str) -> None:
     """
-    `advtext.X is advtext.<home>.X`, for every X promised, and `<home>` is where X is defined.
+    `imscribe.X is imscribe.<home>.X`, for every X promised, and `<home>` is where X is defined.
 
     The second half is for classes and functions, which know their module
     (`Scaled` is `int` and knows another). The compositor's names are the
-    stated exception: their home is the package `advtext.ui`, which hands out
-    `advtext.ui.composition`'s objects.
+    stated exception: their home is the package `imscribe.ui`, which hands out
+    `imscribe.ui.composition`'s objects.
     """
     home = SURFACE[name]
-    value = getattr(advtext, name)
+    value = getattr(imscribe, name)
     assert value is getattr(importlib.import_module(home), name)
-    assert name in dir(advtext)
+    assert name in dir(imscribe)
     if isinstance(value, type | types.FunctionType) and value is not int:
-        defined = "advtext.ui.composition" if home == "advtext.ui" else home
+        defined = "imscribe.ui.composition" if home == "imscribe.ui" else home
         assert value.__module__ == defined
 
 
@@ -341,14 +341,14 @@ def test_a_name_whose_module_was_deleted_is_not_there(name: str) -> None:
     `AttributeError`, as for any name the package lacks, so `hasattr` answers False.
 
     Between the deletion and this rule a dead row raised `ModuleNotFoundError`
-    out of `hasattr(advtext, "BareView")`, which is not an answer to `hasattr`.
+    out of `hasattr(imscribe, "BareView")`, which is not an answer to `hasattr`.
     """
-    assert not hasattr(advtext, name)
+    assert not hasattr(imscribe, name)
     with pytest.raises(AttributeError, match=f"no attribute {name!r}"):
-        getattr(advtext, name)
+        getattr(imscribe, name)
     with pytest.raises(ImportError):
-        exec(f"from advtext import {name}", {})
-    assert name not in dir(advtext)
+        exec(f"from imscribe import {name}", {})
+    assert name not in dir(imscribe)
 
 
 def test_no_home_is_a_module_that_is_not_in_the_tree() -> None:
@@ -358,7 +358,7 @@ def test_no_home_is_a_module_that_is_not_in_the_tree() -> None:
     Read from the file system and not by importing, so a module deleted
     tomorrow fails here by name and not as 1 of 102 parametrised cases.
     """
-    for home in sorted(set(advtext._HOMES.values())):
+    for home in sorted(set(imscribe._HOMES.values())):
         path = REPO / home.replace(".", "/")
         assert path.with_suffix(".py").is_file() or (path / "__init__.py").is_file(), home
 
@@ -371,13 +371,13 @@ def test_the_surface_covers_what_a_host_of_the_typeset_layer_needs() -> None:
     on it rather than a quiet edit to a list. The last lines are the names a
     reader would look for that are deliberately absent: the typesetter's
     `module`, `unload`, `font` and `unsupported` (a host takes the module
-    `advtext.typesetter` for those; `advtext.module` would say nothing);
+    `imscribe.typesetter` for those; `imscribe.module` would say nothing);
     `typeset`, which was the deleted formula function and must not come back
     meaning something else; and `description_of` / `check_description`, which
-    a host that describes its own blocks takes from `advtext.description`
+    a host that describes its own blocks takes from `imscribe.description`
     with the tuples and enumerators it needs from there anyway.
     """
-    promised = set(advtext.__all__)
+    promised = set(imscribe.__all__)
     assert {"load_fonts", "ready", "reason"} <= promised
     assert {"Kind", "kind", "reset", "pairing", "verdict"} <= promised
     assert {"ReaderOptions", "MarkdownText", "MarkdownCode", "MarkdownRule"} <= promised
@@ -417,8 +417,8 @@ def test_a_host_makes_every_block_and_asks_the_kind_through_the_surface() -> Non
         import os, sys
         os.environ.pop("IMTYPESET_LIBRARY", None)
         os.environ.pop("IMTYPESET_PYTHON", None)
-        import advtext
-        from advtext import (
+        import imscribe
+        from imscribe import (
             BlockKind, ColumnAlign, DiffHeader, Kind, MarkdownCell, MarkdownCode,
             MarkdownConverter, MarkdownRule, MarkdownStream, MarkdownTable, MarkdownText,
             ReaderOptions, Theme, kind, pairing, parse_markdown, reset, verdict,
@@ -450,7 +450,7 @@ def test_a_host_makes_every_block_and_asks_the_kind_through_the_surface() -> Non
         print(kind() is installed or kind().name, pairing()["kind"] == kind().value)
         reset()
         print(kind() is installed or kind().name, [member.value for member in Kind])
-        print(verdict is advtext.typesetter.verdict, DiffHeader.__module__)
+        print(verdict is imscribe.typesetter.verdict, DiffHeader.__module__)
         heavy = ("imgui_bundle", "fontTools", "imtypeset")
         print(any(name.split(".")[0] in heavy for name in sys.modules))
         """)
@@ -459,7 +459,7 @@ def test_a_host_makes_every_block_and_asks_the_kind_through_the_surface() -> Non
         "List<String> List True",
         "True True",
         "True ['ready', 'not-installed', 'refused', 'failed', 'unsupported', 'unchecked']",
-        "True advtext.ui.typeset_diff_view",
+        "True imscribe.ui.typeset_diff_view",
         "False",
     ]
 
@@ -475,7 +475,7 @@ def test_a_diff_a_document_and_a_search_are_made_through_the_surface() -> None:
     """
     lines = _fresh(r"""
         import sys
-        from advtext import (
+        from imscribe import (
             Diff, DiffLayout, FindIndex, Finder, MarkdownConverter, RowKind, Theme,
             TypesetDiffView, TypesetStreamView, TypesetView, parse_markdown, ready,
         )
@@ -500,7 +500,7 @@ def test_a_diff_a_document_and_a_search_are_made_through_the_surface() -> None:
         print(any(name.split(".")[0] in heavy for name in sys.modules))
         core = ("units", "fontmetrics", "nodes", "pack", "badness", "style", "markdown",
                 "shipout", "selection", "linebreak", "fontlib", "math", "backends")
-        ours = [name.split(".") for name in sys.modules if name.startswith("advtext.")]
+        ours = [name.split(".") for name in sys.modules if name.startswith("imscribe.")]
         print(sorted(".".join(parts) for parts in ours if parts[1] in core))
         """)
     assert lines == [
@@ -520,18 +520,18 @@ def test_a_name_that_is_not_promised_is_an_attribute_error() -> None:
     The lazy lookup does not turn a typo into something else.
 
     `hasattr` relies on `AttributeError` specifically, and so does
-    `from advtext import nosuch`, which must stay an `ImportError`.
+    `from imscribe import nosuch`, which must stay an `ImportError`.
     """
     with pytest.raises(AttributeError, match="no attribute 'no_such_name'"):
-        advtext.no_such_name  # noqa: B018 - the access is the test
-    assert not hasattr(advtext, "DocumentView"), "a name outside the surface resolved"
+        imscribe.no_such_name  # noqa: B018 - the access is the test
+    assert not hasattr(imscribe, "DocumentView"), "a name outside the surface resolved"
     with pytest.raises(ImportError):
-        exec("from advtext import no_such_name", {})
+        exec("from imscribe import no_such_name", {})
 
 
 def test_importing_the_package_imports_nothing_else_of_it() -> None:
     """
-    `import advtext` runs one file.
+    `import imscribe` runs one file.
 
     Not the markdown parser, not the theme, not a font: a host that imports
     the package to reach one submodule pays for that submodule only.
@@ -539,58 +539,58 @@ def test_importing_the_package_imports_nothing_else_of_it() -> None:
     lines = _fresh("""
         import sys
         before = set(sys.modules)
-        import advtext
+        import imscribe
         loaded = sorted(set(sys.modules) - before)
-        print([name for name in loaded if name.startswith("advtext")])
+        print([name for name in loaded if name.startswith("imscribe")])
         heavy = ("imgui_bundle", "fontTools", "markdown_it", "imtypeset")
         print(any(name.split(".")[0] in heavy for name in loaded))
         """)
-    assert lines == ["['advtext']", "False"]
+    assert lines == ["['imscribe']", "False"]
 
 
 def test_the_typeset_layers_names_are_reached_without_the_reference_core() -> None:
     """
-    `from advtext import <all 65>` loads the modules that define them and one leaf.
+    `from imscribe import <all 65>` loads the modules that define them and one leaf.
 
     The whole of what a host of the typeset layer can take from the facade,
     in one statement, and then a theme built: what is in `sys.modules` of
-    advtext is the thirteen homes, the two packages, the selection counter
-    the views share (`advtext.ui.ownership`), and nothing else. No
-    `advtext.units`, no `advtext.fontmetrics` (the floor until
-    `advtext.primitives` existed), no node, no packer.
+    imscribe is the thirteen homes, the two packages, the selection counter
+    the views share (`imscribe.ui.ownership`), and nothing else. No
+    `imscribe.units`, no `imscribe.fontmetrics` (the floor until
+    `imscribe.primitives` existed), no node, no packer.
 
     Before the homes were the defining modules, `Theme` came through
-    `advtext.style` and `Palette` through the draw backend, and a host that
+    `imscribe.style` and `Palette` through the draw backend, and a host that
     drew through imtypeset loaded eight modules of the old core for two names.
     """
     names = ", ".join(name for group in TYPESET_LAYER.values() for name in group)
     lines = _fresh(f"""
         import sys
-        from advtext import {names}
+        from imscribe import {names}
         Theme.build()
-        print(sorted(name for name in sys.modules if name.split(".")[0] == "advtext"))
+        print(sorted(name for name in sys.modules if name.split(".")[0] == "imscribe"))
         """)
-    expected = {"advtext", "advtext.ui", "advtext.ui.ownership", *TYPESET_LAYER}
+    expected = {"imscribe", "imscribe.ui", "imscribe.ui.ownership", *TYPESET_LAYER}
     assert lines == [str(sorted(expected))]
 
 
 def test_a_replaced_name_is_the_typeset_layers_and_not_an_alias_of_the_old() -> None:
     """
-    `Hosted` is the view's protocol; `advtext.ui.Hosted` is another class and still there.
+    `Hosted` is the view's protocol; `imscribe.ui.Hosted` is another class and still there.
     """
-    from advtext.ui import typeset_hosts, typeset_view
+    from imscribe.ui import typeset_hosts, typeset_view
 
-    assert advtext.Hosted is typeset_view.Hosted is typeset_hosts.Hosted
-    assert advtext.HostFor is typeset_view.HostFor is typeset_hosts.HostFor
-    old = importlib.import_module("advtext.ui").Hosted
-    assert old is not advtext.Hosted and old.__module__ == "advtext.ui"
+    assert imscribe.Hosted is typeset_view.Hosted is typeset_hosts.Hosted
+    assert imscribe.HostFor is typeset_view.HostFor is typeset_hosts.HostFor
+    old = importlib.import_module("imscribe.ui").Hosted
+    assert old is not imscribe.Hosted and old.__module__ == "imscribe.ui"
 
 
 def test_resolving_the_whole_surface_imports_no_imgui_no_fonttools_and_no_library() -> None:
     """
-    Not only `import advtext` but every name in it, the reference core's included.
+    Not only `import imscribe` but every name in it, the reference core's included.
 
-    After touching all of `__all__` and after `from advtext import *`, none of
+    After touching all of `__all__` and after `from imscribe import *`, none of
     the three is loaded. The second line of output is the control, so the
     first is not passing because the check cannot see the modules: the same
     interpreter, one measured document later, has loaded fontTools.
@@ -601,10 +601,10 @@ def test_resolving_the_whole_surface_imports_no_imgui_no_fonttools_and_no_librar
         def loaded(prefix):
             return any(name.split(".")[0] == prefix for name in sys.modules)
 
-        import advtext
-        for name in advtext.__all__:
-            getattr(advtext, name)
-        from advtext import *
+        import imscribe
+        for name in imscribe.__all__:
+            getattr(imscribe, name)
+        from imscribe import *
         print(loaded("imgui_bundle"), loaded("fontTools"), loaded("imtypeset"))
 
         theme = Theme.build()
@@ -620,38 +620,38 @@ def test_a_submodule_is_still_reached_by_its_own_path() -> None:
 
     Everything not promised is imported from where it is defined, as before, and
     a submodule that shares no name with the surface is unaffected by the lazy
-    lookup -- `advtext.fontlib` is a module, found by the import system, and
-    never goes through `__getattr__`. `advtext.typesetter` is the one the
+    lookup -- `imscribe.fontlib` is a module, found by the import system, and
+    never goes through `__getattr__`. `imscribe.typesetter` is the one the
     examples take this way.
     """
     lines = _fresh("""
-        import advtext
-        import advtext.fontlib
-        from advtext import typesetter
-        from advtext.ui import Viewport
-        print(type(advtext.fontlib).__name__, Viewport.__module__, typesetter.__name__)
-        print(advtext.ready is typesetter.ready, advtext.load_fonts is typesetter.load_fonts)
+        import imscribe
+        import imscribe.fontlib
+        from imscribe import typesetter
+        from imscribe.ui import Viewport
+        print(type(imscribe.fontlib).__name__, Viewport.__module__, typesetter.__name__)
+        print(imscribe.ready is typesetter.ready, imscribe.load_fonts is typesetter.load_fonts)
         """)
-    assert lines == ["module advtext.ui advtext.typesetter", "True True"]
+    assert lines == ["module imscribe.ui imscribe.typesetter", "True True"]
 
 
-def _imports_of_advtext(path: Path) -> list[tuple[int, str, str]]:
+def _imports_of_imscribe(path: Path) -> list[tuple[int, str, str]]:
     """
-    `(line, module, name)` for every `from advtext... import name` in a file, wherever it is.
+    `(line, module, name)` for every `from imscribe... import name` in a file, wherever it is.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     found = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.level == 0:
             module = node.module or ""
-            if module == "advtext" or module.startswith("advtext."):
+            if module == "imscribe" or module.startswith("imscribe."):
                 found.extend((node.lineno, module, alias.name) for alias in node.names)
     return found
 
 
-def test_every_import_of_advtext_in_the_tree_names_something_that_exists() -> None:
+def test_every_import_of_imscribe_in_the_tree_names_something_that_exists() -> None:
     """
-    Every `from advtext... import name` in the package, the examples and the
+    Every `from imscribe... import name` in the package, the examples and the
     scripts: the module is there and has the name (or the name is a submodule).
 
     At module level, inside a function, and under `TYPE_CHECKING`. The last
@@ -661,14 +661,14 @@ def test_every_import_of_advtext_in_the_tree_names_something_that_exists() -> No
     A lazy import in a function body is likewise found by nothing until it runs.
     """
     files = [
-        *sorted((REPO / "advtext").rglob("*.py")),
+        *sorted((REPO / "imscribe").rglob("*.py")),
         *sorted((REPO / "examples").glob("*.py")),
         *sorted((REPO / "scripts").glob("*.py")),
     ]
     assert len(files) > 50
     wrong = []
     for path in files:
-        for line, module, name in _imports_of_advtext(path):
+        for line, module, name in _imports_of_imscribe(path):
             where = f"{path.relative_to(REPO)}:{line}: from {module} import {name}"
             try:
                 home = importlib.import_module(module)
@@ -688,9 +688,9 @@ def test_an_example_imports_from_the_package_root_and_nowhere_else_in_it(example
     """
     Names of `__all__`, and the module `typesetter`. All four examples, by source.
     """
-    found = _imports_of_advtext(REPO / "examples" / example)
-    assert found, "the example imports nothing of advtext"
-    assert {module for _line, module, _name in found} == {"advtext"}
+    found = _imports_of_imscribe(REPO / "examples" / example)
+    assert found, "the example imports nothing of imscribe"
+    assert {module for _line, module, _name in found} == {"imscribe"}
     names = {name for _line, _module, name in found}
-    assert names - {"typesetter"} <= set(advtext.__all__), sorted(names - set(advtext.__all__))
+    assert names - {"typesetter"} <= set(imscribe.__all__), sorted(names - set(imscribe.__all__))
     assert not names & set(REMOVED)

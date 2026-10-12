@@ -1,5 +1,7 @@
 # Rounding the gaps instead of the positions
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 **Status: this is what the tree draws.** The half-pixel rule it replaced is
 `docs/subpixel.md` §6.3, which remains the record of why that rule was taken and
 is superseded rather than deleted.

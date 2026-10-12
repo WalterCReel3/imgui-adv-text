@@ -4,7 +4,7 @@ A theme's `Spacing` reaches the library: the space after a sentence is what the 
 pptmstr's P23 (its `HANDOFF-advtext.md`, A2 and P23): with
 `Theme.at_pixel_height(..., spacing=Spacing.FRENCH)` one of 52 spaces of a
 paragraph was laid out a third wider than the rest (10.168 px against 7.626).
-It was the space after `waffle.`: `advtext.typesetter.base_style` made the
+It was the space after `waffle.`: `imscribe.typesetter.base_style` made the
 library's `Style` from the theme's size and nothing else, so every document was
 laid out under the library's default, `Spacing.Sentence`, whatever the theme
 said. That default is what `Spacing.EXTRA_SPACE_ONLY`, the theme's own default,
@@ -26,8 +26,8 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.theme import Spacing
+from imscribe import typesetter
+from imscribe.theme import Spacing
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,7 +54,7 @@ import sys
 
 from imgui_bundle import imgui
 
-from advtext import Align, Faces, Spacing, Theme, TypesetView, typesetter
+from imscribe import Align, Faces, Spacing, Theme, TypesetView, typesetter
 
 PROSE = sys.argv[1]
 ts = typesetter.module()

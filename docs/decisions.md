@@ -8,6 +8,9 @@ Read this before claiming a task. Where this file and a task's `detail` disagree
 this file is the older document and the task is the newer one — say so on the
 board rather than guessing.
 
+**The package was renamed `imscribe` on 2026-10-12 ("The package is renamed
+imscribe", near the end). Every section dated before that says advtext.**
+
 ---
 
 ## What is being built
@@ -1623,6 +1626,35 @@ that builder's decision, an agent's, awaiting the user; nobody reviewed it.**
 | The sdist's list gains `/demo` and `/HANDOFF-pptmstr.md` | `tests/` reads `demo/` in 39 places and the list left it out; the other handoff file was already there. Whether the suite passes from an unpacked sdist was not run |
 | The release URL in the printed requirement is `<repository>/releases/download/v<version>/<file>` | GitHub's own shape for a release asset; nothing exists at it, and the line printed above it says so |
 | Stale lines in older sections of `docs/status.md` and in the section above are not edited; the newest section names each | the file's own rule: a dated section is a record |
+
+---
+
+## The package is renamed imscribe (2026-10-12)
+
+**The user's decision, not an agent's.** Their words: "I'm really tempted by
+'imscribe' as it is a phonetic sound-a-like to 'inscribe' the word." "Being
+evocative is the win as it allows future extensions that _may_ include
+editing or other display aspects (mermaid diagrams for one)." "Let's work on
+the rename after the diff-view work. Big task but I think worthwhile."
+
+Carried out by the builder of the task RENAME, an agent, uncommitted when
+written. The rows below are how, and each is an agent's decision (the lead's
+where it says so), awaiting the user; nobody reviewed them. What a host
+changes is `HANDOFF-pptmstr.md`, "Renamed", and `docs/status.md`, 0h.
+
+| decision | reason |
+|---|---|
+| **A rename and nothing else**: no signature, no behaviour, no number moves in the same change | so that the proof is one sentence: the two gates give, test by test, what they gave on the commit before, plus one new test |
+| **No `advtext` alias package, not even for one release** (the lead) | nothing is published and pptmstr is the only consumer; an alias is code that exists to be deleted, and a host half on each name runs two copies of every module. `tests/test_rename.py` fails if the directory comes back |
+| **`pairing()`'s key `advtext_version` becomes `imscribe_version`** (the lead), with no second key under the old name | a key that names the package under a name it no longer has is wrong the day it ships. **It is the one change a host can read as data rather than as an import error**, so it is said first in the handoff. In the sorted JSON of `python -m imscribe.typesetter` it moves from second to seventh |
+| The logger is `imscribe.typesetter`; `ADVTEXT_SLOW` is `IMSCRIBE_SLOW`; messages, Dear ImGui IDs (`##imscribe-…`), the demo window's title, the temporary font directory's prefix and the stamp `scripts/visual_diff.py` writes into a PNG all take the new word | they are this package's names for itself. A PNG stamped by the old `scripts/shot.py` is not recognised by the new `scripts/visual_diff.py` as its own; `artifacts/` is generated and not committed. `make dist` no longer clears `advtext-*` files out of `dist/`, only `imscribe-*` |
+| **Three label strings that are keys of `Description.kinds` / `misfits` are renamed, and with them the same 115 keys in `tests/data/material_descriptions.json`** | the labels are text this package shows about itself. The frozen file's rule is that its values do not change; a key that repeats a label of the code under test is not a value of the old core, and no number or text in the file moved. The alternative, leaving "advtext" in three strings a host can show, was the smaller change and the wrong one. **This goes one step past the task's wording** ("only a module path string may change") and is said in the result |
+| **`demo/` is not touched**, although four of its files say advtext | its text is the input of the frozen answers; `demo/sample.md`'s link target `advtext/linebreak.py` and three other texts are in them verbatim. A sample document may name a path that does not exist |
+| The `about` lines of the four files under `tests/data` keep the old module paths | they say what was frozen and from which modules, as those were named; most of those modules are deleted |
+| **History keeps the old name**: every dated section of `docs/status.md` and of this file, both handoff files above their "Renamed" sections, and the other documents under `docs/`, which get one dated line under their title | the task's rule, and the files' own: a dated section is a record. `README.md`, the code's comments and docstrings were brought level instead, including sentences about the past ("0.1.0 was imscribe with its own Python layout core"): the package's own files say one name |
+| The tag `advtext-reference`, the repository URL and checkout path, `HANDOFF-imtypeset.md` / `HANDOFF-pptmstr.md` as file names, and every name that is pptmstr's or imtypeset's keep theirs | the tag is what imtypeset's oracle is pinned to and names the old Python core; the repository is the user's to rename; the rest is not ours |
+| **`./.venv` is left as it is**, stale `advtext-0.1.0.dist-info` included | its editable install is a path file naming the repository root, so the renamed package is found with no change; mending the metadata needs an index (`pip uninstall advtext`, `make bootstrap`), and the session had none |
+| The version stays `0.2.0.dev0` | no artefact was cut, and `.devN` already promises nothing between commits. A host pins a commit |
 
 ---
 

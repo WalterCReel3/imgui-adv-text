@@ -3,7 +3,7 @@ The Themes page and the demo's tokeniser: what a change does, counted.
 
 Five kinds of test, and which is which matters when one goes red:
 
-- **plain functions** -- `advtext.ui.pages._syntax` on strings, the schemes and
+- **plain functions** -- `imscribe.ui.pages._syntax` on strings, the schemes and
   face sets as data, `snap_height`. No ImGui, no library.
 - **the page's state without a frame** -- the four setters, the markdown
   parsed. No library: the page has its state whether or not anything draws.
@@ -22,7 +22,7 @@ Five kinds of test, and which is which matters when one goes red:
 Nothing here says how a scheme looks. The colour assertions are "this ink
 reached the vertex buffer", per scheme.
 
-**One thing of the old core is used here on purpose**: `advtext.fontlib`, as
+**One thing of the old core is used here on purpose**: `imscribe.fontlib`, as
 the independent measure in `test_the_running_text_is_set_at_the_pixel_height_asked_for`.
 `Theme.at_pixel_height` measures a face with it (`.concerns/lead--tranche-5.md`,
 decision 5), and that test checks the claim against the font file rather than
@@ -46,12 +46,12 @@ from test_page_document import (
     windowed_typeset,
 )
 
-from advtext.description import FACE_ROLES
-from advtext.theme import Align, BlockKind, Theme
-from advtext.typeset_markdown import MarkdownCode, MarkdownConverter, parse_markdown
-from advtext.ui.pages import PageContext, demo_text, discover, face_metrics
-from advtext.ui.pages import _syntax as syntax
-from advtext.ui.pages.themes import (
+from imscribe.description import FACE_ROLES
+from imscribe.theme import Align, BlockKind, Theme
+from imscribe.typeset_markdown import MarkdownCode, MarkdownConverter, parse_markdown
+from imscribe.ui.pages import PageContext, demo_text, discover, face_metrics
+from imscribe.ui.pages import _syntax as syntax
+from imscribe.ui.pages.themes import (
     COLOURS,
     FACE_SETS,
     FALLBACK_MARKDOWN,
@@ -62,8 +62,8 @@ from advtext.ui.pages.themes import (
     ThemesPage,
     snap_height,
 )
-from advtext.ui.typeset_view import TypesetUnavailable
-from advtext.units import px_from_sp
+from imscribe.ui.typeset_view import TypesetUnavailable
+from imscribe.units import px_from_sp
 
 assert unasked  # the fixture, imported: `typesetter.module()` fails the test if asked
 
@@ -246,7 +246,7 @@ def test_plain_spans_are_the_tokens_with_their_inks_in_plain_offsets() -> None:
 
 
 # What the OLD core's form inked (`_syntax.colour_spans`, since removed, over a `CodeBlock`,
-# counting in `advtext.spans.material_text(block).text`), frozen on 2026-10-11
+# counting in `imscribe.spans.material_text(block).text`), frozen on 2026-10-11
 # while both forms existed (`.concerns/T5-FB-A-scripts/spans_frozen.py`): for
 # each fence, the text the old core set the block as (tabs expanded) and the
 # ink of each span in order. `plain_spans` over the direct path's block must
@@ -289,7 +289,7 @@ def test_plain_spans_ink_what_the_old_cores_colour_spans_inked() -> None:
 
 def test_the_old_cores_form_is_gone_with_its_last_caller() -> None:
     """
-    `colour_spans` coloured an old-core `CodeBlock` through `advtext.spans`.
+    `colour_spans` coloured an old-core `CodeBlock` through `imscribe.spans`.
     Nothing calls it any more, and the module names no old-core module at all.
     """
     assert not hasattr(syntax, "colour_spans") and "colour_spans" not in syntax.__all__
@@ -297,7 +297,7 @@ def test_the_old_cores_form_is_gone_with_its_last_caller() -> None:
     imports = [
         line for line in source.splitlines() if line.lstrip().startswith(("from ", "import "))
     ]
-    assert not [line for line in imports if "advtext" in line], imports
+    assert not [line for line in imports if "imscribe" in line], imports
 
 
 def test_the_page_scan_does_not_take_the_tokeniser_for_a_page() -> None:
@@ -368,11 +368,11 @@ def test_the_running_text_is_set_at_the_pixel_height_asked_for(
     """
     The claim behind the reference line: ascent plus descent of the body, in pixels.
 
-    Checked against `advtext.fontlib` directly rather than against
+    Checked against `imscribe.fontlib` directly rather than against
     `Theme.at_pixel_height`'s own arithmetic (the module docstring: this is
     the one use of the old core this file keeps, and why).
     """
-    from advtext import fontlib
+    from imscribe import fontlib
 
     theme = face_set.theme(height, 96.0, face_metrics)
     size = theme.style(BlockKind.PARAGRAPH).font.size
@@ -407,11 +407,11 @@ def test_the_schemes_roles_are_the_palettes_own_merge() -> None:
     """
     The four schemes are made with `Palette.with_roles`. The page carried a
     copy of that merge (`_roled`) while the method read `BlockKind` from
-    `advtext.style`, so that importing the page did not load the measuring
-    half; the method reads `advtext.theme` now and the copy is gone
+    `imscribe.style`, so that importing the page did not load the measuring
+    half; the method reads `imscribe.theme` now and the copy is gone
     (`tests/test_typeset_closure.py` holds what importing the page loads).
     """
-    from advtext.ui.pages import themes
+    from imscribe.ui.pages import themes
 
     assert not hasattr(themes, "_roled")
     assert all(colours.palette.roles for colours in COLOURS)
@@ -536,7 +536,7 @@ def _frame(
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*size))
-        imgui.begin("##advtext-themes-test", None, imgui.WindowFlags_.no_decoration.value)
+        imgui.begin("##imscribe-themes-test", None, imgui.WindowFlags_.no_decoration.value)
         try:
             (page.draw if draw is None else draw)()
         finally:
@@ -881,12 +881,12 @@ def test_an_exception_that_is_not_the_librarys_is_a_bug_and_propagates(
 
 _TYPESET = r"""
 import dataclasses, statistics
-from advtext.description import FACE_ROLES
-from advtext.typeset_markdown import MarkdownCode, MarkdownConverter
-from advtext.ui.pages import _syntax as syntax
-from advtext.ui.pages import themes as page
-from advtext.ui.pages.themes import COLOURS, FACE_SETS, ThemesPage
-from advtext.theme import BlockKind
+from imscribe.description import FACE_ROLES
+from imscribe.typeset_markdown import MarkdownCode, MarkdownConverter
+from imscribe.ui.pages import _syntax as syntax
+from imscribe.ui.pages import themes as page
+from imscribe.ui.pages.themes import COLOURS, FACE_SETS, ThemesPage
+from imscribe.theme import BlockKind
 
 PARKED = (SIZE[0] - 2.0, 2.0)
 made = ThemesPage(context("themes"))
@@ -907,7 +907,7 @@ def step(count=1, size=SIZE, at=None, left=None, wheel=None, collect=True):
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(*size))
-            imgui.begin("##advtext-themes-child", None, imgui.WindowFlags_.no_decoration.value)
+            imgui.begin("##imscribe-themes-child", None, imgui.WindowFlags_.no_decoration.value)
             try:
                 made.draw()
             finally:
@@ -1251,7 +1251,7 @@ def watch(app, made, frame):
         made.set_colours(0, made.panes[1].colours)
     elif frame == 10:
         report["palette"] = made.last.line()
-        from advtext.ui.pages.themes import FACE_SETS
+        from imscribe.ui.pages.themes import FACE_SETS
         made.set_face_set(FACE_SETS[1])
     elif frame == 14:
         report["faces"] = made.last.line()

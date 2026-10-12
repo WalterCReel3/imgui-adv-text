@@ -28,7 +28,7 @@ import itertools
 
 import pytest
 
-from advtext.linebreak import (
+from imscribe.linebreak import (
     BreakPass,
     Fitness,
     LineBreakParams,
@@ -37,7 +37,7 @@ from advtext.linebreak import (
     ParShape,
     break_paragraph,
 )
-from advtext.nodes import (
+from imscribe.nodes import (
     EJECT_PENALTY,
     INF_PENALTY,
     Box,
@@ -53,8 +53,8 @@ from advtext.nodes import (
     Node,
     Penalty,
 )
-from advtext.pack import CharDimens, PackFitness
-from advtext.units import GlueOrder, sp_from_pt
+from imscribe.pack import CharDimens, PackFitness
+from imscribe.units import GlueOrder, sp_from_pt
 
 PT = sp_from_pt(1.0)
 SPACE = GlueSpec(width=6 * PT, stretch=4 * PT, shrink=2 * PT)

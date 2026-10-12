@@ -1,15 +1,15 @@
 r"""
-`advtext.typeset_markdown`: markdown to a block description with no node made.
+`imscribe.typeset_markdown`: markdown to a block description with no node made.
 
 Five groups.
 
-1.  **What is loaded.** In fresh interpreters: `advtext.markdown_rules` loads
-    nothing else of advtext; `advtext.typeset_markdown` loads
-    `advtext.description`, `advtext.theme` and the one leaf THAT loads, and
+1.  **What is loaded.** In fresh interpreters: `imscribe.markdown_rules` loads
+    nothing else of imscribe; `imscribe.typeset_markdown` loads
+    `imscribe.description`, `imscribe.theme` and the one leaf THAT loads, and
     not the modules that make or measure nodes for a document. The names
-    moved out of `advtext.markdown` are the same objects in both places, and
-    the description types are `advtext.description`'s, the very objects
-    `advtext.typesetter` has (`tests/test_description.py` holds the identity).
+    moved out of `imscribe.markdown` are the same objects in both places, and
+    the description types are `imscribe.description`'s, the very objects
+    `imscribe.typesetter` has (`tests/test_description.py` holds the identity).
 2.  **The oracle, frozen.** The direct description against what
     `Converter(theme).describe(build_document(source, ...).blocks)` answered,
     all seven fields, for every markdown file under `demo/`, a corpus of
@@ -51,13 +51,13 @@ import material_frozen
 import pytest
 import test_markdown as markdown_tests
 
-from advtext import markdown as markdown_module
-from advtext import markdown_rules, typesetter
-from advtext import typeset_markdown as direct
-from advtext.description import RunDescription
-from advtext.style import fontlib_metrics
-from advtext.theme import Align, BlockKind, Theme
-from advtext.typeset_markdown import (
+from imscribe import markdown as markdown_module
+from imscribe import markdown_rules, typesetter
+from imscribe import typeset_markdown as direct
+from imscribe.description import RunDescription
+from imscribe.style import fontlib_metrics
+from imscribe.theme import Align, BlockKind, Theme
+from imscribe.typeset_markdown import (
     BLOCK_TABLE_HEADER,
     KIND_HOST,
     KIND_TABLE,
@@ -72,21 +72,21 @@ from advtext.typeset_markdown import (
     describe_markdown,
     parse_markdown,
 )
-from advtext.units import sp_from_px
+from imscribe.units import sp_from_px
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DEMOS = sorted((_ROOT / "demo").rglob("*.md"))
 _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
 
 KERNS = "kerns dropped (imtypeset kerns for itself)"
-STOOD_IN = "characters no face has (advtext sets U+FFFD on the node; imtypeset stands in itself)"
+STOOD_IN = "characters no face has (imscribe sets U+FFFD on the node; imtypeset stands in itself)"
 
 
 def _refuses(source: str, display: bool, size: int) -> bool:
     """
     The old math core's decision, for the runs that show everything else equal.
 
-    Frozen: `advtext.mathtext` is gone. A formula it was never asked about
+    Frozen: `imscribe.mathtext` is gone. A formula it was never asked about
     raises, so a new source cannot pass by being refused nothing.
     """
     return material_frozen.refuses(source, display, size)
@@ -212,14 +212,14 @@ import json, sys
 import importlib
 importlib.import_module(sys.argv[1])
 def loaded():
-    return sorted(name for name in sys.modules if name == "advtext" or name.startswith("advtext."))
+    return sorted(n for n in sys.modules if n == "imscribe" or n.startswith("imscribe."))
 before = loaded()
 themed = []
 used = []
-if sys.argv[1] == "advtext.typeset_markdown":
+if sys.argv[1] == "imscribe.typeset_markdown":
     from pathlib import Path
-    from advtext.theme import Theme
-    from advtext import typeset_markdown as direct
+    from imscribe.theme import Theme
+    from imscribe import typeset_markdown as direct
     theme = Theme.build()
     themed = loaded()
     for path in sorted(Path("demo").rglob("*.md")):
@@ -241,42 +241,42 @@ print(json.dumps({
 }))
 """
 
-# What `import advtext.theme` loads: itself and one leaf that imports nothing
-# of advtext. Until tranche 3 `Theme` was in `advtext.style`, whose measuring
+# What `import imscribe.theme` loads: itself and one leaf that imports nothing
+# of imscribe. Until tranche 3 `Theme` was in `imscribe.style`, whose measuring
 # half brought `nodes`, `pack` and `badness` with it; until T5-B2 the leaves
-# were two modules of the reference core, `advtext.units` and
-# `advtext.fontmetrics`.
-_THEME_LOADS = {"advtext.primitives", "advtext.theme"}
+# were two modules of the reference core, `imscribe.units` and
+# `imscribe.fontmetrics`.
+_THEME_LOADS = {"imscribe.primitives", "imscribe.theme"}
 
 # What a document's nodes are made, measured, shipped or set with. None of it
 # may be loaded by reading markdown directly.
 _NOT_LOADED = (
-    "advtext.markdown",
-    "advtext.style",
-    "advtext.shipout",
-    "advtext.fontlib",
-    "advtext.mathtext",
-    "advtext.math",
-    "advtext.linebreak",
-    "advtext.selection",
-    "advtext.spans",
-    "advtext.stream",
-    "advtext.typesetter",
-    "advtext.ui",
-    "advtext.backends",
+    "imscribe.markdown",
+    "imscribe.style",
+    "imscribe.shipout",
+    "imscribe.fontlib",
+    "imscribe.mathtext",
+    "imscribe.math",
+    "imscribe.linebreak",
+    "imscribe.selection",
+    "imscribe.spans",
+    "imscribe.stream",
+    "imscribe.typesetter",
+    "imscribe.ui",
+    "imscribe.backends",
 )
 
 
-def test_the_parser_rules_load_nothing_else_of_advtext() -> None:
-    report = _child(_LOADED, _without(), "advtext.markdown_rules")
-    assert report["before"] == ["advtext", "advtext.markdown_rules"]
+def test_the_parser_rules_load_nothing_else_of_imscribe() -> None:
+    report = _child(_LOADED, _without(), "imscribe.markdown_rules")
+    assert report["before"] == ["imscribe", "imscribe.markdown_rules"]
     assert report["markdown_it"] and report["heavy"] == []
 
 
 def test_reading_markdown_directly_loads_the_theme_the_description_and_no_more() -> None:
-    report = _child(_LOADED, _without(), "advtext.typeset_markdown")
+    report = _child(_LOADED, _without(), "imscribe.typeset_markdown")
     expected = sorted(
-        {"advtext", "advtext.description", "advtext.markdown_rules", "advtext.typeset_markdown"}
+        {"imscribe", "imscribe.description", "imscribe.markdown_rules", "imscribe.typeset_markdown"}
         | _THEME_LOADS
     )
     assert report["before"] == expected
@@ -295,19 +295,19 @@ def test_reading_markdown_directly_loads_the_theme_the_description_and_no_more()
 
 
 def test_the_theme_alone_loads_exactly_what_the_test_above_blames_on_it() -> None:
-    report = _child(_LOADED, _without(), "advtext.theme")
-    assert set(report["before"]) == {"advtext"} | _THEME_LOADS
+    report = _child(_LOADED, _without(), "imscribe.theme")
+    assert set(report["before"]) == {"imscribe"} | _THEME_LOADS
 
 
 def test_every_name_moved_out_of_markdown_is_the_same_object_there() -> None:
     moved = [
         name
         for name, value in vars(markdown_rules).items()
-        if getattr(value, "__module__", None) == "advtext.markdown_rules"
+        if getattr(value, "__module__", None) == "imscribe.markdown_rules"
     ]
     # Four names were ADDED to the rules module after the move (2026-10-12, a
     # host's reader options; the last two are pptmstr's P32) and were never in
-    # `advtext.markdown`. Named, so that a fifth arriving unannounced still
+    # `imscribe.markdown`. Named, so that a fifth arriving unannounced still
     # fails here.
     added = {"_written_stars", "_reader_parser", "_written_backslashes", "_written_cell_pipes"}
     assert added <= set(moved) and not any(hasattr(markdown_module, name) for name in added)
@@ -318,13 +318,13 @@ def test_every_name_moved_out_of_markdown_is_the_same_object_there() -> None:
     assert {"_parse", "_parser", "_build_parser", "_line_starts", "_span"} <= set(moved)
     for name in moved:
         assert getattr(markdown_module, name) is getattr(markdown_rules, name), name
-    assert markdown_module.build_document.__module__ == "advtext.markdown"
+    assert markdown_module.build_document.__module__ == "imscribe.markdown"
 
 
 def test_the_description_types_here_are_the_typesetters_own() -> None:
     """
     They were copies, equal field for field (SW-R1's finding R8). Both
-    modules take them from `advtext.description` now;
+    modules take them from `imscribe.description` now;
     `tests/test_description.py` holds every name. Here, the two that the
     oracle below leans on.
     """
@@ -557,7 +557,7 @@ def test_generated_sources_are_described_directly_as_the_material_path_describes
         "list markers",
         "links (Run.tag into a host table)",
         "formulas set (an explicit Formula run)",
-        "formulas refused by advtext's builder (their source, in the code face)",
+        "formulas refused by imscribe's builder (their source, in the code face)",
         "display formulas not closed yet (source so far)",
         "CodeBlock",
         "RuleBlock",
@@ -988,7 +988,7 @@ def test_the_two_converters_give_a_table_the_same_block() -> None:
 @pytest.mark.parametrize("path", _DEMOS, ids=lambda p: str(p.relative_to(_ROOT / "demo")))
 def test_the_source_map_is_build_documents(path: Path) -> None:
     """
-    Against the source map `advtext.markdown.build_document` answered
+    Against the source map `imscribe.markdown.build_document` answered
     (frozen: each block's span and top, lines and offsets).
     """
     source = path.read_text(encoding="utf-8")
@@ -1097,7 +1097,7 @@ def test_an_awkward_source_streams_a_character_at_a_time(name: str) -> None:
 @pytest.mark.parametrize("name", ["ADVERSARIAL", "DOCUMENTS", "REVIEW_5", "TABLES"])
 def test_the_sources_the_old_stream_is_held_to_stream_here_too(name: str) -> None:
     # The corpora of the old stream's own tests (`tests/test_stream.py`, deleted with
-    # `advtext.stream` in tranche 5; the sources are kept in
+    # `imscribe.stream` in tranche 5; the sources are kept in
     # `tests/data/stream_corpora.json`): what `StreamDocument`'s commit rule was argued
     # from and tested on. The same rule is here, so the same sources.
     corpus = material_frozen.corpora()[name]
@@ -1109,7 +1109,7 @@ def test_the_sources_the_old_stream_is_held_to_stream_here_too(name: str) -> Non
 
 
 def test_what_the_commit_rule_must_not_commit_early() -> None:
-    # `advtext.stream`'s four: an unfinished line can still become anything.
+    # `imscribe.stream`'s four: an unfinished line can still become anything.
     for source in (
         "para\n#tag\n\nend\n",
         "para\n```py`x\n\nend\n",
@@ -1353,7 +1353,7 @@ def test_a_followed_fence_commits_when_its_closing_line_ends_and_a_table_at_its_
 ):
     """
     One line earlier than the rule for every other block, as in
-    `advtext.stream`: the alternative is the whole block read again for
+    `imscribe.stream`: the alternative is the whole block read again for
     every piece of the line that follows it.
     """
     stream = MarkdownStream(_DEFAULT)
@@ -1403,10 +1403,10 @@ def test_the_kept_children_of_a_long_list_are_the_same_objects_read_after_read()
 
 def test_the_resume_helpers_copied_from_markdown_have_not_drifted() -> None:
     """
-    `_resume_point` and what it calls are `advtext.markdown`'s, copied here
+    `_resume_point` and what it calls are `imscribe.markdown`'s, copied here
     because that module imports the layout core (the module says so where
     they stand). For as long as both exist, their source is the same text.
-    The two patterns that were `advtext.stream`'s are held to what they were
+    The two patterns that were `imscribe.stream`'s are held to what they were
     when that module was deleted (frozen).
     """
     import inspect
@@ -1481,7 +1481,7 @@ def test_a_math_closer_at_the_end_of_a_stream_waits_for_what_follows() -> None:
 _LIBRARY = r"""
 import json, re, sys
 from pathlib import Path
-from advtext import typesetter
+from imscribe import typesetter
 
 ts = typesetter.module()
 if ts is None:
@@ -1489,10 +1489,10 @@ if ts is None:
     sys.exit(0)
 
 from imgui_bundle import imgui
-from advtext import typeset_markdown as direct
-from advtext.theme import Theme
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import TypesetView
+from imscribe import typeset_markdown as direct
+from imscribe.theme import Theme
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import TypesetView
 
 ROOT = Path(sys.argv[1])
 sys.path.insert(0, str(ROOT / "tests"))

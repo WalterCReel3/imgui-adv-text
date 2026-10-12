@@ -11,7 +11,7 @@ What pptmstr, the first host, asked next (its P26 to P29), each reproduced first
   as `a b c` while `texts` showed every space. The library sets white space
   one way and has no flag that keeps it (the typesetting core's to offer);
   the view now records the text as it is set
-  (`advtext.typeset_markdown.text_as_set`).
+  (`imscribe.typeset_markdown.text_as_set`).
 - **P29** a tab in a fenced block was expanded to spaces before the library
   saw it, so a copy had spaces. The library's stops are the ones the spaces
   went to, measured here, so the tab is handed through.
@@ -40,11 +40,11 @@ from typing import Any
 import material_frozen
 import pytest
 
-from advtext import typesetter
-from advtext.description import KIND_CODE, KIND_LIST_ITEM, KIND_PARAGRAPH, RUN_FORMULA
-from advtext.markdown_rules import TAB_WIDTH
-from advtext.theme import BlockKind, Theme
-from advtext.typeset_markdown import (
+from imscribe import typesetter
+from imscribe.description import KIND_CODE, KIND_LIST_ITEM, KIND_PARAGRAPH, RUN_FORMULA
+from imscribe.markdown_rules import TAB_WIDTH
+from imscribe.theme import BlockKind, Theme
+from imscribe.typeset_markdown import (
     FormulaRange,
     LinkRange,
     MarkdownCode,
@@ -469,16 +469,16 @@ from dataclasses import replace
 
 from imgui_bundle import imgui
 
-from advtext import typesetter
-from advtext.description import (
+from imscribe import typesetter
+from imscribe.description import (
     KIND_CODE, BlockDescription, RunDescription, StyleDescription, description_of,
 )
-from advtext.theme import BlockKind, Theme
-from advtext.typeset_markdown import (
+from imscribe.theme import BlockKind, Theme
+from imscribe.typeset_markdown import (
     MarkdownCode, MarkdownStream, MarkdownText, ReaderOptions, parse_markdown,
 )
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import TypesetView
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import TypesetView
 
 report = {"module": typesetter.module() is not None,
           "load_start": open("/proc/loadavg").read().split()[:3]}
@@ -553,7 +553,7 @@ report["p26"] = {
 report["p26_px"] = {
     "item": theme.px_per_inch and MarkdownStream(theme) and None,
 }
-from advtext.typeset_markdown import MarkdownConverter
+from imscribe.typeset_markdown import MarkdownConverter
 px = MarkdownConverter(theme).px
 report["p26_px"] = {"item": px(theme.style(BlockKind.BULLET_ITEM).space_below),
                     "paragraph": px(paragraph.space_below),
@@ -677,7 +677,7 @@ report["p28"]["hard"] = {"texts": hard.texts[0], "copy": whole(hard),
                          "lines": [[l.start, l.end] for l in hard.set_lines()]}
 # Runs and links land on the characters they covered.
 LINK = host_text("see   the    docs   now", links=(
-    __import__("advtext.typeset_markdown", fromlist=["LinkRange"]).LinkRange(6, 17, "https://d"),))
+    __import__("imscribe.typeset_markdown", fromlist=["LinkRange"]).LinkRange(6, 17, "https://d"),))
 linked = shown([LINK], theme=theme)
 report["p28"]["link"] = {"texts": linked.texts[0],
                          "rows": [[row.start, row.end, row.target] for row in linked.links]}

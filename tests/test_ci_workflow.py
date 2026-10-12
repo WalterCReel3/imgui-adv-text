@@ -439,7 +439,7 @@ def test_the_plain_job_is_bootstrap_then_check_and_never_meets_imtypeset() -> No
     So the plain job builds nothing of it, opts into nothing, and has a step
     that fails if a checkout, a built pair, either variable or an installed
     distribution is there after all. (When imtypeset becomes a declared
-    dependency of advtext, that step goes red and the job's meaning has to be
+    dependency of imscribe, that step goes red and the job's meaning has to be
     decided again; that is what it is for.)
     """
     plain = _workflow(_CI)["jobs"]["plain"]
@@ -573,7 +573,7 @@ def test_a_step_either_runs_or_uses_an_action_at_a_named_major_version() -> None
 def test_the_checkout_leaves_no_token_in_the_repository_the_build_fetches_from() -> None:
     """
     `make typeset-lib` fetches another repository with whatever git finds
-    configured; advtext's own token is not left where it would be sent along.
+    configured; imscribe's own token is not left where it would be sent along.
     """
     for name, job in _workflow(_CI)["jobs"].items():
         checkouts = [s for s in _steps(job) if s.get("uses", "").startswith("actions/checkout@")]
@@ -614,7 +614,7 @@ def test_the_ref_file_holds_one_full_commit_hash() -> None:
 def test_the_ref_is_the_one_the_handoff_names() -> None:
     """
     The handoff file is the channel to the imtypeset team and names the ref
-    advtext builds against by its short hash; the two move together.
+    imscribe builds against by its short hash; the two move together.
     """
     handoff = _HANDOFF.read_text(encoding="utf-8")
     assert f"`{_ref_lines()[0][:7]}`" in handoff

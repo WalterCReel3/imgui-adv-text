@@ -13,7 +13,7 @@ draws without the library, and the page itself in frames and in a window.
 2. The page with no library, in frames of a real `ImGuiContext` with no
    backend and once in a real window: it draws one line saying why not, and
    nothing else. This is all the pytest process can draw:
-   `advtext.typesetter.ready()` is never true there, also under
+   `imscribe.typesetter.ready()` is never true there, also under
    `make test TYPESET=1`.
 3. The page as imtypeset draws it, in one child of real ImGui frames with no
    window (`_HEADLESS`): the session alone, for what it loads; the page
@@ -46,9 +46,9 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import (
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import (
     MarkdownCode,
     MarkdownConverter,
     MarkdownStream,
@@ -56,11 +56,11 @@ from advtext.typeset_markdown import (
     MarkdownText,
     parse_markdown,
 )
-from advtext.ui import pages
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import stream as page
-from advtext.ui.pages.stream import SOURCES, Cost, Lane, Session, readouts, tokens
-from advtext.ui.pages.typeset import NOT_DRAWING, why_not
+from imscribe.ui import pages
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import stream as page
+from imscribe.ui.pages.stream import SOURCES, Cost, Lane, Session, readouts, tokens
+from imscribe.ui.pages.typeset import NOT_DRAWING, why_not
 
 if TYPE_CHECKING:
     from conftest import Window
@@ -492,7 +492,7 @@ def test_the_report_is_counts(theme: Theme) -> None:
 
 
 def test_the_page_is_discovered_after_the_original_five() -> None:
-    from advtext.ui.app import parse_tab_request
+    from imscribe.ui.app import parse_tab_request
 
     found = pages.require()
     names = [entry.name for entry in found.pages]
@@ -542,7 +542,7 @@ def _frames(draw: Any, count: int, seconds: float = FRAME) -> Any:
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(1300.0, 800.0))
-            imgui.begin("##advtext-stream-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+            imgui.begin("##imscribe-stream-page-test", None, imgui.WindowFlags_.no_title_bar.value)
             try:
                 draw()
             finally:
@@ -593,7 +593,7 @@ def test_the_line_names_imtypeset_and_the_reason() -> None:
     the page's own `reason`, which without the library is `why_not()`'s
     sentence and after a failure is what the failure said, for good.
     """
-    from advtext.ui.pages.typeset import not_drawing
+    from imscribe.ui.pages.typeset import not_drawing
 
     made = page.StreamPage(_context("stream"))
     assert not_drawing(made.reason).startswith(NOT_DRAWING + ": ")
@@ -681,20 +681,20 @@ def test_a_typeset_unavailable_out_of_a_frame_stays_in_the_page_and_anything_els
 # ----------------------------------------------------------------------
 
 OLD_MODULES = (
-    "advtext.stream",
-    "advtext.markdown",
-    "advtext.mathtext",
-    "advtext.style",
-    "advtext.spans",
-    "advtext.fontlib",
-    "advtext.units",
-    "advtext.backends",
-    "advtext.ui.bare_view",
-    "advtext.ui.stream_view",
-    "advtext.ui.document_view",
-    "advtext.ui.diff_view",
-    "advtext.ui.units",
-    "advtext.ui.composition",
+    "imscribe.stream",
+    "imscribe.markdown",
+    "imscribe.mathtext",
+    "imscribe.style",
+    "imscribe.spans",
+    "imscribe.fontlib",
+    "imscribe.units",
+    "imscribe.backends",
+    "imscribe.ui.bare_view",
+    "imscribe.ui.stream_view",
+    "imscribe.ui.document_view",
+    "imscribe.ui.diff_view",
+    "imscribe.ui.units",
+    "imscribe.ui.composition",
 )
 """
 What a page of this task may not import anywhere in its source, a function's
@@ -721,8 +721,8 @@ def test_the_page_imports_nothing_of_the_old_core_or_the_old_views_even_lazily()
     """
     Read from the source, so an import inside a function counts.
     """
-    found = imports_of(_ROOT / "advtext" / "ui" / "pages" / "stream.py")
-    assert "advtext.ui.typeset_stream_view" in found and "advtext.typeset_markdown" in found
+    found = imports_of(_ROOT / "imscribe" / "ui" / "pages" / "stream.py")
+    assert "imscribe.ui.typeset_stream_view" in found and "imscribe.typeset_markdown" in found
     for name in found:
         for old in OLD_MODULES:
             assert name != old and not name.startswith(old + "."), name
@@ -730,14 +730,14 @@ def test_the_page_imports_nothing_of_the_old_core_or_the_old_views_even_lazily()
 
 _CLOSURE = r"""
 import json, sys
-import advtext.ui.pages.stream
-print("REPORT " + json.dumps(sorted(name for name in sys.modules if name.startswith("advtext"))))
+import imscribe.ui.pages.stream
+print("REPORT " + json.dumps(sorted(name for name in sys.modules if name.startswith("imscribe"))))
 """
 
 
 def test_importing_the_page_loads_none_of_the_old_core() -> None:
     """
-    None of it: `advtext.units` and `advtext.fontmetrics` were the floor of
+    None of it: `imscribe.units` and `imscribe.fontmetrics` were the floor of
     everything that names a `Theme` until T5-B2
     (`tests/test_typeset_closure.py`, whose list of the old core this reads).
     """
@@ -755,9 +755,9 @@ def test_importing_the_page_loads_none_of_the_old_core() -> None:
     )
     assert done.returncode == 0, done.stdout + done.stderr
     loaded = set(json.loads(done.stdout.split("REPORT ", 1)[1]))
-    assert "advtext.ui.pages.stream" in loaded and "advtext.ui.typeset_stream_view" in loaded
+    assert "imscribe.ui.pages.stream" in loaded and "imscribe.ui.typeset_stream_view" in loaded
     assert loaded & OLD_CORE == THEME, sorted(loaded & OLD_CORE)
-    for name in ("advtext.stream", "advtext.markdown", "advtext.style"):
+    for name in ("imscribe.stream", "imscribe.markdown", "imscribe.style"):
         assert name not in loaded, name
 
 
@@ -771,12 +771,12 @@ import time
 
 from imgui_bundle import hello_imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
 
 WANT_LIBRARY = sys.argv[1] == "with"
 state = {"frames": 0, "streaming": 0, "spent": 0.0}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def watched_gui(self):
@@ -822,8 +822,8 @@ def watched_gui(self):
             hello_imgui.get_runner_params().app_shall_exit = True
 
 
-advtext_app.App.gui = watched_gui
-advtext_app.run(tab="stream:prose,120")
+imscribe_app.App.gui = watched_gui
+imscribe_app.run(tab="stream:prose,120")
 """
 
 
@@ -921,9 +921,9 @@ def test_with_the_library_the_page_streams_through_imtypeset_in_a_real_window(
 _HEADLESS = r"""
 import json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.ui.pages import stream as page
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.ui.pages import stream as page
 
 OLD = json.loads(sys.argv[1])
 ts = typesetter.module()
@@ -945,7 +945,7 @@ def frames(draw, count, seconds=1.0 / 60.0, width=1300.0):
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(width, 800.0))
-            imgui.begin("##advtext-stream-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+            imgui.begin("##imscribe-stream-page-test", None, imgui.WindowFlags_.no_title_bar.value)
             try:
                 draw()
             finally:
@@ -977,7 +977,7 @@ def told(made):
         "readouts": list(page.readouts(session)), "report": made.report(),
     }
 
-# 1. The session alone, before anything else of advtext is imported: what the page's path loads.
+# 1. The session alone, before anything else of imscribe is imported: what the page's path loads.
 session = page.Session(theme=Theme.build(), tokens_per_second=600.0,
                        source=next(s for s in page.SOURCES if s.key == "prose"))
 unmade = [lane.view is None for lane in session.lanes]
@@ -993,7 +993,7 @@ def alone():
 frames(alone, 20)
 report["alone"] = {
     "old": sorted(name for name in sys.modules if name in OLD),
-    "advtext": sorted(name for name in sys.modules if name.startswith("advtext")),
+    "imscribe": sorted(name for name in sys.modules if name.startswith("imscribe")),
     "unmade": unmade, "fed": session.fed, "lanes": [lane_of(lane) for lane in session.lanes],
 }
 # A tick with no frame feeds and parses, and counts nothing that a draw did not show.
@@ -1003,7 +1003,7 @@ session.tick(1.0 / 60.0)
 report["alone"]["tick"] = [session.fed, [lane.moved for lane in session.lanes] == before,
                            [lane.parse.count - was for lane, was in zip(session.lanes, samples)]]
 
-from advtext.ui.app import App
+from imscribe.ui.app import App
 
 def app_of(spec):
     return App(source="# t\n\nx\n", columns_source="x\n", open_tab=spec)
@@ -1066,7 +1066,7 @@ report["after"] = {"module": typesetter.module() is not None, "ready": typesette
 
 # 5. A draw that raises with the library still ready: the page keeps the sentence, finishes
 # the frame without an error, and is the one line from the next frame on.
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 real_draw = TypesetView.draw
 def failing(self, **kwargs):
     raise TypesetUnavailable("raised by the test")
@@ -1148,18 +1148,18 @@ def typeset() -> dict[str, Any]:
 def test_the_session_loads_no_old_view_and_no_old_stream(typeset: dict[str, Any]) -> None:
     """
     Twenty frames of both lanes, drawn, in a process that had imported the page
-    and a theme and nothing else of advtext: NOTHING is loaded of the old
-    core. Until 2026-10-12 it was `advtext.fontlib`, which
+    and a theme and nothing else of imscribe: NOTHING is loaded of the old
+    core. Until 2026-10-12 it was `imscribe.fontlib`, which
     `typesetter.load_fonts` asked where the font files are, and the
-    `advtext.fontmetrics` it imports; the files are `advtext.fontfiles`'
+    `imscribe.fontmetrics` it imports; the files are `imscribe.fontfiles`'
     now. Building a theme loads none of it since T5-B2. Neither
-    `advtext.stream` nor `advtext.markdown`, and no view of the old core. The
+    `imscribe.stream` nor `imscribe.markdown`, and no view of the old core. The
     lanes had no view until their first `show`.
     """
     alone = typeset["alone"]
     assert set(alone["old"]) == set(), alone["old"]
-    for name in ("advtext.stream", "advtext.markdown", "advtext.style", "advtext.mathtext"):
-        assert name not in alone["advtext"], name
+    for name in ("imscribe.stream", "imscribe.markdown", "imscribe.style", "imscribe.mathtext"):
+        assert name not in alone["imscribe"], name
     assert alone["unmade"] == [True, True]
     assert alone["fed"] == 200
     for lane in alone["lanes"]:

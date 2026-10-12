@@ -8,7 +8,7 @@ be.
 
 **One view, drawn by the imtypeset library** (branch
 `experimental/imtypeset-adoption`). The diff is drawn by
-`advtext.ui.typeset_diff_view.TypesetDiffView`, whose text is set and drawn by
+`imscribe.ui.typeset_diff_view.TypesetDiffView`, whose text is set and drawn by
 the imtypeset library, and by nothing else: without the library this prints
 one line to standard error, `imtypeset is not drawing: <the reason>`, and
 exits with status 1, before any window opens. Everything is imported from the
@@ -54,7 +54,7 @@ fenced block in a chat, `git` output). From the texts the view can expand
 collapsed context, and a text with no final newline is described correctly;
 `difflib.unified_diff` over lines kept with their ends runs such a last line
 into the next one, and nothing reading the result can undo that
-(`advtext.diff`, `Diff.from_unified`, has the example).
+(`imscribe.diff`, `Diff.from_unified`, has the example).
 
 ## Two things a host has to get right
 
@@ -85,7 +85,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from advtext import (
+from imscribe import (
     DARK_PALETTE,
     Diff,
     DiffLayout,
@@ -96,7 +96,7 @@ from advtext import (
     typesetter,
 )
 
-WINDOW_TITLE = "advtext: a diff"
+WINDOW_TITLE = "imscribe: a diff"
 NOT_DRAWING = "imtypeset is not drawing"
 
 LABEL = "greet.py"

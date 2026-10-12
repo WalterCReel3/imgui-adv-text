@@ -30,10 +30,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext.ui import app as app_module
-from advtext.ui import pages
-from advtext.ui.app import App, TabRequest, parse_tab_request, sidebar_rows
-from advtext.ui.pages import Discovery, Failure, PageContext, PageSpec
+from imscribe.ui import app as app_module
+from imscribe.ui import pages
+from imscribe.ui.app import App, TabRequest, parse_tab_request, sidebar_rows
+from imscribe.ui.pages import Discovery, Failure, PageContext, PageSpec
 
 if TYPE_CHECKING:
     from conftest import Window
@@ -150,7 +150,7 @@ def test_page_names_are_unique_without_regard_to_case() -> None:
 
 def test_tab_names_is_a_view_of_the_scan_and_not_a_copy() -> None:
     """
-    `advtext.ui.app.TAB_NAMES` was a literal tuple; `scripts/visual_diff.py` and
+    `imscribe.ui.app.TAB_NAMES` was a literal tuple; `scripts/visual_diff.py` and
     several tests import it. It is computed from the scan now, so swapping the
     scan must change it.
     """
@@ -173,11 +173,11 @@ def fake_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[st
     `_helper.py` raises on import: the scan must never import it, and the only
     way to show that is for importing it to be noticeable.
     """
-    name = "advtext_fake_pages_for_test"
+    name = "imscribe_fake_pages_for_test"
     root = tmp_path / name
     root.mkdir()
     header = (
-        "from advtext.ui.pages import PageSpec\n\n\n"
+        "from imscribe.ui.pages import PageSpec\n\n\n"
         "class P:\n    def __init__(self, c): pass\n    def draw(self): pass\n\n\n"
     )
     files = {
@@ -250,7 +250,7 @@ def test_a_module_fixed_on_disk_is_found_by_the_next_scan(fake_package: str) -> 
     assert pages.discover(fake_package).find("Mended") is None
     root = Path(sys.modules[fake_package].__path__[0])
     (root / "broken.py").write_text(
-        "from advtext.ui.pages import PageSpec\n"
+        "from imscribe.ui.pages import PageSpec\n"
         'PAGE = PageSpec(name="Mended", order=1, factory=lambda context: None)\n',
         encoding="utf-8",
     )
@@ -304,7 +304,7 @@ def test_a_context_from_the_defaults_needs_no_app_and_no_window() -> None:
     context = PageContext.build()
     assert context.debug is False
     assert context.source is None and context.columns_source is None
-    from advtext.fontmetrics import Face
+    from imscribe.fontmetrics import Face
 
     assert context.fonts(Face.PROSE) is None
     assert context.theme is not None
@@ -317,19 +317,19 @@ def test_a_context_from_the_defaults_needs_no_app_and_no_window() -> None:
     with pytest.raises(TypeError):
         PageContext.build(measure=None)
     for helper in ("draw_at", "paint_sheet", "plate", "claim", "available_width"):
-        assert not hasattr(pages, helper), f"advtext.ui.pages.{helper} is back"
+        assert not hasattr(pages, helper), f"imscribe.ui.pages.{helper} is back"
 
 
 def test_the_contexts_one_measurement_is_the_font_files_own() -> None:
     """
     `PageContext.metrics` is what `Theme.at_pixel_height` is handed, and it
-    answers what `advtext.style.fontlib_metrics` answers: asked for the body
+    answers what `imscribe.style.fontlib_metrics` answers: asked for the body
     face at a size, it gives that face's em, ascent and descent.
     """
-    from advtext.fontmetrics import Face
-    from advtext.style import fontlib_metrics
-    from advtext.theme import Theme, font_key
-    from advtext.units import sp_from_px
+    from imscribe.fontmetrics import Face
+    from imscribe.style import fontlib_metrics
+    from imscribe.theme import Theme, font_key
+    from imscribe.units import sp_from_px
 
     key = font_key(Face.PROSE, sp_from_px(16.0))
     mine, theirs = pages.face_metrics(key), fontlib_metrics(key)
@@ -457,7 +457,7 @@ def _frame(
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
         # No title bar, as hello_imgui's full-screen window has none, so the
         # body starts at the window's padding.
-        imgui.begin("##advtext-pages-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-pages-test", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             app.gui()
         finally:
@@ -552,7 +552,7 @@ def test_a_page_is_handed_the_window_less_the_sidebar() -> None:
     default style, the real app has `apply_style`'s. With `apply_style`'s
     16 px padding and 12 px spacing the same arithmetic is 1300 - 32 - 188 - 12
     = 1068 px, the body width the tab bar gave at 1100; that figure was measured
-    in a real window and is recorded in `advtext.ui.app.WINDOW_SIZE`.
+    in a real window and is recorded in `imscribe.ui.app.WINDOW_SIZE`.
     """
     imgui = pytest.importorskip("imgui_bundle").imgui
     app = _fake_app()
@@ -630,7 +630,7 @@ def _said(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """
     Every string a page hands `imgui.text_wrapped` from here on, in order.
 
-    `advtext.ui.pages.typeset.say_why_not` draws its line with that call.
+    `imscribe.ui.pages.typeset.say_why_not` draws its line with that call.
     """
     imgui = pytest.importorskip("imgui_bundle").imgui
     said: list[str] = []
@@ -656,7 +656,7 @@ def test_each_page_without_the_library_says_why_not_in_one_line_through_the_shel
     statement on both gates: the page object comes from its own module, it
     raises nothing, and each frame it draws exactly one wrapped line, which
     begins `NOT_DRAWING` and carries `why_not()`'s reason. It draws that and
-    no old view: `advtext.ui.bare_view`, `document_view`, `stream_view`,
+    no old view: `imscribe.ui.bare_view`, `document_view`, `stream_view`,
     `diff_view` and the old draw backend are not loaded by showing it
     (`tests/test_typeset_closure.py` has the same statement per module, in a
     fresh interpreter, for import time).
@@ -665,8 +665,8 @@ def test_each_page_without_the_library_says_why_not_in_one_line_through_the_shel
     which showed the five original pages and asked only that vertices were
     added -- true then of text set by the old core, and true now of one line.
     """
-    from advtext import typesetter
-    from advtext.ui.pages.typeset import NOT_DRAWING, not_drawing, why_not
+    from imscribe import typesetter
+    from imscribe.ui.pages.typeset import NOT_DRAWING, not_drawing, why_not
 
     assert not typesetter.ready(), "the library is loaded in the pytest process"
     said = _said(monkeypatch)
@@ -683,24 +683,24 @@ def test_each_page_without_the_library_says_why_not_in_one_line_through_the_shel
     assert app.page_errors == {}, app.page_errors
     assert app.current == name
     page = app._views[name]
-    assert type(page).__module__.startswith("advtext.ui.pages.")
+    assert type(page).__module__.startswith("imscribe.ui.pages.")
     assert list(app._views) == [name]
     assert counts[-1] > baseline, f"{name} drew nothing: {counts} against {baseline}"
 
 
 OLD_VIEWS = (
-    "advtext.ui.bare_view",
-    "advtext.ui.document_view",
-    "advtext.ui.stream_view",
-    "advtext.ui.diff_view",
-    "advtext.ui.specimen",
-    "advtext.ui.formulas",
-    "advtext.ui.composition",
-    "advtext.backends.imgui_draw",
-    "advtext.shipout",
-    "advtext.linebreak",
-    "advtext.columns",
-    "advtext.blocklayout",
+    "imscribe.ui.bare_view",
+    "imscribe.ui.document_view",
+    "imscribe.ui.stream_view",
+    "imscribe.ui.diff_view",
+    "imscribe.ui.specimen",
+    "imscribe.ui.formulas",
+    "imscribe.ui.composition",
+    "imscribe.backends.imgui_draw",
+    "imscribe.shipout",
+    "imscribe.linebreak",
+    "imscribe.columns",
+    "imscribe.blocklayout",
 )
 """
 The old views, the old draw backend, and the parts of the old core only they
@@ -713,16 +713,16 @@ import sys
 
 from imgui_bundle import imgui
 
-from advtext.ui import app as advtext_app
+from imscribe.ui import app as imscribe_app
 
 OLD = {old!r}
-names = list(advtext_app.page_names())
+names = list(imscribe_app.page_names())
 report = {{"after_import": sorted(m for m in sys.modules if m in OLD), "pages": {{}}}}
 imgui.create_context()
 io = imgui.get_io()
 io.display_size = imgui.ImVec2(1300.0, 800.0)
 io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
-app = advtext_app.App(source="# t\\n\\nOne short paragraph.\\n")
+app = imscribe_app.App(source="# t\\n\\nOne short paragraph.\\n")
 report["after_app"] = sorted(m for m in sys.modules if m in OLD)
 for name in names:
     app.select(name)
@@ -865,7 +865,7 @@ def test_a_page_that_raises_is_shown_its_traceback_and_the_app_goes_on(
     assert "RuntimeError: the page fell over" in error and "Traceback" in error
     assert "in draw" in error
     # Reported once where a terminal would show it, not once a frame.
-    assert capsys.readouterr().err.count("advtext: page 'Boom' raised") == 1
+    assert capsys.readouterr().err.count("imscribe: page 'Boom' raised") == 1
     # The page is not drawn again while its error stands.
     boom = app._views["Boom"]
     assert isinstance(boom, _Raiser) and boom.frames == 1
@@ -1170,9 +1170,9 @@ import sys
 
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
-from advtext.ui.pages.typeset import NOT_DRAWING
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
+from imscribe.ui.pages.typeset import NOT_DRAWING
 
 {frame_inks}
 
@@ -1182,11 +1182,11 @@ from advtext.ui.pages.typeset import NOT_DRAWING
 # sidebar, the controls, the captions.
 FRAMES_EACH = 5
 JUDGED, GROUND = 3, 4
-names = list(advtext_app.page_names())
+names = list(imscribe_app.page_names())
 state = {{"frame": 0, "showing": None}}
 report = {{"toured": [], "inks": {{}}, "ground": {{}}, "silenced": {{}}, "said": {{}},
           "ready": {{}}, "finished": []}}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 real_run = immapp.run
 real_wrapped = imgui.text_wrapped
 
@@ -1271,7 +1271,7 @@ def run_with_reader(params, *rest):
 
     def before_exit():
         report["fonts"] = [font.get_debug_name() for font in imgui.get_io().fonts.fonts]
-        report["own_faces"] = sorted(face.name for face in advtext_app._FACES)
+        report["own_faces"] = sorted(face.name for face in imscribe_app._FACES)
         report["reason"] = typesetter.reason()
         report["trouble"] = typesetter.trouble()
         watched()
@@ -1282,8 +1282,8 @@ def run_with_reader(params, *rest):
 
 imgui.text_wrapped = wrapped
 immapp.run = run_with_reader
-advtext_app.App.gui = touring_gui
-advtext_app.run()
+imscribe_app.App.gui = touring_gui
+imscribe_app.run()
 print(json.dumps(report))
 """
 
@@ -1318,7 +1318,7 @@ def tour(window: Window) -> dict[str, Any]:
 def _library_asked_for() -> bool:
     import os
 
-    from advtext import typesetter
+    from imscribe import typesetter
 
     return bool(os.environ.get(typesetter.LIBRARY_VARIABLE))
 
@@ -1337,7 +1337,7 @@ def test_every_discovered_page_runs_in_a_real_window(tour: dict[str, Any]) -> No
     holds the one UI font. Until tranche 5 a page without the library drew
     the old view instead, and this test could not tell which had drawn.
     """
-    from advtext.fontmetrics import Face
+    from imscribe.fontmetrics import Face
 
     names = list(app_module.page_names())
     assert tour["toured"] == names
@@ -1481,7 +1481,7 @@ def test_a_page_that_raises_with_this_left_open_does_not_take_the_next_frames(
     app.select("Open")
     counts = [_frame(app) for _ in range(4)]
     assert f"RuntimeError: left open: {kind}" in app.page_errors["Open"]
-    assert capsys.readouterr().err.count("advtext: page 'Open' raised") == 1
+    assert capsys.readouterr().err.count("imscribe: page 'Open' raised") == 1
     page = app._views["Open"]
     assert isinstance(page, _LeavesOpen) and page.frames == 1
     sidebar_only = _frame(_fake_app(Discovery(())))

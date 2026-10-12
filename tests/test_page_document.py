@@ -44,12 +44,12 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.ui.app import App
-from advtext.ui.pages import document as page
-from advtext.ui.pages.document import DocumentPage, Sheet, sheet_for
-from advtext.ui.pages.typeset import not_drawing, say_why_not
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe import typesetter
+from imscribe.ui.app import App
+from imscribe.ui.pages import document as page
+from imscribe.ui.pages.document import DocumentPage, Sheet, sheet_for
+from imscribe.ui.pages.typeset import not_drawing, say_why_not
+from imscribe.ui.typeset_view import TypesetUnavailable
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from conftest import Window
@@ -70,9 +70,9 @@ NEEDS_LIBRARY = (
 CHILD_PRELUDE = r"""
 import json, sys, time
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.ui.app import App, parse_tab_request
-from advtext.ui.pages import PageContext
+from imscribe import typesetter
+from imscribe.ui.app import App, parse_tab_request
+from imscribe.ui.pages import PageContext
 
 SIZE = (1300.0, 800.0)
 report = {"module": typesetter.module() is not None,
@@ -95,7 +95,7 @@ def frame(draw, count=1):
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-            imgui.begin("##advtext-page-child", None, imgui.WindowFlags_.no_title_bar.value)
+            imgui.begin("##imscribe-page-child", None, imgui.WindowFlags_.no_title_bar.value)
             try:
                 draw()
             finally:
@@ -140,7 +140,7 @@ def switch_off(why):
 def only_the_line(draw, reason):
     # [vertices of `draw()`, vertices of the one "why not" line]: equal when the page is that
     # line. The line is drawn twice first: a window's first frame is not its second.
-    from advtext.ui.pages.typeset import say_why_not
+    from imscribe.ui.pages.typeset import say_why_not
     alone = lambda: say_why_not(reason)
     frame(alone, 2)
     return [frame(draw), frame(alone)]
@@ -206,12 +206,12 @@ import sys
 
 from imgui_bundle import hello_imgui, imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
 
 TAB, WANT_LIBRARY = sys.argv[1], sys.argv[2] == "with"
 report = {"frames": 0}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def finish():
@@ -219,14 +219,14 @@ def finish():
     report["ready_end"] = typesetter.ready()
     if WANT_LIBRARY:
         report["module_end"] = typesetter.module() is not None
-    report["page_errors"] = sorted(advtext_app_errors())
+    report["page_errors"] = sorted(imscribe_app_errors())
     hello_imgui.get_runner_params().app_shall_exit = True
 
 
 APPS = []
 
 
-def advtext_app_errors():
+def imscribe_app_errors():
     return APPS[-1].page_errors if APPS else {}
 
 
@@ -249,8 +249,8 @@ def watched_gui(self):
 """
 
 WINDOWED_EPILOGUE = r"""
-advtext_app.App.gui = watched_gui
-advtext_app.run(tab=TAB)
+imscribe_app.App.gui = watched_gui
+imscribe_app.run(tab=TAB)
 report["imported"] = "imtypeset" in sys.modules
 print("REPORT " + json.dumps(report))
 """
@@ -297,7 +297,7 @@ def windowed_typeset(
 @pytest.fixture
 def unasked(monkeypatch: pytest.MonkeyPatch) -> Any:
     """
-    `advtext.typesetter` as at import, and a `module()` that fails the test if asked.
+    `imscribe.typesetter` as at import, and a `module()` that fails the test if asked.
     """
     typesetter._forget()
     monkeypatch.setattr(typesetter, "module", lambda: pytest.fail("the page asked for the library"))
@@ -322,7 +322,7 @@ def _frame(draw: Any) -> int:
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-page-document-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-page-document-test", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             draw()
         finally:
@@ -362,36 +362,36 @@ def says_only_why_not(draw: Any, reason: str) -> int:
 # ----------------------------------------------------------------------
 
 # The old layout core, as `tests/test_typeset_closure.py` lists it, plus the
-# modules that stand on it. `advtext.units` and `advtext.fontmetrics` are on
+# modules that stand on it. `imscribe.units` and `imscribe.fontmetrics` are on
 # that file's list and were the floor of everything until T5-B2 (arithmetic,
-# and the `Face` enum); both are `advtext.primitives`' now, which is what a
+# and the `Face` enum); both are `imscribe.primitives`' now, which is what a
 # page loads instead, and neither old module may be loaded.
 OLD = (
-    "advtext.badness",
-    "advtext.nodes",
-    "advtext.pack",
-    "advtext.linebreak",
-    "advtext.shipout",
-    "advtext.selection",
-    "advtext.fontlib",
-    "advtext.math",
-    "advtext.mathtext",
-    "advtext.spans",
-    "advtext.columns",
-    "advtext.blocklayout",
-    "advtext.backends",
-    "advtext.markdown",
-    "advtext.style",
-    "advtext.stream",
-    "advtext.ui.bare_view",
-    "advtext.ui.document_view",
-    "advtext.ui.stream_view",
-    "advtext.ui.units",
-    "advtext.ui.composition",
-    "advtext.ui.app",
+    "imscribe.badness",
+    "imscribe.nodes",
+    "imscribe.pack",
+    "imscribe.linebreak",
+    "imscribe.shipout",
+    "imscribe.selection",
+    "imscribe.fontlib",
+    "imscribe.math",
+    "imscribe.mathtext",
+    "imscribe.spans",
+    "imscribe.columns",
+    "imscribe.blocklayout",
+    "imscribe.backends",
+    "imscribe.markdown",
+    "imscribe.style",
+    "imscribe.stream",
+    "imscribe.ui.bare_view",
+    "imscribe.ui.document_view",
+    "imscribe.ui.stream_view",
+    "imscribe.ui.units",
+    "imscribe.ui.composition",
+    "imscribe.ui.app",
 )
-FLOOR = {"advtext.primitives", "advtext.theme"}
-WAS_THE_FLOOR = {"advtext.units", "advtext.fontmetrics"}
+FLOOR = {"imscribe.primitives", "imscribe.theme"}
+WAS_THE_FLOOR = {"imscribe.units", "imscribe.fontmetrics"}
 
 _CLOSURE = r"""
 import importlib, json, sys
@@ -401,7 +401,7 @@ if sys.argv[2] == "from":
     exec(f"from {package} import {name}")
 else:
     importlib.import_module(sys.argv[1])
-print(json.dumps(sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "advtext")))
+print(json.dumps(sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "imscribe")))
 """
 
 
@@ -409,13 +409,13 @@ print(json.dumps(sorted(m for m in set(sys.modules) - before if m.split(".")[0] 
 @pytest.mark.parametrize("name", ["document", "find", "themes", "inspector", "_syntax"])
 def test_importing_a_moved_page_loads_none_of_the_old_core(name: str, form: str) -> None:
     """
-    A fresh interpreter, the one import, and what of advtext it then holds.
+    A fresh interpreter, the one import, and what of imscribe it then holds.
 
     Import time; `test_a_page_built_and_drawn_without_the_library_loads_no_old_view`
     is the same question after the page has been made and drawn.
     """
     done = subprocess.run(
-        [sys.executable, "-B", "-c", _CLOSURE, f"advtext.ui.pages.{name}", form],
+        [sys.executable, "-B", "-c", _CLOSURE, f"imscribe.ui.pages.{name}", form],
         capture_output=True,
         text=True,
         timeout=120,
@@ -431,7 +431,7 @@ def test_importing_a_moved_page_loads_none_of_the_old_core(name: str, form: str)
         if any(module == one or module.startswith(one + ".") for one in OLD)
     )
     assert old == [], (name, form, old)
-    assert f"advtext.ui.pages.{name}" in loaded
+    assert f"imscribe.ui.pages.{name}" in loaded
     assert FLOOR <= loaded, "the floor moved: say so in tests/test_typeset_closure.py too"
     assert not WAS_THE_FLOOR & loaded, sorted(WAS_THE_FLOOR & loaded)
 
@@ -439,7 +439,7 @@ def test_importing_a_moved_page_loads_none_of_the_old_core(name: str, form: str)
 _DRAWN = r"""
 import importlib, json, sys
 from imgui_bundle import imgui
-from advtext.ui.pages import PageContext
+from imscribe.ui.pages import PageContext
 
 context = PageContext.build()
 module = importlib.import_module(sys.argv[1])
@@ -452,29 +452,29 @@ io.delta_time = 1.0 / 60.0
 io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
 for _ in range(2):
     imgui.new_frame()
-    imgui.begin("##advtext-page-drawn")
+    imgui.begin("##imscribe-page-drawn")
     made.draw()
     imgui.end()
     imgui.render()
 print(json.dumps({
-    "loaded": sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "advtext"),
+    "loaded": sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "imscribe"),
     "renderer": made.renderer, "reason": made.reason,
     "imtypeset": "imtypeset" in sys.modules,
 }))
 """
 
-# What `Theme.at_pixel_height` loads to measure a face: `advtext.style` (its
+# What `Theme.at_pixel_height` loads to measure a face: `imscribe.style` (its
 # resolver's home, with the modules that module imports) and
-# `advtext.fontlib`. The Themes page makes its theme that way
+# `imscribe.fontlib`. The Themes page makes its theme that way
 # (`.concerns/lead--tranche-5.md`, decision 5); the others load none of it.
-# (`advtext.units` and `advtext.fontmetrics` come with it too and are not on
+# (`imscribe.units` and `imscribe.fontmetrics` come with it too and are not on
 # `OLD`; `tests/test_typeset_closure.py` states the whole set.)
 MEASURING = {
-    "advtext.style",
-    "advtext.fontlib",
-    "advtext.nodes",
-    "advtext.pack",
-    "advtext.badness",
+    "imscribe.style",
+    "imscribe.fontlib",
+    "imscribe.nodes",
+    "imscribe.pack",
+    "imscribe.badness",
 }
 
 
@@ -482,14 +482,14 @@ MEASURING = {
 def test_a_page_built_and_drawn_without_the_library_loads_no_old_view(name: str) -> None:
     """
     A fresh interpreter with the library's variables removed: the page is made
-    from `PageContext.build()`, drawn for two frames, and what of advtext was
+    from `PageContext.build()`, drawn for two frames, and what of imscribe was
     loaded BY THAT is listed. Nothing of the old core or the old views, with
     one named exception: the Themes page measures a face to make its theme.
     """
     pytest.importorskip("imgui_bundle")
     environment = {k: v for k, v in os.environ.items() if k not in VARIABLES}
     done = subprocess.run(
-        [sys.executable, "-B", "-c", _DRAWN, f"advtext.ui.pages.{name}"],
+        [sys.executable, "-B", "-c", _DRAWN, f"imscribe.ui.pages.{name}"],
         capture_output=True,
         text=True,
         timeout=120,
@@ -508,10 +508,10 @@ def test_a_page_built_and_drawn_without_the_library_loads_no_old_view(name: str)
     allowed = MEASURING if name == "themes" else set()
     assert old == allowed, (name, sorted(old ^ allowed))
     if name == "themes":
-        assert "advtext.fontlib" in got["loaded"], "the named exception is no longer taken: say so"
+        assert "imscribe.fontlib" in got["loaded"], "the named exception is no longer taken: say so"
 
 
-# `advtext.ui.document_view.page_for`'s answers, frozen on 2026-10-11 before
+# `imscribe.ui.document_view.page_for`'s answers, frozen on 2026-10-11 before
 # the old page body was removed (`.concerns/T5-FB-A-scripts/sheet_rows.py`
 # printed them): `(available, alphabet, leading)` in pixels to the old page's
 # `(offset, width, margin, head)`, converted from scaled points and rounded
@@ -542,7 +542,7 @@ OLD_SHEETS = (
 OLD_ALPHABET_PX = 207.5547
 """
 `abc...z` in the stock theme's body face as the old `DocumentView` added it up
-(`advtext.ui.document_view.alphabet_length`, 207.55465750181614 px), frozen on
+(`imscribe.ui.document_view.alphabet_length`, 207.55465750181614 px), frozen on
 2026-10-11. The page now asks the library, which says 208.0.
 """
 
@@ -609,7 +609,7 @@ def test_without_the_library_the_page_is_one_line_saying_why(
 def test_the_page_needs_no_app_and_has_a_document_without_the_demo_file(
     monkeypatch: pytest.MonkeyPatch, unasked: None
 ) -> None:
-    from advtext.ui.pages import PageContext
+    from imscribe.ui.pages import PageContext
 
     assert DocumentPage(PageContext.build()).source.startswith("# ")
     assert DocumentPage(PageContext.build(source=SMALL)).source == SMALL

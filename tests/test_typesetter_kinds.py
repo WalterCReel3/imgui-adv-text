@@ -1,5 +1,5 @@
 """
-`advtext.typesetter`: the kind beside the sentence, the way back, the names check, a verdict
+`imscribe.typesetter`: the kind beside the sentence, the way back, the names check, a verdict
 from a child, the `ImFont` of a face, and `load_fonts()` after start-up.
 
 What pptmstr, the first host, asked for as P1, P18, P3, P2, P14 and P17
@@ -9,10 +9,10 @@ What pptmstr, the first host, asked for as P1, P18, P3, P2, P14 and P17
     `unsupported`, and what `missing` says of a package that lacks a name.
     The stand-in is `test_typesetter_pairing.standin`, written from
     `typesetter.REQUIRED`, so it has exactly the names the gate asks for.
-2.  **advtext's own sources, read**: every name of imtypeset that a module of
-    advtext uses is on `typesetter.REQUIRED`. This is the test that fails
-    when advtext starts calling something the gate does not ask for.
-3.  **A fresh interpreter**: `verdict()` and `python -m advtext.typesetter`,
+2.  **imscribe's own sources, read**: every name of imtypeset that a module of
+    imscribe uses is on `typesetter.REQUIRED`. This is the test that fails
+    when imscribe starts calling something the gate does not ask for.
+3.  **A fresh interpreter**: `verdict()` and `python -m imscribe.typesetter`,
     with a stand-in distribution in both gates and the pinned pair with the
     library.
 4.  **The pinned pair** (skipped, with the reason, without it): `font`, the
@@ -20,7 +20,7 @@ What pptmstr, the first host, asked for as P1, P18, P3, P2, P14 and P17
     again long after start-up with a view open, which is what the promise in
     its docstring is a record of.
 
-The state of `advtext.typesetter` is the process's. Everything here that
+The state of `imscribe.typesetter` is the process's. Everything here that
 touches it puts back exactly what it found (`gate`), because other files'
 tests in the same pytest process may have the real library loaded.
 """
@@ -45,9 +45,9 @@ import pytest
 import test_typesetter_pairing as pairing
 from conftest import Window
 
-from advtext import typesetter
-from advtext.primitives import Face
-from advtext.typesetter import Kind
+from imscribe import typesetter
+from imscribe.primitives import Face
+from imscribe.typesetter import Kind
 
 _ROOT = Path(__file__).resolve().parent.parent
 _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
@@ -368,7 +368,7 @@ def test_what_reset_keeps_and_what_it_lets_be_said_again(
     gate.offer(_package())
     assert typesetter.module() is not None
     typesetter.note("no font file for code-bold; set in the document's face")
-    with caplog.at_level(logging.WARNING, logger="advtext.typesetter"):
+    with caplog.at_level(logging.WARNING, logger="imscribe.typesetter"):
         typesetter.disable("the same failure")
         typesetter.disable("the same failure")
         assert [r.getMessage() for r in caplog.records].count(
@@ -396,7 +396,7 @@ def test_forget_is_still_the_state_at_import(gate: Gate) -> None:
 
 
 # ---------------------------------------------------------------------------
-# P3: the imtypeset that was found has the names this advtext calls
+# P3: the imtypeset that was found has the names this imscribe calls
 # ---------------------------------------------------------------------------
 
 
@@ -423,7 +423,7 @@ def test_missing_names_what_is_not_there(without: tuple[str, ...], expected: lis
     assert typesetter.missing(_package(without)) == expected
 
 
-def test_a_tuple_the_library_reads_by_position_must_begin_with_advtexts_fields() -> None:
+def test_a_tuple_the_library_reads_by_position_must_begin_with_imscribes_fields() -> None:
     ours = typesetter.BlockDescription._fields
     assert typesetter.missing(_package(Block=(*ours, "later"))) == [], "more fields after are fine"
     swapped = (ours[1], ours[0], *ours[2:])
@@ -444,7 +444,7 @@ def test_missing_never_raises_whatever_it_is_handed() -> None:
 
 def test_a_package_that_lacks_a_name_is_refused_with_a_sentence_that_names_it(gate: Gate) -> None:
     """
-    New advtext beside an old imtypeset: it must fall back at the gate, where
+    New imscribe beside an old imtypeset: it must fall back at the gate, where
     a view turns it into `TypesetUnavailable`, and not raise AttributeError
     inside a draw.
     """
@@ -453,7 +453,7 @@ def test_a_package_that_lacks_a_name_is_refused_with_a_sentence_that_names_it(ga
     assert typesetter.module() is None
     assert typesetter.kind() is Kind.REFUSED
     assert typesetter.reason() == (
-        "the imtypeset at /somewhere/site/imtypeset lacks 1 name this advtext calls: "
+        "the imtypeset at /somewhere/site/imtypeset lacks 1 name this imscribe calls: "
         "Document.pack_marks; the two were not installed together"
     )
     found = typesetter.pairing()
@@ -472,14 +472,14 @@ def test_the_sentence_names_five_and_counts_the_rest(gate: Gate) -> None:
     gate.offer(_package((*without, "MarkPlace.Ink")))
     assert typesetter.module() is None
     reason = typesetter.reason()
-    assert " lacks 7 names this advtext calls: " in reason and reason.count(",") == 4
+    assert " lacks 7 names this imscribe calls: " in reason and reason.count(",") == 4
     assert " and 2 more; " in reason
 
 
-# -- the list against advtext's own sources --------------------------------
+# -- the list against imscribe's own sources --------------------------------
 
-_SOURCES = sorted((_ROOT / "advtext").rglob("*.py"))
-# How a module of advtext comes by the package: a name bound from one of
+_SOURCES = sorted((_ROOT / "imscribe").rglob("*.py"))
+# How a module of imscribe comes by the package: a name bound from one of
 # these calls, or the call itself with an attribute taken straight off it.
 _GATE_CALLS = {"typesetter.module", "module", "_must", "self._ready"}
 _GATE_VALUES = {"_ts", "_package", "importlib.import_module('imtypeset')"}
@@ -551,9 +551,9 @@ def _package_uses(path: Path) -> dict[str, int]:
     return uses
 
 
-def test_every_name_of_the_package_advtext_uses_is_on_the_list() -> None:
+def test_every_name_of_the_package_imscribe_uses_is_on_the_list() -> None:
     """
-    THE test that fails when advtext starts calling a name the gate does not
+    THE test that fails when imscribe starts calling a name the gate does not
     ask for. The fix is one line in `typesetter.REQUIRED`.
     """
     listed = _listed()
@@ -565,14 +565,14 @@ def test_every_name_of_the_package_advtext_uses_is_on_the_list() -> None:
             if name not in listed:
                 unlisted.append(f"{path.relative_to(_ROOT)}:{line}: {name}")
     assert not unlisted, (
-        "advtext uses names of imtypeset that typesetter.REQUIRED does not list, so an "
+        "imscribe uses names of imtypeset that typesetter.REQUIRED does not list, so an "
         "imtypeset without them would not be refused at the gate:\n  " + "\n  ".join(unlisted)
     )
     # The reader itself: if it stopped seeing the package it would pass blind.
     assert {"Document", "BlockStyle.Scale", "Face.Code", "add_font", "font_atlas_index"} <= seen
 
 
-def test_every_document_method_advtext_calls_is_on_the_list() -> None:
+def test_every_document_method_imscribe_calls_is_on_the_list() -> None:
     listed = set(typesetter.REQUIRED["Document"])
     seen: set[str] = set()
     unlisted: list[str] = []
@@ -589,7 +589,7 @@ def test_every_document_method_advtext_calls_is_on_the_list() -> None:
                         f"{path.relative_to(_ROOT)}:{node.lineno}: Document.{node.attr}"
                     )
     assert not unlisted, (
-        "advtext calls methods of an imtypeset Document that typesetter.REQUIRED does not "
+        "imscribe calls methods of an imtypeset Document that typesetter.REQUIRED does not "
         "list:\n  " + "\n  ".join(unlisted)
     )
     assert {"layout", "draw", "hit_test", "set_blocks", "pack_marks", "append_text"} <= seen
@@ -598,11 +598,11 @@ def test_every_document_method_advtext_calls_is_on_the_list() -> None:
 
 
 # A public name of the pinned `imtypeset.Document` that appears as an
-# attribute in advtext's typeset layer and is NOT a call on a library
+# attribute in imscribe's typeset layer and is NOT a call on a library
 # document there. Each needs its reason; a name that is neither here nor on
 # the list fails the test below.
 _NOT_THE_LIBRARYS = {
-    "view": "a hosted block's `view`, and a page's: advtext's own views",
+    "view": "a hosted block's `view`, and a page's: imscribe's own views",
 }
 
 
@@ -654,7 +654,7 @@ def test_no_document_method_is_used_under_a_name_the_reader_does_not_know() -> N
 
 def _command_line(env: dict[str, str], *path: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-P", "-B", "-W", "error", "-m", "advtext.typesetter"],
+        [sys.executable, "-P", "-B", "-W", "error", "-m", "imscribe.typesetter"],
         capture_output=True,
         text=True,
         timeout=300,
@@ -755,9 +755,9 @@ def test_in_a_frozen_application_the_verdict_is_unchecked_and_no_child_is_starte
     assert said["kind"] == "unchecked" and said["route"] == typesetter.ROUTE_NONE
     assert said["reason"].startswith("this is a frozen application (sys.frozen)")
     # Everything about the pair is unknown. What is known is who is asking
-    # (`advtext_version`, since 2026-10-12: this process's own advtext).
+    # (`imscribe_version`, since 2026-10-12: this process's own imscribe).
     assert {key for key, value in said.items() if value is None} == pairing._KEYS - {
-        "advtext_version",
+        "imscribe_version",
         "kind",
         "reason",
         "route",
@@ -773,11 +773,11 @@ def test_a_child_that_cannot_be_asked_is_unchecked_and_one_that_is_killed_is_ref
     assert slow["kind"] == "unchecked"
     assert slow["reason"] == "the child interpreter did not answer in 0.5 seconds"
 
-    monkeypatch.setattr(typesetter, "_CHILD", "import sys; sys.exit('no advtext here')")
+    monkeypatch.setattr(typesetter, "_CHILD", "import sys; sys.exit('no imscribe here')")
     silent = typesetter.verdict()
     assert silent["kind"] == "unchecked"
     assert silent["reason"] == (
-        "the child interpreter exited 1 without an answer (no advtext here)"
+        "the child interpreter exited 1 without an answer (no imscribe here)"
     )
 
     monkeypatch.setattr(
@@ -825,7 +825,7 @@ def test_what_verdict_is_handed_is_checked_before_any_child_is_started(
 
 @pytest.mark.parametrize("given", ["CODE", 5, None, Face], ids=repr)
 def test_font_takes_a_face_and_nothing_else(gate: Gate, given: Any) -> None:
-    with pytest.raises(TypeError, match="font\\(\\) takes an advtext Face, not "):
+    with pytest.raises(TypeError, match="font\\(\\) takes an imscribe Face, not "):
         typesetter.font(given)
 
 
@@ -869,8 +869,8 @@ def test_a_library_that_raises_when_asked_for_a_font_is_a_trouble_and_none(
 _REAL = """
 import json, sys
 from imgui_bundle import imgui
-from advtext import Face, typesetter
-from advtext.typesetter import Kind
+from imscribe import Face, typesetter
+from imscribe.typesetter import Kind
 report = {"verdict": typesetter.verdict(),
           "loaded_by_the_verdict": sorted(n for n in sys.modules if n.split(".")[0] == "imtypeset"),
           "before": typesetter.font(Face.CODE) is None}
@@ -973,8 +973,8 @@ from pathlib import Path
 import imgui_bundle
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import DARK_PALETTE, Face, Theme, TypesetUnavailable, TypesetView, register_font
-from advtext import typesetter
+from imscribe import DARK_PALETTE, Face, Theme, TypesetUnavailable, TypesetView, register_font
+from imscribe import typesetter
 
 SOURCE = (
     "# Heading\\n\\nprose **bold** *it* `code` and a [link](http://x)\\n\\n"
@@ -1048,7 +1048,7 @@ def sizes(draw_list):
     """The same characters typeset at an em, and native at the em and at the em's line height."""
     from fontTools.ttLib import TTFont
 
-    from advtext import fontlib
+    from imscribe import fontlib
 
     ts = typesetter.module()
     rows = []

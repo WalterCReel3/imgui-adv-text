@@ -42,13 +42,13 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import MarkdownDocument, MarkdownStream
-from advtext.ui import pages
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import stress as page
-from advtext.ui.pages.stress import (
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import MarkdownDocument, MarkdownStream
+from imscribe.ui import pages
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import stress as page
+from imscribe.ui.pages.stress import (
     LENGTHS,
     MAX_PANES,
     REFERENCE_MS,
@@ -58,7 +58,7 @@ from advtext.ui.pages.stress import (
     readouts,
     repeated,
 )
-from advtext.ui.pages.typeset import why_not
+from imscribe.ui.pages.typeset import why_not
 
 if TYPE_CHECKING:
     from conftest import Window
@@ -248,7 +248,7 @@ def test_the_launch_options_set_the_controls() -> None:
 
 
 def test_the_page_is_discovered_and_its_shots_parse() -> None:
-    from advtext.ui.app import parse_tab_request
+    from imscribe.ui.app import parse_tab_request
 
     found = pages.require()
     spec = found.find("stress")
@@ -501,7 +501,7 @@ def _frames(draw: Any, count: int, seconds: float = 1.0 / 60.0) -> Any:
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(1300.0, 800.0))
-            imgui.begin("##advtext-stress-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+            imgui.begin("##imscribe-stress-page-test", None, imgui.WindowFlags_.no_title_bar.value)
             try:
                 draw()
             finally:
@@ -616,7 +616,7 @@ def test_a_typeset_unavailable_out_of_a_frame_stays_in_the_page_and_anything_els
     io.delta_time = 1.0 / 60.0
     imgui.new_frame()
     try:
-        imgui.begin("##advtext-stress-page-bug", None, 0)
+        imgui.begin("##imscribe-stress-page-bug", None, 0)
         try:
             with pytest.raises(ZeroDivisionError):
                 other.draw()
@@ -664,19 +664,19 @@ def test_the_page_imports_nothing_of_the_old_core_or_the_old_views_even_lazily()
     """
     from test_page_stream import OLD_MODULES, imports_of
 
-    found = imports_of(_ROOT / "advtext" / "ui" / "pages" / "stress.py")
-    assert "advtext.ui.typeset_view" in found and "advtext.typeset_markdown" in found
+    found = imports_of(_ROOT / "imscribe" / "ui" / "pages" / "stress.py")
+    assert "imscribe.ui.typeset_view" in found and "imscribe.typeset_markdown" in found
     for name in found:
         for old in OLD_MODULES:
             assert name != old and not name.startswith(old + "."), name
-    tree = ast.parse((_ROOT / "advtext" / "ui" / "pages" / "stress.py").read_text("utf-8"))
+    tree = ast.parse((_ROOT / "imscribe" / "ui" / "pages" / "stress.py").read_text("utf-8"))
     assert not [n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id == "DrawStats"]
 
 
 _CLOSURE = r"""
 import json, sys
-import advtext.ui.pages.stress
-print("REPORT " + json.dumps(sorted(name for name in sys.modules if name.startswith("advtext"))))
+import imscribe.ui.pages.stress
+print("REPORT " + json.dumps(sorted(name for name in sys.modules if name.startswith("imscribe"))))
 """
 
 
@@ -695,9 +695,9 @@ def test_importing_the_page_loads_none_of_the_old_core() -> None:
     )
     assert done.returncode == 0, done.stdout + done.stderr
     loaded = set(json.loads(done.stdout.split("REPORT ", 1)[1]))
-    assert "advtext.ui.pages.stress" in loaded and "advtext.ui.typeset_view" in loaded
+    assert "imscribe.ui.pages.stress" in loaded and "imscribe.ui.typeset_view" in loaded
     assert loaded & OLD_CORE == THEME, sorted(loaded & OLD_CORE)
-    for name in ("advtext.stream", "advtext.markdown", "advtext.style"):
+    for name in ("imscribe.stream", "imscribe.markdown", "imscribe.style"):
         assert name not in loaded, name
 
 
@@ -710,16 +710,16 @@ import sys
 
 from imgui_bundle import hello_imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
-from advtext.ui.pages import stress as stress_page
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
+from imscribe.ui.pages import stress as stress_page
 
 WANT_LIBRARY = sys.argv[1] == "with"
 SPEC = sys.argv[2]
 FRAMES = 90
 COUNTS = (1, 4, 16)
 state = {"frame": 0}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def last_line(made):
@@ -775,8 +775,8 @@ def touring_gui(self):
     state["frame"] += 1
 
 
-advtext_app.App.gui = touring_gui
-advtext_app.run(tab=SPEC)
+imscribe_app.App.gui = touring_gui
+imscribe_app.run(tab=SPEC)
 """
 
 
@@ -919,9 +919,9 @@ def test_with_the_library_the_tour_streams_through_imtypeset_in_a_real_window(
 _HEADLESS = r"""
 import json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.ui.app import App
-from advtext.ui.pages import stress as page
+from imscribe import typesetter
+from imscribe.ui.app import App
+from imscribe.ui.pages import stress as page
 
 ts = typesetter.module()
 report = {"module": ts is not None, "reason": typesetter.reason()}
@@ -949,7 +949,7 @@ def frames(app, count, seconds=1.0 / 60.0):
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(1300.0, 800.0))
-            imgui.begin("##advtext-stress-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+            imgui.begin("##imscribe-stress-page-test", None, imgui.WindowFlags_.no_title_bar.value)
             try:
                 app.gui()
             finally:
@@ -1052,7 +1052,7 @@ report["after"] = {"module": typesetter.module() is not None, "ready": typesette
 
 # 5. A draw that raises with the library still ready: the page keeps the sentence, finishes
 # the frame without an error, and is the one line from the next frame on.
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 real_draw = TypesetView.draw
 def failing(self, **kwargs):
     raise TypesetUnavailable("raised by the test")

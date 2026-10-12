@@ -21,19 +21,19 @@ almost every hand-rolled selection:
 
 from __future__ import annotations
 
-from advtext.markdown import TextBlock
-from advtext.nodes import CharNode, Glue, GlueSpec, Node
-from advtext.pack import CharDimens, PackMode, hpack, vpack
-from advtext.selection import (
+from imscribe.markdown import TextBlock
+from imscribe.nodes import CharNode, Glue, GlueSpec, Node
+from imscribe.pack import CharDimens, PackMode, hpack, vpack
+from imscribe.selection import (
     Granularity,
     Rect,
     Selection,
     SelectionModel,
 )
-from advtext.shipout import Atom, DrawCmd, Glyph, Line, Point, RuleRect, SetGlue, ship
-from advtext.style import BlockKind, Theme
-from advtext.ui import compose_blocks
-from advtext.units import Scaled, sp_from_px
+from imscribe.shipout import Atom, DrawCmd, Glyph, Line, Point, RuleRect, SetGlue, ship
+from imscribe.style import BlockKind, Theme
+from imscribe.ui import compose_blocks
+from imscribe.units import Scaled, sp_from_px
 
 FONT = "prose@786432"
 
@@ -306,7 +306,7 @@ def test_every_rect_is_full_line_height_rather_than_the_ink_of_its_glyphs() -> N
     # depth were chosen, which cannot distinguish a full line height from an ink
     # extent however different the letters look -- `_document("acem", "gjpqy")`
     # is geometrically identical to `_document("aaaa", "aaaaa")`. What makes the
-    # claim true is `advtext.style.Strut`, applied by `advtext.ui`, so that is
+    # claim true is `imscribe.style.Strut`, applied by `imscribe.ui`, so that is
     # what this goes through. The ink below is per codepoint and really does
     # differ between the two lines; the test below this one is the guard on that.
     theme = Theme.build()
@@ -635,7 +635,7 @@ def test_a_separator_with_no_selected_character_after_it_is_not_written() -> Non
     # A selection that ends on the fill a cell (or a list item, ahead of its
     # marker) begins with has crossed that item's separator and reached none
     # of its text. Measured before this was pinned: "ab\t", and through
-    # `advtext.ui.units` a copy ending at a nested list item's marker ended
+    # `imscribe.ui.units` a copy ending at a nested list item's marker ended
     # with that item's newline and its indent.
     cmds, begins = _cells("ab", "cd", "ef")
     model = SelectionModel.from_commands(cmds)

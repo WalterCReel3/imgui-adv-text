@@ -25,12 +25,12 @@ from pathlib import Path
 
 import pytest
 
-from advtext.backends.svg import Palette, glyph_outline, render
-from advtext.fontmetrics import Face
-from advtext.selection import Rect
-from advtext.shipout import DrawCmd, Glyph, Line, RuleRect, SetGlue
-from advtext.style import font_key
-from advtext.units import Scaled, sp_from_pt
+from imscribe.backends.svg import Palette, glyph_outline, render
+from imscribe.fontmetrics import Face
+from imscribe.selection import Rect
+from imscribe.shipout import DrawCmd, Glyph, Line, RuleRect, SetGlue
+from imscribe.style import font_key
+from imscribe.units import Scaled, sp_from_pt
 
 SVG = "{http://www.w3.org/2000/svg}"
 PT = sp_from_pt(1.0)
@@ -145,7 +145,7 @@ def test_roboto_has_the_units_per_em_every_other_expectation_here_is_derived_fro
     # failure rather than a page of arithmetic that no longer holds.
     from fontTools.ttLib import TTFont
 
-    from advtext import fontlib
+    from imscribe import fontlib
 
     font = TTFont(fontlib.font_file(Face.PROSE), lazy=False)
     try:
@@ -229,7 +229,7 @@ def test_the_display_sigma_is_reachable_by_the_synthetic_codepoint_and_is_a_diff
     # `fontlib.glyph_name` the display operator would silently become the body
     # one scaled up -- which is exactly the dishonest version decisions.md rules
     # out, and it would look almost right.
-    from advtext import fontlib
+    from imscribe import fontlib
 
     body = glyph_outline(Face.MATH, "summation")
     display = glyph_outline(Face.MATH, "summation.v1")

@@ -425,8 +425,8 @@ def test_gap_measurement_refuses_across_an_antialiasing_change() -> None:
 
 
 def test_build_id_changes_when_a_source_file_changes(tmp_path: Path) -> None:
-    (tmp_path / "advtext").mkdir()
-    target = tmp_path / "advtext" / "thing.py"
+    (tmp_path / "imscribe").mkdir()
+    target = tmp_path / "imscribe" / "thing.py"
     target.write_text("x = 1\n", encoding="utf-8")
     first = vd.build_id(tmp_path)
     target.write_text("x = 2\n", encoding="utf-8")
@@ -454,7 +454,7 @@ def test_stamping_a_png_leaves_every_pixel_byte_identical(tmp_path: Path) -> Non
     put this module's zlib settings between the app and that comparison.
     """
     original = vd.encode_png(_blank_page())
-    stamped = vd.stamp_png_bytes(original, {"advtext-shot": '{"build": "x"}'})
+    stamped = vd.stamp_png_bytes(original, {"imscribe-shot": '{"build": "x"}'})
     assert stamped != original
     idat = lambda data: [p for t, p in vd._iter_chunks(data) if t == b"IDAT"]  # noqa: E731
     assert idat(stamped) == idat(original)
@@ -462,13 +462,13 @@ def test_stamping_a_png_leaves_every_pixel_byte_identical(tmp_path: Path) -> Non
     path.write_bytes(stamped)
     pixels, text = vd.read_png(path)
     assert np.array_equal(pixels, _blank_page())
-    assert json.loads(text["advtext-shot"])["build"] == "x"
+    assert json.loads(text["imscribe-shot"])["build"] == "x"
 
 
 def _stamped(path: Path, page: np.ndarray, build: str, spec: str = "document") -> None:
     data = vd.encode_png(page)
     stamp = json.dumps({"build": build, "spec": spec}, sort_keys=True)
-    path.write_bytes(vd.stamp_png_bytes(data, {"advtext-shot": stamp}))
+    path.write_bytes(vd.stamp_png_bytes(data, {"imscribe-shot": stamp}))
 
 
 def test_compare_refuses_a_png_with_no_stamp(
@@ -560,7 +560,7 @@ def test_a_misspelt_tab_name_is_refused_before_anything_is_photographed() -> Non
 #
 # **Which page, and why it changed (tranche 5).** Until then the two tests of
 # content addressing photographed `columns:2`: the old Columns page set its
-# columns on a white sheet with advtext's own layout. That page is gone. The
+# columns on a white sheet with imscribe's own layout. That page is gone. The
 # Columns page is the library's columns in the pane, light ink on the window's
 # dark ground, and paints no sheet; every region this tool resolves begins at the
 # sheet, so on that page it resolves none, and says so (the third test below
@@ -568,7 +568,7 @@ def test_a_misspelt_tab_name_is_refused_before_anything_is_photographed() -> Non
 # still paints a sheet and sets `demo/sample.md` on it through imtypeset, so the
 # two content tests photograph that: what they show now is that the finder
 # locates lines the LIBRARY set, by the same font's advance widths
-# (`advtext.fontlib`), to the same 3 px. They need the library: without it a
+# (`imscribe.fontlib`), to the same 3 px. They need the library: without it a
 # page draws one line saying so and no sheet, and they skip with the reason.
 # Making the finder work on a sheet-less dark page would be a new region finder
 # (light ink, a pane boundary to keep the sidebar and the controls out); it was
@@ -637,7 +637,7 @@ def test_a_real_shot_of_a_page_on_a_sheet_is_addressable_by_content(
     """
     rgb, text = vd.read_png(real_document_shot)
     grey = vd.grey_of(rgb)
-    stamp = json.loads(text["advtext-shot"])
+    stamp = json.loads(text["imscribe-shot"])
     assert stamp["spec"] == "document"
     assert stamp["build"] == vd.build_id(_ROOT)
 
@@ -690,7 +690,7 @@ def test_a_real_shot_of_a_page_with_no_sheet_is_refused_and_not_measured(
     """
     rgb, text = vd.read_png(real_columns_shot)
     grey = vd.grey_of(rgb)
-    stamp = json.loads(text["advtext-shot"])
+    stamp = json.loads(text["imscribe-shot"])
     assert stamp["spec"] == "columns:2" and stamp["build"] == vd.build_id(_ROOT)
     # Something was drawn: the page is not blank, it is light ink on a dark ground.
     assert float((grey > 140.0).mean()) > 0.01 and float((grey > 235.0).mean()) < 0.01

@@ -1,5 +1,5 @@
 r"""
-`advtext.ui.typeset_view.TypesetView` and `examples/typeset_minimal.py`.
+`imscribe.ui.typeset_view.TypesetView` and `examples/typeset_minimal.py`.
 
 Which tests run depends on how the suite was started (`make test`, or `make
 test TYPESET=1`), as in `tests/test_typeset.py`:
@@ -28,7 +28,7 @@ run of both and at what load.)
 
 **What the view is given is markdown source, or `parse_markdown`'s blocks.**
 Until tranche 5 most of the children here handed it the old core's blocks
-(`advtext.build_document`), which `advtext.typesetter.Converter` described;
+(`imscribe.build_document`), which `imscribe.typesetter.Converter` described;
 that path is deleted. Where the old core was the ORACLE (what a document
 comes to, a table's column widths and row heights), its answers were frozen
 first: `tests/data/material_descriptions.json` (through
@@ -49,7 +49,7 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
+from imscribe import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 _EXAMPLE = _ROOT / "examples" / "typeset_minimal.py"
@@ -93,8 +93,8 @@ def _report_of(stdout: str) -> dict[str, Any]:
 
 _WITHOUT = r"""
 import json, sys
-import advtext.ui.typeset_view as module
-from advtext import typesetter
+import imscribe.ui.typeset_view as module
+from imscribe import typesetter
 
 loaded = sorted(name for name in sys.modules if name.split(".")[0] in ("imtypeset", "imgui_bundle"))
 try:
@@ -170,11 +170,11 @@ from pathlib import Path
 
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import parse_markdown
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import parse_markdown
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 
 ROOT = Path(sys.argv[1])
 PARKED = (300.0, 700.0)   # in the application's window, below the ImGui one
@@ -719,7 +719,7 @@ def test_only_the_library_s_own_failure_switches_the_library_off(
     `typesetter.disable()` and `TypesetUnavailable`, so a slip in the view's
     own Python switched the library off for the process and every page became
     its one line. `TypesetDiffView` sorted by whose the exception is; the
-    three views now share that rule (`advtext.ui.typeset_view.library_failed`):
+    three views now share that rule (`imscribe.ui.typeset_view.library_failed`):
 
     - an exception the `imtypeset` package defines (or a subclass of one)
       switches the library off and is told as `TypesetUnavailable`;
@@ -730,13 +730,13 @@ def test_only_the_library_s_own_failure_switches_the_library_off(
     """
     import importlib
 
-    from advtext.ui import typeset_view
-    from advtext.ui.typeset_view import TypesetUnavailable
+    from imscribe.ui import typeset_view
+    from imscribe.ui.typeset_view import TypesetUnavailable
 
     home = {
-        "TypesetView": "advtext.ui.typeset_view",
-        "TypesetStreamView": "advtext.ui.typeset_stream_view",
-        "TypesetDiffView": "advtext.ui.typeset_diff_view",
+        "TypesetView": "imscribe.ui.typeset_view",
+        "TypesetStreamView": "imscribe.ui.typeset_stream_view",
+        "TypesetDiffView": "imscribe.ui.typeset_diff_view",
     }[which]
     kind = getattr(importlib.import_module(home), which)
 
@@ -772,10 +772,10 @@ def test_only_the_library_s_own_failure_switches_the_library_off(
 _HEADLESS = r"""
 import json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import parse_markdown
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import parse_markdown
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 
 report = {"module": typesetter.module() is not None}
 context = imgui.create_context()
@@ -975,11 +975,11 @@ def test_with_the_library_the_example_draws_with_typesetview(window: Any) -> Non
 
 _HOST = r"""
 import json, sys
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import parse_markdown
-from advtext.typeset_find import Match, marks_for
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import parse_markdown
+from imscribe.typeset_find import Match, marks_for
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 
 # Stands for the imported package: nothing below reaches the library, and the
 # report says whether anything of it was imported.
@@ -1126,11 +1126,11 @@ def test_set_document_does_not_raise_once_the_library_is_off(host: dict[str, Any
 _OFF = r"""
 import json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import parse_markdown
-from advtext.typeset_find import Match
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import parse_markdown
+from imscribe.typeset_find import Match
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 
 report = {"module": typesetter.module() is not None}
 context = imgui.create_context()
@@ -1250,12 +1250,12 @@ _MEMBERS = r"""
 import collections, dataclasses, json, statistics, struct, sys, time
 from pathlib import Path
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.description import cell_spans
-from advtext.theme import BlockKind, Theme
-from advtext.typeset_markdown import parse_markdown
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_view import TypesetView
+from imscribe import typesetter
+from imscribe.description import cell_spans
+from imscribe.theme import BlockKind, Theme
+from imscribe.typeset_markdown import parse_markdown
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_view import TypesetView
 
 ROOT = Path(sys.argv[1])
 sys.path.insert(0, str(ROOT / "tests"))
@@ -1339,7 +1339,7 @@ theme = Theme.build()
 
 class Material:
     # What a `TypesetView` given the old core's blocks held, frozen: the description
-    # `advtext.typesetter.Converter` made of `build_document`'s blocks.
+    # `imscribe.typesetter.Converter` made of `build_document`'s blocks.
     # `.concerns/T5-B1-scripts/freeze_views.py` checked, with both still there, that such a
     # view's texts, described blocks, style table, links and tables were exactly that
     # description's, for every file below.
@@ -1680,9 +1680,9 @@ def test_markdown_source_and_the_old_core_s_blocks_come_to_the_same_document(
 ) -> None:
     """
     Every markdown file under `demo/`, given to a view as a string (read by
-    `advtext.typeset_markdown`, no node material), against what a view given
+    `imscribe.typeset_markdown`, no node material), against what a view given
     the blocks `build_document` made held (described by
-    `advtext.typesetter.Converter`). The second is FROZEN: the old path is
+    `imscribe.typesetter.Converter`). The second is FROZEN: the old path is
     deleted, and `tests/data/material_descriptions.json` has what it described.
 
     Equal: every block's text, its kind, marker, indent, quote depth, flags,
@@ -1924,14 +1924,14 @@ from pathlib import Path
 
 from imgui_bundle import imgui
 
-from advtext import typesetter
-from advtext.description import ColumnDescription, cell_spans
-from advtext.theme import BlockKind, Theme
-from advtext.typeset_find import Finder, FindIndex
-from advtext.typeset_markdown import MarkdownTable, parse_markdown
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
-from advtext.units import px_from_sp, sp_from_px
+from imscribe import typesetter
+from imscribe.description import ColumnDescription, cell_spans
+from imscribe.theme import BlockKind, Theme
+from imscribe.typeset_find import Finder, FindIndex
+from imscribe.typeset_markdown import MarkdownTable, parse_markdown
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe.units import px_from_sp, sp_from_px
 
 ROOT = Path(sys.argv[1])
 WIDTH = 684.0
@@ -2019,7 +2019,7 @@ theme = Theme.build()
 ppi = theme.px_per_inch
 source = (ROOT / "demo" / "tables.md").read_text(encoding="utf-8")
 # What the old core's own table layout answered for these tables at this width, in pixels
-# (`advtext.ui.table_columns`, `table_column_limits`, `composition._table_boxes`), frozen by
+# (`imscribe.ui.table_columns`, `table_column_limits`, `composition._table_boxes`), frozen by
 # `.concerns/T5-B1-scripts/freeze_views.py`. Until tranche 5 it was asked here.
 frozen = json.loads((ROOT / "tests" / "data" / "material_tables.json").read_text(encoding="utf-8"))
 assert frozen["width_px"] == WIDTH
@@ -2310,10 +2310,10 @@ _LINE_PX = 21.6
 
 
 @pytest.mark.parametrize("name", ["direct"])
-def test_the_five_tables_have_advtext_s_columns(tables: dict[str, Any], name: str) -> None:
+def test_the_five_tables_have_imscribe_s_columns(tables: dict[str, Any], name: str) -> None:
     """
     `demo/tables.md` at 684 px: every column of every table is as wide as
-    `advtext.ui.table_columns` made it, and wants (`natural`) and can be
+    `imscribe.ui.table_columns` made it, and wants (`natural`) and can be
     squeezed to (`floor`) what `table_column_limits` said (the old core's
     answers, frozen in `tests/data/material_tables.json`), to a thousandth
     of a pixel. Two of the five are scaled up to the
@@ -2336,11 +2336,11 @@ def test_the_five_tables_have_advtext_s_columns(tables: dict[str, Any], name: st
 
 
 @pytest.mark.parametrize("name", ["direct"])
-def test_every_row_is_as_tall_as_advtext_makes_it_and_the_rule_takes_a_line(
+def test_every_row_is_as_tall_as_imscribe_makes_it_and_the_rule_takes_a_line(
     tables: dict[str, Any], name: str
 ) -> None:
     """
-    Row for row the height `advtext.ui.composition._table_boxes` gave it
+    Row for row the height `imscribe.ui.composition._table_boxes` gave it
     (one line, or as many as its tallest cell wraps to; frozen).
 
     **The difference, measured and not hidden**: the old core's boxes are
@@ -2549,12 +2549,12 @@ from pathlib import Path
 
 from imgui_bundle import imgui
 
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import MarkdownCode, MarkdownStream
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import MAX_COLUMNS, TypesetUnavailable, TypesetView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import MarkdownCode, MarkdownStream
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import MAX_COLUMNS, TypesetUnavailable, TypesetView
 
 ROOT = Path(sys.argv[1])
 WIDTH = 900.0

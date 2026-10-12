@@ -8,7 +8,7 @@ task said to use that target would have reviewed three tabs, concluded the demo
 was fine, and never seen the two the batch existed to demonstrate.
 
 **The list is gone, so what is guarded changed.** The app's pages are modules
-found by scanning `advtext/ui/pages/`; `scripts/shot.py --list` prints the
+found by scanning `imscribe/ui/pages/`; `scripts/shot.py --list` prints the
 requests to photograph from that scan, and the recipe loops over what it
 prints. There is no second copy to compare against the first. What can still go
 wrong is a link in that chain, so each link is pinned here:
@@ -48,7 +48,7 @@ from types import ModuleType
 
 import pytest
 
-from advtext.ui import pages
+from imscribe.ui import pages
 
 ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = ROOT / "scripts" / "shot.py"
@@ -178,7 +178,7 @@ def test_the_scan_finds_the_pages_at_all(found: pages.Discovery) -> None:
     with an empty batch.
     """
     names = [page.name for page in found.pages]
-    assert len(names) >= 4, f"only {names!r} came back from advtext.ui.pages"
+    assert len(names) >= 4, f"only {names!r} came back from imscribe.ui.pages"
     for original in ("Document", "Columns", "Specimen", "Formula"):
         assert original in names, f"{original} is no longer a page: {names!r}"
     # Blocks was the fifth. It showed the old core's hpack and vpack and was
@@ -195,7 +195,7 @@ def test_the_sidebar_and_the_batch_are_one_scan(found: pages.Discovery) -> None:
     `App._sidebar` draws, so the pages a person can click are compared here
     with the pages `--list` photographs.
     """
-    app = importlib.import_module("advtext.ui.app")
+    app = importlib.import_module("imscribe.ui.app")
     made = app.App(source="# t\n\nx\n", columns_source="x\n")
     clickable = [row.page.name for row in app.sidebar_rows(made.discovery) if row.page]
     assert clickable == [page.name for page in found.pages]
@@ -273,7 +273,7 @@ def test_every_entry_is_a_request_the_app_would_accept(found: pages.Discovery) -
     nobody types. Parse them here so a typo is a red test rather than eight
     seconds of window and a traceback.
     """
-    app = importlib.import_module("advtext.ui.app")
+    app = importlib.import_module("imscribe.ui.app")
     for spec in found.shot_specs():
         request = app.parse_tab_request(spec)
         assert request.tab, f"{spec!r} names no page"
@@ -292,13 +292,13 @@ def test_a_broken_page_makes_list_fail_and_print_no_list(
     stdout must be empty, the status non-zero, and the module named on stderr.
     """
     broken = pages.Discovery(
-        found.pages, (pages.Failure("advtext.ui.pages.halfwritten", "SyntaxError: invalid"),)
+        found.pages, (pages.Failure("imscribe.ui.pages.halfwritten", "SyntaxError: invalid"),)
     )
     monkeypatch.setattr(pages, "discover", lambda: broken)
     assert shot.main(["--list"]) == 1
     captured = capsys.readouterr()
     assert captured.out == "", f"a partial list was printed:\n{captured.out}"
-    assert "advtext.ui.pages.halfwritten" in captured.err
+    assert "imscribe.ui.pages.halfwritten" in captured.err
     assert "SyntaxError: invalid" in captured.err
 
 

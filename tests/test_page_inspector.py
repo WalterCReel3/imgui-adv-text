@@ -37,10 +37,10 @@ from test_page_document import (
     windowed_typeset,
 )
 
-from advtext.ui.pages import PageContext, discover
-from advtext.ui.pages import inspector as page
-from advtext.ui.pages.inspector import InspectorPage, Target
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe.ui.pages import PageContext, discover
+from imscribe.ui.pages import inspector as page
+from imscribe.ui.pages.inspector import InspectorPage, Target
+from imscribe.ui.typeset_view import TypesetUnavailable
 
 if TYPE_CHECKING:
     from conftest import Window
@@ -133,7 +133,7 @@ def _frame(
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-inspector-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-inspector-page-test", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             (made.draw if draw is None else draw)()
         finally:
@@ -524,7 +524,7 @@ def test_an_exception_that_is_not_the_librarys_is_a_bug_and_propagates(unasked: 
 
 _TYPESET = r"""
 import dataclasses
-from advtext.ui.pages import inspector as page
+from imscribe.ui.pages import inspector as page
 
 SAMPLE = open("demo/sample.md", encoding="utf-8").read()
 OFF = (5.0, 795.0)

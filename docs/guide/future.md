@@ -1,5 +1,7 @@
 # Future work
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 Ordered by what a measurement says, not by appetite. `docs/status.md` section 6
 is the older version of this list; where the two disagree, the numbers here were
 taken more recently.

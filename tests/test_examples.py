@@ -8,7 +8,7 @@ through imtypeset (skipped without the library).
 
 Until tranche 5 this file began with seven tests of `examples/minimal.py`,
 the old core's five-step pipeline (parse, theme, compose, ship, draw through
-`advtext.backends.imgui_draw`). That backend is deleted and the example with
+`imscribe.backends.imgui_draw`). That backend is deleted and the example with
 it; `examples/typeset_minimal.py` is the smallest example now and
 `tests/test_typeset_view.py` runs it.
 """
@@ -28,7 +28,7 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
+from imscribe import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -59,7 +59,7 @@ _NO_LIBRARY = (
 
 @pytest.fixture(scope="module")
 def diff_minimal() -> ModuleType:
-    return _load(_DIFF_EXAMPLE, "advtext_example_diff_minimal")
+    return _load(_DIFF_EXAMPLE, "imscribe_example_diff_minimal")
 
 
 def test_the_diff_example_imports_the_facade_and_the_typeset_layer_and_nothing_old() -> None:
@@ -68,9 +68,9 @@ def test_the_diff_example_imports_the_facade_and_the_typeset_layer_and_nothing_o
 
     Everything comes from the package root: `Diff`, a dark palette, a theme,
     and since T5-B2 the view (`TypesetDiffView`, `DiffLayout`,
-    `TypesetUnavailable`), which are in `advtext.__all__` for as long as this
+    `TypesetUnavailable`), which are in `imscribe.__all__` for as long as this
     passes; and the `typesetter` module, which is a submodule taken from the
-    root. No submodule of advtext is imported by its own path (until T5-B2
+    root. No submodule of imscribe is imported by its own path (until T5-B2
     the view's two were: the typeset layer was beside the facade). Nothing of
     the old view or the old font loader is imported by any route.
     """
@@ -81,18 +81,18 @@ def test_the_diff_example_imports_the_facade_and_the_typeset_layer_and_nothing_o
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                assert not alias.name.startswith("advtext"), f"import {alias.name}"
+                assert not alias.name.startswith("imscribe"), f"import {alias.name}"
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if module.startswith("advtext."):
+            if module.startswith("imscribe."):
                 by_name.add(module)
-            if module == "advtext":
+            if module == "imscribe":
                 from_root.extend(alias.name for alias in node.names)
 
-    import advtext
+    import imscribe
 
     assert by_name == typeset_layer, sorted(by_name ^ typeset_layer)
-    assert set(from_root) - {"typesetter"} <= set(advtext.__all__)
+    assert set(from_root) - {"typesetter"} <= set(imscribe.__all__)
     assert {"Diff", "DARK_PALETTE", "Theme", "typesetter"} <= set(from_root)
     assert {"TypesetDiffView", "DiffLayout", "TypesetUnavailable"} <= set(from_root)
     old = {"DiffView", "DiffFences", "BareView", "load_faces", "fontlib_metrics", "char_measure"}
@@ -120,7 +120,7 @@ def test_loading_the_diff_example_and_making_its_diffs_loads_no_imgui() -> None:
                 one, several = example.text_diff(), example.edits_diff()
                 print(len(one.files), len(several.files))
                 print([n for n in sys.modules if n.split(".")[0] == "imgui_bundle"][:1])
-                print("advtext.ui.app" in sys.modules)
+                print("imscribe.ui.app" in sys.modules)
                 """),
         ],
         capture_output=True,
@@ -146,7 +146,7 @@ def test_the_two_ways_in_give_the_diffs_the_example_says_they_do(
 
     A side that is `None` is a file that is not there, and the status says so.
     """
-    from advtext import FileStatus, RowKind
+    from imscribe import FileStatus, RowKind
 
     one = diff_minimal.text_diff()
     (file,) = one.files
@@ -170,7 +170,7 @@ def test_the_two_ways_in_give_the_diffs_the_example_says_they_do(
 _DIFF_HEADLESS = r"""
 import importlib.util, json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
+from imscribe import typesetter
 
 spec = importlib.util.spec_from_file_location("dm", sys.argv[1])
 example = importlib.util.module_from_spec(spec)
@@ -191,8 +191,8 @@ report["load_fonts"] = typesetter.load_fonts()
 report["ready"] = typesetter.ready()
 report["old"] = sorted(
     n for n in sys.modules
-    if n in ("advtext.ui.diff_view", "advtext.ui.bare_view", "advtext.backends.imgui_draw",
-             "advtext.ui.fonts", "advtext.markdown", "advtext.style")
+    if n in ("imscribe.ui.diff_view", "imscribe.ui.bare_view", "imscribe.backends.imgui_draw",
+             "imscribe.ui.fonts", "imscribe.markdown", "imscribe.style")
 )
 
 for name, side_by_side in (("unified", False), ("side-by-side", True)):
@@ -202,7 +202,7 @@ for name, side_by_side in (("unified", False), ("side-by-side", True)):
         try:
             imgui.set_next_window_pos(imgui.ImVec2(10.0, 10.0))
             imgui.set_next_window_size(imgui.ImVec2(900.0, 700.0))
-            imgui.begin("advtext diff example under test")
+            imgui.begin("imscribe diff example under test")
             try:
                 before = imgui.get_window_draw_list().vtx_buffer.size()
                 top = imgui.get_cursor_screen_pos().y

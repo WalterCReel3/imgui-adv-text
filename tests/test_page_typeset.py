@@ -37,12 +37,12 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.ui.app import App
-from advtext.ui.pages import PageContext, discover
-from advtext.ui.pages import typeset as page
-from advtext.ui.pages.typeset import TypesetPage
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe import typesetter
+from imscribe.ui.app import App
+from imscribe.ui.pages import PageContext, discover
+from imscribe.ui.pages import typeset as page
+from imscribe.ui.pages.typeset import TypesetPage
+from imscribe.ui.typeset_view import TypesetUnavailable
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from conftest import Window
@@ -58,7 +58,7 @@ SOURCE = (
 @pytest.fixture
 def unasked(monkeypatch: pytest.MonkeyPatch) -> Any:
     """
-    `advtext.typesetter` as at import, and a `module()` that fails the test if asked.
+    `imscribe.typesetter` as at import, and a `module()` that fails the test if asked.
     """
     typesetter._forget()
     monkeypatch.setattr(typesetter, "module", lambda: pytest.fail("the page asked for the library"))
@@ -83,7 +83,7 @@ def _frame(draw: Any) -> int:
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-page-typeset-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-page-typeset-test", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             draw()
         finally:
@@ -248,8 +248,8 @@ import sys
 
 from imgui_bundle import imgui
 
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import typeset as page
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import typeset as page
 
 context = PageContext.build()
 before = set(sys.modules)
@@ -268,21 +268,21 @@ for _ in range(3):
 print(json.dumps({
     "line": list(made.lines()),
     "frames": made.frames,
-    "added": sorted(name for name in set(sys.modules) - before if name.startswith("advtext")),
+    "added": sorted(name for name in set(sys.modules) - before if name.startswith("imscribe")),
     "old": sorted(name for name in sys.modules if name in sys.argv[1:]),
     "imtypeset": "imtypeset" in sys.modules,
 }))
 """
 
 OLD_VIEWS = (
-    "advtext.markdown",
-    "advtext.mathtext",
-    "advtext.ui.bare_view",
-    "advtext.ui.document_view",
-    "advtext.ui.composition",
-    "advtext.backends.imgui_draw",
-    "advtext.shipout",
-    "advtext.linebreak",
+    "imscribe.markdown",
+    "imscribe.mathtext",
+    "imscribe.ui.bare_view",
+    "imscribe.ui.document_view",
+    "imscribe.ui.composition",
+    "imscribe.backends.imgui_draw",
+    "imscribe.shipout",
+    "imscribe.linebreak",
 )
 """What the fallback this page used to have pulled in the first time it drew."""
 
@@ -290,7 +290,7 @@ OLD_VIEWS = (
 def test_building_and_drawing_the_page_imports_no_old_view(tmp_path: Path) -> None:
     """
     In a fresh interpreter, without the library's variables: three frames of
-    the page add no `advtext` module at all to what importing it and building
+    the page add no `imscribe` module at all to what importing it and building
     a `PageContext` loaded, and none of the old views is loaded.
     """
     pytest.importorskip("imgui_bundle")
@@ -429,12 +429,12 @@ import sys
 
 from imgui_bundle import hello_imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
 
 WANT_LIBRARY = sys.argv[1] == "with"
 report = {"frames": 0}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def snapshot(made):
@@ -480,18 +480,18 @@ def watched_gui(self):
         hello_imgui.get_runner_params().app_shall_exit = True
 
 
-advtext_app_errors = {}
+imscribe_app_errors = {}
 
 
 def watched_gui_outer(self):
     watched_gui(self)
-    advtext_app_errors.update(self.page_errors)
+    imscribe_app_errors.update(self.page_errors)
 
 
-advtext_app.App.gui = watched_gui_outer
-advtext_app.run(tab="typeset")
+imscribe_app.App.gui = watched_gui_outer
+imscribe_app.run(tab="typeset")
 report["imported"] = "imtypeset" in sys.modules
-report["survived"] = "Typeset" not in advtext_app_errors
+report["survived"] = "Typeset" not in imscribe_app_errors
 print(json.dumps(report))
 """
 

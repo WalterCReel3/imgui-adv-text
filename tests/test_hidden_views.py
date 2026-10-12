@@ -1,5 +1,5 @@
 r"""
-A view out of sight rests (pptmstr's P30): `advtext.ui.typeset_view.TypesetView.draw`.
+A view out of sight rests (pptmstr's P30): `imscribe.ui.typeset_view.TypesetView.draw`.
 
 A log is a view for each markdown run, four hundred of them in one scrolling
 child and thirty in sight. Until 2026-10-12 every one made its three library
@@ -41,7 +41,7 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
+from imscribe import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 _FRAME = ["LayoutDocument", "DrawDocument", "GetDocumentSize"]
@@ -54,12 +54,12 @@ import json, sys
 
 from imgui_bundle import imgui
 
-from advtext import typesetter
-from advtext.theme import BlockKind, Theme
-from advtext.typeset_markdown import MarkdownStream
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe import typesetter
+from imscribe.theme import BlockKind, Theme
+from imscribe.typeset_markdown import MarkdownStream
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 
 report = {"module": typesetter.module() is not None,
           "load_start": open("/proc/loadavg").read().split()[:3]}

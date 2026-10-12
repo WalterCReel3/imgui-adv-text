@@ -1,5 +1,7 @@
 # ImGui risks, in the order worth working through
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 This was "the list for the first person who opens this on a machine with a
 display". That person has been. Two of the items below are settled and say so;
 the rest are the ones a display did not answer.

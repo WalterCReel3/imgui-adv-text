@@ -1,5 +1,6 @@
 r"""
-What pptmstr, the first host, asked of the views (its P8, P12, P13, P19): `advtext.ui.typeset_view`.
+What pptmstr, the first host, asked of the views (its P8, P12, P13, P19):
+`imscribe.ui.typeset_view`.
 
 - **P8** blocks a host made (`MarkdownText`, `MarkdownCode`) and a
   `Description` a host made are shown as given, and what is no block is a
@@ -36,7 +37,7 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
+from imscribe import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
@@ -56,19 +57,19 @@ def _report_of(stdout: str) -> dict[str, Any]:
 
 _PLAIN = r"""
 import collections, dataclasses, json, sys
-from advtext import typesetter
-from advtext.description import (
+from imscribe import typesetter
+from imscribe.description import (
     BLOCK_FIXED_LINE_HEIGHT, BLOCK_TABLE_HELD, KIND_CODE, KIND_HOST, KIND_PARAGRAPH, KIND_TABLE,
     BlockDescription, CellDescription, ColumnDescription, Description, LinkRow, RunDescription,
     StyleDescription, description_of, table_text,
 )
-from advtext.theme import BlockKind, Theme
-from advtext import typeset_markdown
-from advtext.typeset_markdown import (
+from imscribe.theme import BlockKind, Theme
+from imscribe import typeset_markdown
+from imscribe.typeset_markdown import (
     MarkdownCode, MarkdownConverter, MarkdownRule, MarkdownStream, MarkdownText, parse_markdown,
 )
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import CODE_OVERFLOWS, TABLE_WIDTHS, TypesetView
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import CODE_OVERFLOWS, TABLE_WIDTHS, TypesetView
 
 # Stands for the imported package: nothing below reaches the library.
 typesetter._ts, typesetter._tried = object(), True
@@ -195,7 +196,7 @@ given["grown"] = [view.set_document(more), view.revision, list(view.texts)[-1],
 other = description_of(blocks, [StyleDescription(Scale=2.0), styles[1]], links)
 given["restyled"] = [view.set_document(other), view._styles[0].Scale, len(view._described)]
 # A palette's roles are not laid over a description: a style keeps the ink it states.
-from advtext.ui.palette import DARK_PALETTE
+from imscribe.ui.palette import DARK_PALETTE
 view.set_palette(
     DARK_PALETTE.with_roles({BlockKind.CODE: 0xFF0102FF, BlockKind.PARAGRAPH: 0xFF0000FF}))
 given["inks_kept"] = sorted({s.Color for s in view._styles})
@@ -303,11 +304,11 @@ reading = {"has_reader_options": hasattr(typeset_markdown, "ReaderOptions")}
 if reading["has_reader_options"]:
     reader = typeset_markdown.ReaderOptions(html_as_text=True)
     seen = []
-    real = sys.modules["advtext.ui.typeset_view"].parse_markdown
+    real = sys.modules["imscribe.ui.typeset_view"].parse_markdown
     def spy(source, theme, **more):
         seen.append(dict(more))
         return real(source, theme, **more)
-    sys.modules["advtext.ui.typeset_view"].parse_markdown = spy
+    sys.modules["imscribe.ui.typeset_view"].parse_markdown = spy
     default = TypesetView(HTML, theme=theme)
     with_reader = TypesetView(HTML, theme=theme, reader=reader)
     reading["passed"] = ["reader" in seen[0], seen[1].get("reader") is reader]
@@ -407,7 +408,7 @@ def test_host_blocks_are_edited_as_any_blocks_and_mix_with_parsed_ones(
         ("bytes", "TypeError", "not a bytes"),
         ("one_block", "TypeError", "one MarkdownCode is not a document"),
         ("one_description_block", "TypeError", "one BlockDescription is not a document"),
-        ("a_block_description_in_blocks", "TypeError", "advtext.description.Description"),
+        ("a_block_description_in_blocks", "TypeError", "imscribe.description.Description"),
         ("with_blocks_attribute", "TypeError", "block 1 is a Odd"),
         ("style_is_a_kind", "TypeError", "block 0 (MarkdownCode): style is a BlockKind"),
         ("text_is_bytes", "TypeError", "block 0 (MarkdownCode): text is a bytes"),
@@ -589,7 +590,7 @@ def test_the_reader_is_handed_to_parse_markdown_untouched(plain: dict[str, Any])
     """
     told = plain["reader"]
     if not told["has_reader_options"]:
-        pytest.skip("advtext.typeset_markdown has no ReaderOptions in this tree")
+        pytest.skip("imscribe.typeset_markdown has no ReaderOptions in this tree")
     assert told["passed"] == [False, True]
     default, with_reader, parsed = told["texts"]
     assert with_reader == parsed and default != with_reader
@@ -613,18 +614,18 @@ from pathlib import Path
 
 from imgui_bundle import imgui
 
-from advtext import typesetter
-from advtext.description import (
+from imscribe import typesetter
+from imscribe.description import (
     BLOCK_FIXED_LINE_HEIGHT, BLOCK_TABLE_HELD, KIND_CODE, KIND_HOST, KIND_PARAGRAPH, KIND_TABLE,
     BlockDescription, CellDescription, ColumnDescription, LinkRow, RunDescription,
     StyleDescription, description_of, table_text,
 )
-from advtext.theme import BlockKind, Theme
-from advtext.typeset_markdown import MarkdownCode, MarkdownStream, MarkdownText
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_hosts import TypesetDiffFences
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import CODE_OVERFLOWS, TypesetUnavailable, TypesetView
+from imscribe.theme import BlockKind, Theme
+from imscribe.typeset_markdown import MarkdownCode, MarkdownStream, MarkdownText
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_hosts import TypesetDiffFences
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import CODE_OVERFLOWS, TypesetUnavailable, TypesetView
 
 report = {"module": typesetter.module() is not None,
           "load_start": open("/proc/loadavg").read().split()[:3]}
@@ -1002,8 +1003,8 @@ report["carried_back"].update(calls=back_calls, flags=view._described[0].flags)
 view.close()
 # A table DESCRIBED with widths is the host's too, and is never held.
 import dataclasses
-from advtext.typeset_markdown import parse_markdown
-from advtext.primitives import sp_from_px
+from imscribe.typeset_markdown import parse_markdown
+from imscribe.primitives import sp_from_px
 (parsed,) = parse_markdown("| a | b |\n|---|---|\n| one | two |\n", theme).blocks
 sized = dataclasses.replace(parsed, widths=(sp_from_px(120.0, theme.px_per_inch),
                                             sp_from_px(90.0, theme.px_per_inch)))
@@ -1407,10 +1408,10 @@ import json, sys
 
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_view import TypesetView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_view import TypesetView
 
 PARKED = (700.0, 700.0)
 PARAGRAPH = "some prose that is long enough to be broken into lines at the width of the pane\n\n"

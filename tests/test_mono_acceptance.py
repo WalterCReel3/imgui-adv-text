@@ -35,7 +35,7 @@ answers, in a real window, and no pixel is read):
    style is sized by pixel height with a pitch of its own). **These pass**:
    the view chooses the em at which the face's advance is the whole pixel
    Dear ImGui draws it at, and keeps the pitch
-   (`advtext.ui.typeset_diff_view`, "A whole-pixel cell").
+   (`imscribe.ui.typeset_diff_view`, "A whole-pixel cell").
 2. The same view with the default cell (`cell="font"`), at 14 to 20.
 3. A fenced code block in a `TypesetView` at a pixel height, at 14 to 20.
 
@@ -60,7 +60,7 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
+from imscribe import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -132,11 +132,11 @@ from pathlib import Path
 
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import (
+from imscribe import (
     DARK_PALETTE, Align, BlockKind, Diff, Face, Faces, Spacing, Theme, TypesetView,
     em_size_for_pixel_height, px_from_sp, sp_from_px, typesetter,
 )
-from advtext.ui.typeset_diff_view import DiffLayout, TypesetDiffView, code_size
+from imscribe.ui.typeset_diff_view import DiffLayout, TypesetDiffView, code_size
 
 PAGES = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 OUT = Path(sys.argv[2])
@@ -156,7 +156,7 @@ PPTMSTR_ROWS = (
     LONG,
 )
 ROWS = PPTMSTR_ROWS + (ASCII,)
-# U+2502, the tallest glyph of the bundled code face that advtext's docs name.
+# U+2502, the tallest glyph of the bundled code face that imscribe's docs name.
 TALL = "\u2502 box \u2502"
 MARKS = (1, 10, 20, 30, 40, 74)
 SELECTED = (20, 40)   # characters 21 to 40, counted from 1
@@ -1052,9 +1052,9 @@ def test_the_default_is_the_font_s_cell_and_a_wrong_name_is_the_host_s_mistake()
     """
     import inspect
 
-    from advtext import Diff, Theme
-    from advtext.ui.typeset_diff_view import CELLS, TypesetDiffView
-    from advtext.ui.typeset_hosts import TypesetDiffFences
+    from imscribe import Diff, Theme
+    from imscribe.ui.typeset_diff_view import CELLS, TypesetDiffView
+    from imscribe.ui.typeset_hosts import TypesetDiffFences
 
     assert CELLS == ("font", "pixel")
     assert inspect.signature(TypesetDiffView).parameters["cell"].default == "font"
@@ -1070,7 +1070,7 @@ def test_the_default_is_the_font_s_cell_and_a_wrong_name_is_the_host_s_mistake()
 
 
 def _fences_with(value: Any) -> Any:
-    from advtext.ui.typeset_hosts import TypesetDiffFences
+    from imscribe.ui.typeset_hosts import TypesetDiffFences
 
     return TypesetDiffFences(cell=value)
 
@@ -1081,9 +1081,9 @@ import sys
 
 from imgui_bundle import imgui
 
-from advtext import Diff, Theme, TypesetDiffFences, TypesetView, typesetter
-from advtext.ui.typeset_diff_view import TypesetDiffView, code_size
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe import Diff, Theme, TypesetDiffFences, TypesetView, typesetter
+from imscribe.ui.typeset_diff_view import TypesetDiffView, code_size
+from imscribe.ui.typeset_view import TypesetUnavailable
 
 report = {"module": typesetter.module() is not None, "reason": typesetter.reason()}
 if not report["module"]:

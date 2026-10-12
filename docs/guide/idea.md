@@ -1,5 +1,7 @@
 # The idea
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 ## What this is
 
 **TeX's layout algorithms, in Python, drawn through Dear ImGui.**

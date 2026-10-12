@@ -45,10 +45,10 @@ from typing import Any
 
 import pytest
 
-import advtext
-from advtext import Align, Face, typesetter
-from advtext.description import FACE_DEFAULT, FACE_ROLES
-from advtext.typeset_markdown import (
+import imscribe
+from imscribe import Align, Face, typesetter
+from imscribe.description import FACE_DEFAULT, FACE_ROLES
+from imscribe.typeset_markdown import (
     MarkdownCode,
     MarkdownConverter,
     MarkdownStream,
@@ -96,8 +96,8 @@ TYPESET_LAYER: set[str] = set()
 """
 The modules of the typeset layer an example may import by their own path:
 none, since T5-B2 put the layer's names on the facade. Until then it was
-`advtext.typeset_markdown`, `advtext.ui.typeset_view` and
-`advtext.ui.typeset_stream_view`.
+`imscribe.typeset_markdown`, `imscribe.ui.typeset_view` and
+`imscribe.ui.typeset_stream_view`.
 """
 
 OLD_NAMES = {
@@ -136,12 +136,12 @@ def _load(path: Path, name: str) -> ModuleType:
 
 @pytest.fixture(scope="module")
 def replay_module(bundled_fonts: Any) -> ModuleType:
-    return _load(_REPLAY, "advtext_example_stream_replay")
+    return _load(_REPLAY, "imscribe_example_stream_replay")
 
 
 @pytest.fixture(scope="module")
 def chat_module(bundled_fonts: Any) -> ModuleType:
-    return _load(_CHAT, "advtext_example_chat_transcript")
+    return _load(_CHAT, "imscribe_example_chat_transcript")
 
 
 # ----------------------------------------------------------------------
@@ -153,8 +153,8 @@ def test_the_examples_import_the_facade_and_the_typeset_layer_and_nothing_old(pa
     """
     Fidelity: the source text, every import in the file, a function's body included.
 
-    From the package root, names in `advtext.__all__` and the module
-    `typesetter`; no submodule of advtext by its own path (`TYPESET_LAYER`,
+    From the package root, names in `imscribe.__all__` and the module
+    `typesetter`; no submodule of imscribe by its own path (`TYPESET_LAYER`,
     which is empty). No old view, old stream, old converter or old font
     loader by any route: not from the root (`OLD_NAMES`) and not by module.
     """
@@ -164,17 +164,17 @@ def test_the_examples_import_the_facade_and_the_typeset_layer_and_nothing_old(pa
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                assert not alias.name.startswith("advtext"), f"import {alias.name}"
+                assert not alias.name.startswith("imscribe"), f"import {alias.name}"
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if module.startswith("advtext."):
+            if module.startswith("imscribe."):
                 by_name.add(module)
-            if module == "advtext":
+            if module == "imscribe":
                 from_root.extend(alias.name for alias in node.names)
     assert by_name <= TYPESET_LAYER, sorted(by_name - TYPESET_LAYER)
     assert {"TypesetStreamView", "MarkdownStream", "TypesetUnavailable"} <= set(from_root)
     assert "typesetter" in from_root and "Theme" in from_root
-    assert set(from_root) - {"typesetter"} <= set(advtext.__all__)
+    assert set(from_root) - {"typesetter"} <= set(imscribe.__all__)
     assert not set(from_root) & OLD_NAMES, sorted(set(from_root) & OLD_NAMES)
     # And no attribute of the package root reached without an import.
     reached = {
@@ -182,7 +182,7 @@ def test_the_examples_import_the_facade_and_the_typeset_layer_and_nothing_old(pa
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute)
         and isinstance(node.value, ast.Name)
-        and node.value.id == "advtext"
+        and node.value.id == "imscribe"
     }
     assert not reached, sorted(reached)
 
@@ -193,9 +193,9 @@ def test_importing_an_example_loads_none_of_the_old_core(path: Path) -> None:
     Fidelity: a fresh interpreter, by import graph.
 
     None of it (`tests/test_typeset_closure.py`, whose list of the old core
-    this reads; `advtext.units` and `advtext.fontmetrics` were the floor of
-    everything that names a `Theme` until T5-B2), and none of `advtext.style`,
-    `advtext.stream`, `advtext.markdown`.
+    this reads; `imscribe.units` and `imscribe.fontmetrics` were the floor of
+    everything that names a `Theme` until T5-B2), and none of `imscribe.style`,
+    `imscribe.stream`, `imscribe.markdown`.
     """
     from test_typeset_closure import OLD_CORE, THEME
 
@@ -211,7 +211,7 @@ def test_importing_an_example_loads_none_of_the_old_core(path: Path) -> None:
                 example = importlib.util.module_from_spec(spec)
                 sys.modules["example"] = example
                 spec.loader.exec_module(example)
-                print(json.dumps(sorted(n for n in sys.modules if n.startswith("advtext"))))
+                print(json.dumps(sorted(n for n in sys.modules if n.startswith("imscribe"))))
                 """),
         ],
         capture_output=True,
@@ -221,9 +221,9 @@ def test_importing_an_example_loads_none_of_the_old_core(path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     loaded = set(json.loads(result.stdout))
-    assert "advtext.ui.typeset_stream_view" in loaded
+    assert "imscribe.ui.typeset_stream_view" in loaded
     assert loaded & OLD_CORE == THEME, sorted(loaded & OLD_CORE)
-    for name in ("advtext.stream", "advtext.markdown", "advtext.style", "advtext.ui.fonts"):
+    for name in ("imscribe.stream", "imscribe.markdown", "imscribe.style", "imscribe.ui.fonts"):
         assert name not in loaded, name
 
 
@@ -245,11 +245,11 @@ def test_loading_an_example_loads_neither_the_demo_app_nor_a_window_runner(path:
                 example = importlib.util.module_from_spec(spec)
                 sys.modules["example"] = example
                 spec.loader.exec_module(example)
-                names = ("advtext.ui.app", "imgui_bundle.hello_imgui", "imgui_bundle.immapp")
+                names = ("imscribe.ui.app", "imgui_bundle.hello_imgui", "imgui_bundle.immapp")
                 print([name for name in names if name in sys.modules])
                 made = example.replay() if hasattr(example, "replay") else example.Transcript()
                 print(made.advance(1.0), "imtypeset" in sys.modules)
-                print("advtext.ui.app" in sys.modules)
+                print("imscribe.ui.app" in sys.modules)
                 """),
         ],
         capture_output=True,
@@ -505,7 +505,7 @@ def _run_main(
         pytest.skip("Xvfb is not installed, so there is no server to open the window on")
     if not _can_make_a_namespace():
         pytest.skip("`unshare -rm` cannot make a user namespace here, which the Xvfb recipe needs")
-    probe = _load(_PROBE, f"advtext_mouse_probe_for_{path.stem}")
+    probe = _load(_PROBE, f"imscribe_mouse_probe_for_{path.stem}")
     inner = (
         textwrap.dedent(f"""
         import os, runpy, sys
@@ -596,7 +596,7 @@ def test_with_the_library_the_replay_runs_to_the_end_in_a_real_window() -> None:
 
 
 _FAILING_DRAW = """
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 state = {"draws": 0}
 real_draw = TypesetView.draw
 def failing(self, **kwargs):
@@ -637,7 +637,7 @@ def test_when_a_draw_raises_in_the_window_main_says_why_and_returns_no_library(
 _HEADLESS = r"""
 import importlib.util, json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
+from imscribe import typesetter
 
 ROOT, PROSE = sys.argv[1], sys.argv[2]
 def load(name):
@@ -672,7 +672,7 @@ def frame(module, made, seconds=1.0 / 60.0, wheel=None, width=900.0, keys=()):
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(width, 500.0))
         flags = imgui.WindowFlags_.no_decoration.value | imgui.WindowFlags_.no_move.value
-        imgui.begin("##advtext-" + module.__name__, None, flags)
+        imgui.begin("##imscribe-" + module.__name__, None, flags)
         try:
             result = module.show(made, imgui, seconds)
         finally:
@@ -707,7 +707,7 @@ for policy in replay.POLICIES:
     report[policy] = dict(told(playing, frames), last=last)
 report["unmade"] = unmade
 # The finished replay reads as the document does: streaming is a way of arriving.
-from advtext.ui.typeset_view import TypesetView
+from imscribe.ui.typeset_view import TypesetView
 source = replay.SOURCE.read_text(encoding="utf-8")
 whole = TypesetView(source, theme=playing.theme, references=False)
 playing.view.select_all()
@@ -827,7 +827,7 @@ report["after"] = {"module": typesetter.module() is not None, "ready": typesette
 
 # 3. A draw that raises with the library still ready: `show` lets it out, with ImGui's
 # stack as it found it (the frame after is drawn).
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe.ui.typeset_view import TypesetUnavailable
 real_draw = TypesetView.draw
 def failing(self, **kwargs):
     raise TypesetUnavailable("raised by the test")

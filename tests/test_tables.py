@@ -3,8 +3,8 @@ Tables whose cells wrap, and columns a caller can size.
 
 Before this file existed a cell was one line however wide its column, so a table
 wider than the measure had its columns scaled down and its cells run into each
-other. `advtext.ui._table_boxes` now breaks a cell that is wider than its
-column as a paragraph, and `advtext.ui.with_columns` lets a caller fix the
+other. `imscribe.ui._table_boxes` now breaks a cell that is wider than its
+column as a paragraph, and `imscribe.ui.with_columns` lets a caller fix the
 widths. Four claims are defended here, in this order:
 
 1. **A table that fits is set exactly as it was.** `_before_wrapping` below is
@@ -23,11 +23,11 @@ vertical band, and `SelectionModel.fragment_at` used to choose a line by `y`
 alone, so a click in the second column of a wrapped row selected in the first.
 `test_a_click_in_the_second_column_of_a_wrapped_row_lands_in_that_column`
 failed against that rule (it was run as a strict `xfail` before
-`advtext.selection.fragment_nearest` existed) and passes against the new one.
+`imscribe.selection.fragment_nearest` existed) and passes against the new one.
 
 **Row rhythm** (review 2, item 1) is the section after wrapping: a wrapped row
 used to push the next row a `\lineskip` off the baseline grid, and the tests
-there failed against that before `advtext.ui._WrappedRow` existed. The
+there failed against that before `imscribe.ui._WrappedRow` existed. The
 validation tests in section 3 likewise failed first: `with_columns` accepted a
 width of 0.4 as 0 and a NaN fraction, and both surfaced at compose.
 
@@ -45,15 +45,15 @@ from typing import Any
 
 import pytest
 
-import advtext.ui as ui
-from advtext.linebreak import LineBreakParams
-from advtext.markdown import ColumnAlign, TableBlock, TextBlock, build_document
-from advtext.nodes import Box, CharNode, Glue, Kern, Rule
-from advtext.pack import hpack
-from advtext.selection import Selection, SelectionModel
-from advtext.shipout import DrawCmd, Glyph, Line, Point, RuleRect, ship
-from advtext.style import Theme, char_measure, fontlib_metrics
-from advtext.ui import (
+import imscribe.ui as ui
+from imscribe.linebreak import LineBreakParams
+from imscribe.markdown import ColumnAlign, TableBlock, TextBlock, build_document
+from imscribe.nodes import Box, CharNode, Glue, Kern, Rule
+from imscribe.pack import hpack
+from imscribe.selection import Selection, SelectionModel
+from imscribe.shipout import DrawCmd, Glyph, Line, Point, RuleRect, ship
+from imscribe.style import Theme, char_measure, fontlib_metrics
+from imscribe.ui import (
     PROSE_BREAKING,
     LayoutCache,
     SizedTable,
@@ -62,7 +62,7 @@ from advtext.ui import (
     table_natural_widths,
     with_columns,
 )
-from advtext.units import UNITY, Scaled, sp_from_pt, sp_from_px
+from imscribe.units import UNITY, Scaled, sp_from_pt, sp_from_px
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -145,7 +145,7 @@ def cell_lines(cmds: list[DrawCmd]) -> list[Line]:
 
 def _before_wrapping(block: TableBlock, theme: Theme, width: Scaled, measure: Any) -> list[Box]:
     """
-    `advtext.ui._table_boxes` as it stood before cells could wrap, transcribed.
+    `imscribe.ui._table_boxes` as it stood before cells could wrap, transcribed.
 
     Kept here as the oracle for "a table whose cells all fit lays out exactly
     as before". It calls the module's own `_apportioned` and `_table_row`,
@@ -241,7 +241,7 @@ def test_before_wrapping_the_same_table_ran_its_cells_into_each_other(
     # ink past the right edge of the table. Without this, "every glyph is in
     # its column" could be true of both and would say nothing about wrapping.
     width = sp_from_px(330.0)
-    from advtext.pack import vpack
+    from imscribe.pack import vpack
 
     box = vpack(_before_wrapping(prose, theme, width, measure)).box
     cmds = ship(box, Point(0, box.height), measure=measure)
@@ -256,7 +256,7 @@ def test_no_column_is_squeezed_below_its_longest_word(
     # and not asked of `ui._longest_word`: a floor taken from the code under
     # test agrees with it whatever it computes. Each word is converted on its
     # own and packed at its natural width, which involves neither the line
-    # breaker nor anything in `advtext.ui`.
+    # breaker nor anything in `imscribe.ui`.
     padding = theme.cell_padding
     cells = [
         [cell.strip() for cell in line.strip().strip("|").split("|")]
@@ -819,7 +819,7 @@ def test_copying_a_wrapped_table_reads_each_cell_whole_a_row_at_a_time(
     # cell followed by a line of its neighbour. The string itself and not its
     # words: this compared `.split()` while the flat text had doubled spaces
     # in it (review 2, item 4), which A6-copy has since removed. (The copy the old
-    # views made, with tabs and newlines, was `advtext.ui.units.UnitModel.copy_text`,
+    # views made, with tabs and newlines, was `imscribe.ui.units.UnitModel.copy_text`,
     # deleted with them in tranche 5, as is the per-unit layout this test also
     # compared with.)
     assert (
@@ -942,7 +942,7 @@ def test_a_table_measure_gives_the_columns_of_a_table_as_it_grows_changes_and_sh
     `TableMeasure` is `table_natural_widths` and `table_columns`, to the scaled point.
 
     Through everything a table being written does: a row added (the same row
-    objects before it, as `advtext.stream` hands them over), the last row
+    objects before it, as `imscribe.stream` hands them over), the last row
     replaced by another, rows taken away, the header replaced, and a
     different table given to the same measure. At four widths, one for each
     regime of `_column_widths` and one where even the longest words do not fit.

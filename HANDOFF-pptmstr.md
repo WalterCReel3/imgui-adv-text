@@ -1,5 +1,9 @@
 # Handoff: advtext ⇄ pptmstr
 
+**On 2026-10-12 the package was renamed `imscribe` ("Renamed", below).
+Everything in this file dated before that calls it advtext, this title
+included.**
+
 advtext's half of the channel with the session adopting advtext in pptmstr.
 The channel with imtypeset is `HANDOFF-imtypeset.md`, beside this file, and
 its rules apply here unchanged: each side writes only in its own repository;
@@ -1555,26 +1559,109 @@ apart); anything against GitHub; the CI workflow.
 (O-REL's builder): `make check` 3609 passed, 395 skipped, 4 xfailed (199 s, load 0.33 to 1.46); `make check TYPESET=1`
 3996 passed, 8 skipped, 4 xfailed (289 s, load 1.91 to 3.08).
 
-### Coming: advtext is to be renamed `imscribe` (the user, 2026-10-12)
+### Renamed: advtext is `imscribe` (2026-10-12)
 
-Decided by the user, not by an agent. Their words: "I'm really tempted by
-'imscribe' as it is a phonetic sound-a-like to 'inscribe' the word."; "Being
-evocative is the win as it allows future extensions that _may_ include
-editing or other display aspects (mermaid diagrams for one)."; "Let's work on
-the rename after the diff-view work. Big task but I think worthwhile."
+**Done.** This replaces the section "Coming: advtext is to be renamed", which
+stood here from `976554b` until the rename. Decided by the user, not by an
+agent. Their words: "I'm really tempted by 'imscribe' as it is a phonetic
+sound-a-like to 'inscribe' the word."; "Being evocative is the win as it
+allows future extensions that _may_ include editing or other display aspects
+(mermaid diagrams for one)."; "Let's work on the rename after the diff-view
+work. Big task but I think worthwhile." Carried out by the RENAME builder, an
+agent; one commit on `experimental/imtypeset-adoption`, the one that carries
+this section, not pushed when this was written. **It is a rename and nothing
+else, and there is no alias: from that commit on `import advtext` is a
+`ModuleNotFoundError`.** A pin on an earlier commit is untouched; you change
+when you move the pin.
 
-**Not done yet, and nothing changes until this file says it has.** It will
-be one commit on a quiet tree after the diff-view work lands: the package
-and import name `advtext` become `imscribe`, with the facade, the module
-paths, the docs and these handoff files. What you will change then: every
-`import advtext` / `from advtext...` in your seam, the requirement you pin,
-and the name of your half of this channel if you wish. What does not change:
-any call's signature or behaviour, the imtypeset pairing, the environment
-variables (`IMTYPESET_*` are imtypeset's), and the tag `advtext-reference`,
-which names the old Python core that imtypeset's oracle is pinned to. Whether
-a transitional `advtext` alias ships for one release will be said here when
-the rename is specified; assume none. The repository's name on GitHub and the
-name on any index are the user's to change.
+**What you change, all of it.** Read in your tree at `02375df` plus 18
+uncommitted paths; I cannot import pptmstr and ran none of it.
+
+1. **Every `import advtext` / `from advtext...` becomes `imscribe`.** 19 of
+   your Python files have one: `pptmstr/ui/typeset/` (`diffs.py`, `gate.py`,
+   `themes.py`, `views.py`), five under `scripts/`, ten under `tests/`. The
+   module paths below the package are the same (`imscribe.typesetter`,
+   `imscribe.ui.typeset_view`, ...), and so is every name in `__all__` (102).
+   Your `tests/test_typeset_gate.py` looks for imports of `advtext` by name
+   (`_advtext_imports`): if its pattern is not changed with the imports it
+   finds none, and whatever it asserts of them is then asserted of nothing.
+2. **The requirement.** The distribution is named `imscribe`:
+   `imscribe @ git+https://github.com/WalterCReel3/imgui-adv-text.git@<full commit>`.
+   The wheel `make dist` builds is `imscribe-<version>-py3-none-any.whl`, the
+   sdist `imscribe-<version>.tar.gz` with `imscribe-<version>/` at its top,
+   and `dist/BUILT-FROM`'s first line begins `imscribe:`. The version is
+   still `0.2.0.dev0`. **In an environment that has the old one, uninstall it
+   first** (`pip uninstall advtext`): pip does not know the two are one
+   project, and an old non-editable install leaves an `advtext/` beside the
+   new `imscribe/` that still imports. Your `bootstrap.sh` passes
+   `--reinstall-package advtext`, which names a package that will not be
+   there.
+3. **`pairing()`, `verdict()` and the JSON line: the key `advtext_version`
+   is `imscribe_version`.** The old key is gone, not kept beside the new
+   one: `answer["advtext_version"]` is a `KeyError`. Seventeen keys, as
+   before, and still the first of the dict. In the JSON line, whose keys are
+   sorted, it moves from second to seventh. I found no read of the key in
+   your tree; your handoff quotes it.
+4. **`python -m advtext.typesetter` is `python -m imscribe.typesetter`.** The
+   exit statuses are the same (0 ready, 3 not installed, 4 refused, 5 failed,
+   6 unsupported, 7 unchecked). The old command exits 1 with "No module
+   named 'advtext'", which is none of those: a staging check that treats
+   "not 0" as "not ready" will say not ready for the wrong reason.
+5. **The logger `advtext.typesetter` is `imscribe.typesetter`.** It is the
+   only logger the package has.
+6. **Text you may show or match.** Every message that said advtext says
+   imscribe (`reason()`, the `TypeError`s of `load_fonts`, `font`,
+   `set_document`, `set_columns`, marks; "the imtypeset at ... lacks N names
+   this imscribe calls"). Three keys of `Description.kinds` / `misfits`
+   changed, whole: "code blocks naming a language (kept by the host;
+   imscribe does not draw it)", "formulas refused by imscribe's builder
+   (their source, in the code face)", and (a test's label for a misfit)
+   "characters no face has (imscribe sets U+FFFD on the node; imtypeset
+   stands in itself)". Your `scripts/typeset_deps.py` prints
+   "advtext.typesetter.reason() says so".
+7. **Dear ImGui IDs.** The child windows and items the views make are named
+   `##imscribe-typeset-<n>`, `##imscribe-typeset-diff-<n>`,
+   `##imscribe-typeset-diff-child-<n>`, `##imscribe-typeset-diff-bar-<n>`
+   (they began `##advtext-`). I found nothing in your tree that names one.
+   A settings file that remembered a child window by the old name forgets
+   it once.
+8. **Nothing you set in the environment.** The package read no `ADVTEXT_*`
+   variable and reads no `IMSCRIBE_*` one. (`ADVTEXT_SLOW`, which un-skips
+   one slow test of this repository's suite, is `IMSCRIBE_SLOW`.)
+   `ADVTEXT_REPO`, `ADVTEXT_PIP_ARGS`, `ADVTEXT_SRC`, `advtext.ref`,
+   `.deps/advtext`, `pairing.ADVTEXT_REF` / `ADVTEXT_DIR` and
+   `HANDOFF-advtext.md` are yours: rename them or not, as you wish; this
+   file will go on calling your half `HANDOFF-advtext.md` until yours says
+   otherwise.
+9. Smaller, for completeness: the demo's window title is `imscribe` (so
+   hello_imgui writes `imscribe.ini`); the temporary directory for font
+   files is `imscribe-fonts-*`; the examples' window titles begin
+   `imscribe:`; pickles or reprs holding `advtext.<module>.<Class>` hold
+   `imscribe.<module>.<Class>`.
+
+**What does not change.** Any call's signature or behaviour, and any number:
+both gates give, test by test, what they gave on the commit before
+(below). `IMTYPESET_LIBRARY`, `IMTYPESET_PYTHON` and every other
+`IMTYPESET_*` (imtypeset's). The imtypeset pin (`v0.3.0`, `imtypeset.ref`)
+and the imgui-bundle pin. The tag `advtext-reference`, which names the old
+Python core. The file names `HANDOFF-pptmstr.md` and `HANDOFF-imtypeset.md`.
+**The repository: `github.com/WalterCReel3/imgui-adv-text`, checked out at
+`~/Source/imgui-adv-text`, is still that. Renaming it is the user's to do,
+and has not been done; your `ADVTEXT_REPO` default stays right.**
+`planning/patches/advtext-hinting.patch` was against the deleted Python core
+and applies to nothing in either name.
+
+**In this file**, every section dated before this one calls the package
+advtext and names paths under `advtext/`; they are a record and were not
+rewritten. Read `imscribe` for the package there.
+
+**Gates with the rename in the tree, alone on it, against imtypeset
+`v0.3.0`** (RENAME's builder; each compared test by test with a run of the
+same suite on `68eb18b` taken just before): `make check` 3611 passed, 720 skipped, 4 xfailed (293 s, load 3.3 to 9.5; it was 3610, 720, 4);
+`make check TYPESET=1` 4218 passed, 8 skipped, 109 xfailed (474 s, load 10.4 to 9.6; it was 4217, 8, 109). One test is new in each
+(`tests/test_rename.py`: the old name does not import); every other test has
+the outcome it had. Not run: `make dist` with the real builder, the
+workflows, macOS, and pptmstr against the renamed package.
 
 ### The diff view on a whole-pixel cell: usable by you now (2026-10-12)
 

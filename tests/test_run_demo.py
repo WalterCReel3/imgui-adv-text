@@ -27,13 +27,13 @@ and make the suite depend on collection order.
 
 **Nothing here opens a window**, which `tests/conftest.py` forbids. The two tests
 that run past the DISPLAY guard set `DISPLAY` to a value that is never dialled,
-because `advtext.ui.app.run` is replaced with a recorder first.
+because `imscribe.ui.app.run` is replaced with a recorder first.
 
 The *tab names* this file's cases use are coupled to the pages the app actually
 draws by `test_the_tab_names_in_the_help_are_the_tabs_the_app_draws`. That test
 used to read `App.gui`'s source, "a coupling of last resort" kept only until
-`advtext.ui.app` exported a list. It compares against `page_names()` now: the
-demo's pages are discovered from `advtext/ui/pages/` and that function is the
+`imscribe.ui.app` exported a list. It compares against `page_names()` now: the
+demo's pages are discovered from `imscribe/ui/pages/` and that function is the
 list the sidebar is drawn from.
 """
 
@@ -70,15 +70,15 @@ run_demo = _load()
 @pytest.fixture
 def stub_run(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str | None, str | None]]:
     """
-    Replace `advtext.ui.app.run` with a recorder and pretend a display exists.
+    Replace `imscribe.ui.app.run` with a recorder and pretend a display exists.
 
-    `main` does `from advtext.ui.app import parse_tab_request, run` *inside* the
+    `main` does `from imscribe.ui.app import parse_tab_request, run` *inside* the
     function, after the guard, so the name is looked up on the module at call
     time and patching the attribute is enough. Patching it is also what makes
     the `DISPLAY` below harmless: nothing reaches GLFW, so the value never has
     to name a real server.
     """
-    app = pytest.importorskip("advtext.ui.app")
+    app = pytest.importorskip("imscribe.ui.app")
     calls: list[tuple[str | None, str | None]] = []
 
     def recorder(source: str | None = None, **kwargs: Any) -> None:
@@ -119,25 +119,25 @@ def test_the_guard_refuses_without_a_display_and_stands_down_for_a_display_or_fo
     assert len(stub_run) == 2
 
 
-def test_the_guard_answers_before_advtext_is_imported(
+def test_the_guard_answers_before_imscribe_is_imported(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """
     The refusal must cost nothing but an `os.environ` lookup.
 
     `README.md` and `docs/status.md` both quote 0.03-0.06s for this path, and
-    importing `advtext.ui.app` costs about 0.13s on this machine -- so moving
+    importing `imscribe.ui.app` costs about 0.13s on this machine -- so moving
     the import above the guard would quietly multiply the measured figure in two
     documents by five, with every test still green.
 
     Timing cannot assert that on a shared machine, so the import is *broken*
-    instead: `None` in `sys.modules` makes `import advtext.ui.app` raise
+    instead: `None` in `sys.modules` makes `import imscribe.ui.app` raise
     `ImportError: ... halted; None in sys.modules`. A guard that imports first
     therefore raises here, and one that answers first returns 2. The ablation is
     exact and takes no wall clock.
     """
     monkeypatch.delenv("DISPLAY", raising=False)
-    monkeypatch.setitem(__import__("sys").modules, "advtext.ui.app", None)
+    monkeypatch.setitem(__import__("sys").modules, "imscribe.ui.app", None)
 
     assert run_demo.main([]) == 2
     assert "No DISPLAY is set" in capsys.readouterr().err
@@ -292,7 +292,7 @@ def test_every_tab_and_option_reaches_the_app_verbatim(
     `--tab columns` and `--tab columns:3` were both refused by argparse before this.
 
     Verbatim matters as much as accepted: this script must not normalise the
-    spec, because `advtext.ui.app.parse_tab_request` owns the grammar and a
+    spec, because `imscribe.ui.app.parse_tab_request` owns the grammar and a
     second, partial implementation here is how the `choices=` list went stale in
     the first place. `Columns` is in the list because the app matches names
     case-insensitively and a script that lower-cased on the way through would
@@ -337,7 +337,7 @@ def test_the_tab_argument_keeps_no_copy_of_the_tab_list() -> None:
     assert tab.choices is None, (
         "--tab has a choices= list again. It went stale last time within one batch: "
         "a list of tab names here is a second source of truth for something "
-        "advtext.ui.app.gui already owns."
+        "imscribe.ui.app.gui already owns."
     )
     assert tab.type is None, "--tab must pass the raw string through, colons and all"
 
@@ -349,7 +349,7 @@ def test_the_tab_names_in_the_help_are_the_tabs_the_app_draws() -> None:
     This used to scrape `App.gui`'s source for string literals, "a coupling of
     last resort" whose own docstring said: if app.py ever exports the names,
     delete this and compare against the export. It does now -- the pages are
-    discovered from `advtext/ui/pages/` and `advtext.ui.app.page_names()` is
+    discovered from `imscribe/ui/pages/` and `imscribe.ui.app.page_names()` is
     the list the sidebar draws -- and `gui` no longer contains a name to
     scrape, so this compares against that. (Changed by C-shell, 2026-10-07.)
 
@@ -359,13 +359,13 @@ def test_the_tab_names_in_the_help_are_the_tabs_the_app_draws() -> None:
     Document tab -- the same class of wrong-picture-under-a-confident-filename
     that `parse_tab_request` refuses misspelt options to avoid.
     """
-    app = pytest.importorskip("advtext.ui.app")
+    app = pytest.importorskip("imscribe.ui.app")
     drawn = {name.lower() for name in app.page_names()}
     assert drawn, "the app reports no pages; this comparison would pass against nothing"
     for spec in _TAB_SPECS:
         name = spec.partition(":")[0].lower()
         assert name in drawn, (
-            f"{name!r} is not a page advtext.ui.app.App.gui draws; "
+            f"{name!r} is not a page imscribe.ui.app.App.gui draws; "
             "this file's list of tab names has gone stale"
         )
 
@@ -458,7 +458,7 @@ def test_the_page_count_in_the_docstring_is_the_count_of_pages() -> None:
     The docstring spells out how many pages the sidebar has, and a page was
     added (2026-10-10) without it: "fourteen" for fifteen.
     """
-    app = pytest.importorskip("advtext.ui.app")
+    app = pytest.importorskip("imscribe.ui.app")
     words = "zero one two three four five six seven eight nine ten eleven twelve".split()
     words += "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split()
     said = re.search(r"page of the sidebar since 2026-10-07: (\w+) of them", run_demo.__doc__)
@@ -476,7 +476,7 @@ def test_without_the_library_the_launcher_says_so_and_still_runs(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """
-    Since tranche 5 no page falls back to advtext's own layout, so a demo
+    Since tranche 5 no page falls back to imscribe's own layout, so a demo
     opened with no `IMTYPESET_LIBRARY` shows one line a page. That is said on
     stderr before the window opens, with the command that has the text, and
     the app is run all the same: exit 0, one call. With the variable set
@@ -510,14 +510,14 @@ def test_a_library_that_was_asked_for_and_was_not_drawing_is_said_at_exit(
     all, whether or not the library then drew: a library that was refused, or
     that failed in the middle of the run, was told only by the one line on
     each page. It is now said on stderr when the window has closed, with the
-    reason the pages showed (`advtext.ui.app.not_drawing_at_exit`). The exit
+    reason the pages showed (`imscribe.ui.app.not_drawing_at_exit`). The exit
     status stays 0: the window was opened and was looked at, which is what
     this script is for; `scripts/shot.py` is the one that fails.
 
     Without the variable nothing more is said than before, whatever the app
     reports: one-line pages are what was asked for.
     """
-    app = pytest.importorskip("advtext.ui.app")
+    app = pytest.importorskip("imscribe.ui.app")
     monkeypatch.setattr(app, "not_drawing_at_exit", lambda: "Error: add_font: no such file")
 
     monkeypatch.setenv("IMTYPESET_LIBRARY", "/some/where/libimtypeset.so")

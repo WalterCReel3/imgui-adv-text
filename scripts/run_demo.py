@@ -32,11 +32,11 @@ Usage:
     python scripts/run_demo.py [MARKDOWN_FILE] [--tab SPEC] [--force]
 
 With no file it shows `demo/sample.md`, falling back to
-`advtext.ui.app.DEFAULT_MARKDOWN` outside a checkout, where `demo/` is genuinely
-absent. `--tab` takes `advtext.ui.app.parse_tab_request`'s grammar, so
+`imscribe.ui.app.DEFAULT_MARKDOWN` outside a checkout, where `demo/` is genuinely
+absent. `--tab` takes `imscribe.ui.app.parse_tab_request`'s grammar, so
 `--tab columns:3,debug` opens the Columns tab at three columns with the debug
 overlay on. A "tab" is a page of the sidebar since 2026-10-07: fourteen of them,
-found by scanning `advtext/ui/pages/` (`--help` lists the names; fifteen with
+found by scanning `imscribe/ui/pages/` (`--help` lists the names; fifteen with
 the Blocks page, which showed the old core's boxes and was deleted on
 2026-10-11; five tabs before 2026-10-07, and three before those), and a page
 may take option words of its own, as in `--tab diff:git,side` or
@@ -82,7 +82,7 @@ def library_note(environ: Mapping[str, str]) -> str | None:
 
     A note and not a refusal: the window still opens, each page says the
     same thing in one line, and that is a legitimate thing to want to look
-    at. It is here because since 2026-10-11 no page falls back to advtext's
+    at. It is here because since 2026-10-11 no page falls back to imscribe's
     own layout, so an unadorned `make run` shows no text at all, and a
     window of one-line pages should not be the first anyone hears of it.
     Only the variable is read: whether the library then loads is the app's to
@@ -103,7 +103,7 @@ def not_drawn(environ: Mapping[str, str], reason: str) -> str | None:
     """
     What to say at exit when the library was ASKED FOR and was not drawing, or `None`.
 
-    `reason` is `advtext.ui.app.not_drawing_at_exit()`. `scripts/shot.py` has
+    `reason` is `imscribe.ui.app.not_drawing_at_exit()`. `scripts/shot.py` has
     the same function and fails on it; this script only says it, because its
     window was opened to be looked at and was.
     """
@@ -138,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     Parse the arguments, refuse to hang, and otherwise open the window.
     """
-    parser = argparse.ArgumentParser(description="Run the advtext ImGui demo.")
+    parser = argparse.ArgumentParser(description="Run the imscribe ImGui demo.")
     parser.add_argument(
         "source",
         nargs="?",
@@ -182,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         metavar="SPEC",
         help=(
-            "tab to open on the first frame, in advtext.ui.app.parse_tab_request's "
+            "tab to open on the first frame, in imscribe.ui.app.parse_tab_request's "
             "grammar NAME[:OPTION,...] -- for instance 'document', 'columns:3' or "
             "'columns:3,debug'. Names are matched case-insensitively"
         ),
@@ -193,8 +193,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("give the markdown file once, as a positional or as --source, not both")
     source: Path | None = args.source_flag if args.source_flag is not None else args.source
 
-    # The DISPLAY guard runs before anything is imported from `advtext`, and the
-    # ordering is deliberate rather than incidental: importing `advtext.ui.app`
+    # The DISPLAY guard runs before anything is imported from `imscribe`, and the
+    # ordering is deliberate rather than incidental: importing `imscribe.ui.app`
     # costs about 0.13s, the refusal path is measured at 0.03s in `README.md`
     # and `docs/status.md`, and a guard whose job is to be faster and clearer
     # than a hang should not pay a package import to say "there is no display".
@@ -204,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         print(BLOCKED, file=sys.stderr)
         return 2
 
-    from advtext.ui.app import parse_tab_request, run
+    from imscribe.ui.app import parse_tab_request, run
 
     # `App.__post_init__` parses this too, so the window would not open on a bad
     # spec either way -- but it would raise a `ValueError` traceback from three
@@ -234,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
             raise
         print(_no_window(os.environ.get("DISPLAY")), file=sys.stderr)
         return 2
-    from advtext.ui import app
+    from imscribe.ui import app
 
     said = not_drawn(os.environ, app.not_drawing_at_exit())
     if said is not None:

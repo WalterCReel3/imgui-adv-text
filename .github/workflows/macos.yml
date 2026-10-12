@@ -12,7 +12,7 @@
 #                                built with undefined dynamic lookup bind to
 #                                them. Asked of the imtypeset team; nobody on
 #                                either side has run anything on a Mac.
-#   advtext's own Linux audit    task L1-MAC of 2026-10-11 (what in advtext
+#   imscribe's own Linux audit    task L1-MAC of 2026-10-11 (what in imscribe
 #                                assumes Linux); its findings are to be in
 #                                docs/status.md.
 #
@@ -43,7 +43,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 45
     steps:
-      - name: "Check out advtext"
+      - name: "Check out imscribe"
         uses: actions/checkout@v4
         with:
           persist-credentials: false

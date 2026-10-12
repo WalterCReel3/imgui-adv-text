@@ -1,10 +1,10 @@
-# advtext
+# imscribe
 
 Markdown, streams and diffs as selectable text in a Dear ImGui pane. The text
 is set and drawn by a sibling library, `../imtypeset`, a typesetter on TeX's
 model: a document is **boxes**, **glue**, **kerns** and **penalties**, broken
 into lines over badness and demerits, with every glyph at a position the
-typesetter worked out. advtext is what stands in front of it: a markdown
+typesetter worked out. imscribe is what stands in front of it: a markdown
 reader, a reader for markdown that is still arriving, a diff model, themes and
 palettes as data, find, and three views a host calls `draw()` on.
 
@@ -12,7 +12,15 @@ Owning every glyph position is the point. ImGui text is not selectable because
 the widget owns the layout; once a typesetter owns it, hit testing is
 arithmetic over numbers already computed.
 
-**Until 2026-10-11 that typesetter was advtext's own, in Python**, and this
+**Until 2026-10-12 this package was named `advtext`.** It was renamed and
+nothing else: no call changed its signature or what it does
+(`docs/decisions.md`, "The package is renamed imscribe"). `import advtext`
+is an error now; no alias was left. The repository and its URL are still
+`imgui-adv-text`, the git tag `advtext-reference` keeps its name, and the
+documents under `docs/` that were written before the rename say advtext.
+This file was brought level, its dated paragraphs included.
+
+**Until 2026-10-11 that typesetter was imscribe's own, in Python**, and this
 file opened by describing it. On the branch this file is on, it is deleted
 except for what the SVG renderer imports. The dated paragraphs below were
 written while it was the product and are left as they were.
@@ -43,7 +51,7 @@ library `../imtypeset`, off unless asked for. [`docs/status.md`](docs/status.md)
 section 0c is its account. Agents built it unattended; no person has looked at
 it in a window, and its review was by reading only.
 
-**On 2026-10-11, on that branch, the swap was carried through: advtext draws
+**On 2026-10-11, on that branch, the swap was carried through: imscribe draws
 through imtypeset and through nothing else.** The user asked for "a full swap
 out using as much as it can from imtypeset"; a team of agents did the rest
 unattended, in a day. The old views, the old ImGui draw backend, five modules
@@ -65,7 +73,7 @@ is initial stability and deliverability for a full pptmstr adoption and
 product packaging (goal of a Mac supported install with automatic updates)."
 What agents then built, unattended: `imgui-bundle` pinned to exactly
 `1.92.900`; three routes by which the library is found, and
-`advtext.typesetter.pairing()` to say which was taken; `make typeset-lib
+`imscribe.typesetter.pairing()` to say which was taken; `make typeset-lib
 IMTYPESET_REF=...`, which fetches imtypeset from GitHub at a named ref; a CI
 workflow; and an audit, from reading, of what stands between this tree and a
 Mac. **Nothing of it has run against GitHub. Nothing of it has run on macOS.
@@ -81,8 +89,8 @@ packager needs in one place.** pptmstr, the first host, asked for thirty-three
 things in all (P1 to P33); what was built for P21 to P33 since the paragraph
 above is in [`docs/status.md`](docs/status.md) section 0g, with who measured
 what. The pin moved twice that day, from imtypeset `c9f8902` to `03b5cd4` to
-its `v0.3.0` (commit `2fd705e`), each time after both gates. advtext is now
-version `0.2.0.dev0` (`advtext.__version__`), `make dist` is the recipe for a
+its `v0.3.0` (commit `2fd705e`), each time after both gates. imscribe is now
+version `0.2.0.dev0` (`imscribe.__version__`), `make dist` is the recipe for a
 wheel and an sdist of a commit with their hashes, and
 ["Packaging"](#packaging) below is the section a packager reads. All of it by
 agents, unattended. **`make dist` has not built anything: the session that
@@ -151,7 +159,7 @@ and writes no PNG, so a photograph of the one line cannot be filed under a
 page's name.
 
 `make svg` is the one thing here that does not go through imtypeset. It runs
-advtext's own Python layout core, which is kept for it and called the
+imscribe's own Python layout core, which is kept for it and called the
 reference core, and writes five files into `artifacts/` (gitignored — they
 are outputs; the script that makes them is what is version-controlled):
 
@@ -159,7 +167,7 @@ are outputs; the script that makes them is what is version-controlled):
 |---|---|
 | `markdown.svg` | the sample document, every glyph a real outline |
 | `markdown-debug.svg` | the same, with line boxes, baselines and glue overlaid |
-| `selection.svg` | a multi-line drag, highlighted by `advtext.selection` |
+| `selection.svg` | a multi-line drag, highlighted by `imscribe.selection` |
 | `sigma.svg` | the display-size summation |
 | `sigma-compare.svg` | display against text style, to show the operator is a *different glyph* |
 
@@ -167,11 +175,11 @@ Open `markdown-debug.svg` first. It is the one that shows the machinery.
 
 ## Embedding it
 
-`advtext` itself is an import surface (`advtext.__all__`, 102 names since
+`imscribe` itself is an import surface (`imscribe.__all__`, 102 names since
 2026-10-12, 89 the day before and 94 before the swap, resolved lazily:
-`import advtext` loads neither ImGui nor fontTools nor imtypeset), and four
+`import imscribe` loads neither ImGui nor fontTools nor imtypeset), and four
 examples use nothing else of the package except the module
-`advtext.typesetter`:
+`imscribe.typesetter`:
 
     python examples/typeset_minimal.py   # a markdown string in a plain ImGui window
     python examples/stream_replay.py     # demo/stream.md arriving in pieces
@@ -184,7 +192,7 @@ whose file name differs by platform, and `build/imtypeset-bundle/pysnap`;
 `make typeset-lib` ends by printing both). Without them an example says why
 on standard error and exits 1 before any window opens.
 
-**How the library is found** (`advtext.typesetter.module()`, since
+**How the library is found** (`imscribe.typesetter.module()`, since
 2026-10-11), in this order:
 
 1. `IMTYPESET_LIBRARY` set, with `IMTYPESET_PYTHON`: the development
@@ -193,7 +201,7 @@ on standard error and exits 1 before any window opens.
    library in it (what `make typeset-lib` stages). After a first load by
    this route a host may remove both variables: `reset()` and the next
    `module()` use the pair that was loaded (`pairing()["named_by"]` is then
-   `"remembered"`; `advtext.typesetter.forget_pair()` ends that).
+   `"remembered"`; `imscribe.typesetter.forget_pair()` ends that).
 2. Otherwise an installed `imtypeset` distribution, known by its metadata or
    by `imtypeset/_attestation.json` beside the package (so a freezer that
    drops `dist-info` does not hide it), imported with no variable set.
@@ -202,26 +210,26 @@ on standard error and exits 1 before any window opens.
    installed one that loads, `route` is `"distribution"`, and
    `pairing()["ignored_environment"]` names the variables. This route has
    met imtypeset's real wheel twice, outside the suite, on Linux x86-64,
-   by advtext's N-IMT and O-IMT2 builders (agents): a stand-in-headers wheel
+   by imscribe's N-IMT and O-IMT2 builders (agents): a stand-in-headers wheel
    from the sibling's build directory, `pip install --no-index --no-deps
    --target`, with `imgui_bundle` symlinked beside it; accepted by its
    attestation, fonts loaded, nothing drawn. No such wheel is published.
 3. Otherwise not loaded, and `reason()` is `IMTYPESET_LIBRARY is not set`.
 
-`advtext.typesetter.pairing()` answers what a host puts in an About box or a
+`imscribe.typesetter.pairing()` answers what a host puts in an About box or a
 bug report, as a `dict` of strings and `None` with always the same seventeen
-keys (twelve on 2026-10-11): `advtext_version`; `route` (`"environment"`,
+keys (twelve on 2026-10-11): `imscribe_version`; `route` (`"environment"`,
 `"distribution"` or `"none"`), `named_by`, `ignored_environment`; `kind` and
 `reason`; `library`, `package`, `distribution`; `imtypeset_version`,
 `imgui_version`, `wheel_version`, `built_for`, `headers`, `accepted_by`; and
 imtypeset's own words, `imtypeset_kind` and `imtypeset_route`. It is on the
-facade (`advtext.pairing`). `reason()` does not name the route. Each example takes `--frames N`
+facade (`imscribe.pairing`). `reason()` does not name the route. Each example takes `--frames N`
 to draw N frames and exit, which is how the tests run them. What a host
 calls, in the order it calls it:
 
 | step | names |
 |---|---|
-| the library | `load_fonts()` at the end of hello_imgui's `load_additional_fonts`, never in `post_init`; `ready()`, `reason()`; `advtext.typesetter.unload()` before the ImGui context goes |
+| the library | `load_fonts()` at the end of hello_imgui's `load_additional_fonts`, never in `post_init`; `ready()`, `reason()`; `imscribe.typesetter.unload()` before the ImGui context goes |
 | font files | `register_font` for a host's own file under a role (`Face`); the library is handed the same file |
 | theme | `Theme.build(faces=, align=)`, `Theme.at_pixel_height`, `Faces`, `Align`, `Spacing`, `BlockKind` |
 | a settled document in a pane | `TypesetView(markdown, theme=, palette=)`, then `draw()` inside the host's own window: fills the pane, paints no background, selectable, culled by the library |
@@ -237,7 +245,7 @@ calls, in the order it calls it:
 | `$...$` and `$$` | `TypesetView(markdown, math=True)`: the library sets the formula, and shows what it refuses as its source |
 
 **What a host can ask for since 2026-10-12.** Built for the first real
-host, pptmstr, whose requests P1 to P19 and advtext's answers are in
+host, pptmstr, whose requests P1 to P19 and imscribe's answers are in
 `HANDOFF-pptmstr.md`, "Answers to pptmstr": read that for what each does not
 do. Every option is off by default and the defaults draw what they drew.
 Built by agents; **nobody has looked at any of it on a screen**, and nothing
@@ -245,14 +253,14 @@ was run through pptmstr's code.
 
 | to | names |
 |---|---|
-| know why the library is not drawing, as a kind | `kind()` answers a `Kind`: ready, not installed, refused, failed, unsupported, unchecked. "Unsupported" is the host's to say (`advtext.typesetter.unsupported(why)`): advtext cannot tell it from "not installed" |
+| know why the library is not drawing, as a kind | `kind()` answers a `Kind`: ready, not installed, refused, failed, unsupported, unchecked. "Unsupported" is the host's to say (`imscribe.typesetter.unsupported(why)`): imscribe cannot tell it from "not installed" |
 | come back from a failure | `reset()`, then `load_fonts()` again, between frames. Every load leaves seven more fonts on Dear ImGui's atlas and nothing takes them off (measured in a window by the builder of the task PH-GATE) |
-| ask without loading anything | `verdict()` asks a child process and answers `pairing()`'s dict; `python -m advtext.typesetter` prints it as JSON and exits by the kind (0 ready, 3 not installed, 4 refused, 5 failed, 6 unsupported, 7 unchecked). In a frozen application the answer is "unchecked" |
-| be refused a mismatched imtypeset before a draw | `module()` checks the names and fields advtext calls (`advtext.typesetter.REQUIRED`, `missing`); not what a name means |
-| draw a native ImGui line in a typeset face | `advtext.typesetter.font(face)`; the size to push is the em times the file's line-height ratio, not the em |
+| ask without loading anything | `verdict()` asks a child process and answers `pairing()`'s dict; `python -m imscribe.typesetter` prints it as JSON and exits by the kind (0 ready, 3 not installed, 4 refused, 5 failed, 6 unsupported, 7 unchecked). In a frozen application the answer is "unchecked" |
+| be refused a mismatched imtypeset before a draw | `module()` checks the names and fields imscribe calls (`imscribe.typesetter.REQUIRED`, `missing`); not what a name means |
+| draw a native ImGui line in a typeset face | `imscribe.typesetter.font(face)`; the size to push is the em times the file's line-height ratio, not the em |
 | read markdown showing what was written | `ReaderOptions(html_as_text=, images_as_text=, keep_glob_stars=, show_link_destinations=, show_fence_info=, backslashes_as_written=)` as `reader=` to `parse_markdown`, `MarkdownStream` and `TypesetView`; one object for a settled document and a stream. Six fields (four until P27 and P32) |
 | size inline code apart from its prose | `Theme.inline_code_scale` and `Theme.inline_code_step`, set with `dataclasses.replace` |
-| show blocks that are not markdown | `TypesetView([MarkdownText(...), MarkdownCode(...), ...])` with `MarkdownRule`, `MarkdownTable`, `MarkdownCell`, `ColumnAlign`, a style from `theme.style(BlockKind...)`; or a `Description` from `advtext.description.description_of`. Anything else is a `TypeError` at the call |
+| show blocks that are not markdown | `TypesetView([MarkdownText(...), MarkdownCode(...), ...])` with `MarkdownRule`, `MarkdownTable`, `MarkdownCell`, `ColumnAlign`, a style from `theme.style(BlockKind...)`; or a `Description` from `imscribe.description.description_of`. Anything else is a `TypeError` at the call |
 | scroll or clip wide code | `TypesetView(code_overflow="wrap" \| "clip" \| "grow")`, `content_width` for the host's scroll range |
 | one line pitch for every line of a block | `TypesetView(fixed_line_height=True)`: text and code, not tables, not a block holding a display formula |
 | a settled table as wide as a stream held it | `TypesetView(table_widths="natural")`; equal to a stream's only when no cell of the stream was ever wider than it ended |
@@ -267,12 +275,12 @@ outside the clip rectangle no longer calls the library.
 
 | to | names |
 |---|---|
-| know the fonts' ImGui context is gone | `ready()` is false in any Dear ImGui context but the one `load_fonts()` succeeded in, and a view raises `TypesetUnavailable`; `advtext.typesetter.why_not_ready()` is the sentence; `kind()` stays ready; `load_fonts()` in the new context is the way back |
+| know the fonts' ImGui context is gone | `ready()` is false in any Dear ImGui context but the one `load_fonts()` succeeded in, and a view raises `TypesetUnavailable`; `imscribe.typesetter.why_not_ready()` is the sentence; `kind()` stays ready; `load_fonts()` in the new context is the way back |
 | have `Spacing.FRENCH` reach the screen | nothing to call: the theme's `spacing` is now handed to the library (it was not, before 2026-10-12) |
 | give a list's end a paragraph's gap | `dataclasses.replace(theme, space_after_list=theme.style(BlockKind.PARAGRAPH).space_below)` |
 | see a fence's info string | `ReaderOptions(show_fence_info=True)`: a block of its own in front of the code |
 | see backslashes as written (`C:\_work\*.log`) | `ReaderOptions(backslashes_as_written=True)`; not reached: a link's destination and title |
-| size a theme without opening a font file | call `Theme.at_pixel_height`, `em_size_for_pixel_height` or `code_size(pixel_height=)` AFTER `load_fonts()` has succeeded: the library answers. Before it, or without the library, advtext's own fontTools reader answers, at about a third of a second cold |
+| size a theme without opening a font file | call `Theme.at_pixel_height`, `em_size_for_pixel_height` or `code_size(pixel_height=)` AFTER `load_fonts()` has succeeded: the library answers. Before it, or without the library, imscribe's own fontTools reader answers, at about a third of a second cold |
 | keep hundreds of views in one scrolling pane | nothing to call: a `TypesetView` or `TypesetStreamView` out of sight rests on the size its last draw measured. `TypesetDiffView` does not rest |
 | stop child processes inheriting the two variables | remove them after the first load (route 1 above) |
 
@@ -320,7 +328,7 @@ imtypeset's setting of the same kinds of material, which has its own tests in
 
 The ImGui demo is real and `make run TYPESET=1` launches it: one window,
 1300x800 by default, with a sidebar list on the left and the chosen page on
-the right. The pages are modules under `advtext/ui/pages/`, found by scanning
+the right. The pages are modules under `imscribe/ui/pages/`, found by scanning
 the package; adding one edits no list anywhere. To open on a page, or to
 photograph every one:
 
@@ -416,16 +424,16 @@ three acts: change the pin, `make typeset-lib` against the new wheel,
 `make check TYPESET=1`. imtypeset itself is not listed as a dependency: it
 is on no index a resolver reaches, and a requirement that cannot be resolved
 would break `pip install` for everyone ("Packaging" below says what to pin
-beside advtext instead). `pip install` with the pin has not been run on any
+beside imscribe instead). `pip install` with the pin has not been run on any
 machine by the sessions that wrote it (no index was reachable), and
 `./.venv`'s own editable install predates both the pin and the version: its
-metadata still says `advtext 0.1.0` and `imgui-bundle>=1.92`. Read
-`advtext.__version__`, not `importlib.metadata`, until `make bootstrap` is
+metadata still says `imscribe 0.1.0` and `imgui-bundle>=1.92`. Read
+`imscribe.__version__`, not `importlib.metadata`, until `make bootstrap` is
 run again.
 
 ## Packaging
 
-For whoever packages an application that draws through advtext. Written
+For whoever packages an application that draws through imscribe. Written
 2026-10-12 by the builder of the task O-REL, an agent, from this tree, from
 imtypeset's `docs/sidecar.md` (sections 8, 10 and 11, at its `v0.3.0`) and
 from the result files of the builders named. **Read it as a list of what is
@@ -434,29 +442,29 @@ packaged with any of this.**
 
 ### The version, and a file to require
 
-`advtext.__version__` is `0.2.0.dev0`, the same string as `pyproject.toml`'s
-and as `pairing()["advtext_version"]`. `0.1.0` was advtext with its own
+`imscribe.__version__` is `0.2.0.dev0`, the same string as `pyproject.toml`'s
+and as `pairing()["imscribe_version"]`. `0.1.0` was imscribe with its own
 Python layout core; `0.2` draws through imtypeset and nothing else. `.devN`
 means there is no release and **nothing is promised from one commit to the
 next**, so a requirement names a commit or a file's hash, never the version
 alone; N goes up when an artefact is cut for a host to pin. `0.2.0` without
 `.dev` is for the first tagged release, which is the user's to make; from
-there the middle number changes when a name in `advtext.__all__` is removed
+there the middle number changes when a name in `imscribe.__all__` is removed
 or changes meaning, or when the imgui-bundle pin or the imtypeset line
 changes. (An agent's decision; `docs/decisions.md`, "A release artefact".)
 
-    make dist    # dist/advtext-<version>-py3-none-any.whl, .tar.gz, <file>.sha256, BUILT-FROM
+    make dist    # dist/imscribe-<version>-py3-none-any.whl, .tar.gz, <file>.sha256, BUILT-FROM
 
 `make dist` (`scripts/make_dist.py`) builds **the commit `HEAD`, not the
 working tree**: it exports the commit twice with `git archive`, builds each
 export with `python -m build --no-isolation` under `SOURCE_DATE_EPOCH` = the
 commit's time, and installs the two files into `dist/` only if the two
-builds are byte for byte the same and the wheel holds `advtext/` and its
+builds are byte for byte the same and the wheel holds `imscribe/` and its
 metadata and nothing else. It then prints the requirement strings:
 
-    advtext @ git+https://github.com/WalterCReel3/imgui-adv-text.git@<full commit>
-    advtext @ https://github.com/WalterCReel3/imgui-adv-text/releases/download/v<version>/<wheel>#sha256=<hash>
-    advtext==<version> --hash=sha256:<wheel> --hash=sha256:<sdist>
+    imscribe @ git+https://github.com/WalterCReel3/imgui-adv-text.git@<full commit>
+    imscribe @ https://github.com/WalterCReel3/imgui-adv-text/releases/download/v<version>/<wheel>#sha256=<hash>
+    imscribe==<version> --hash=sha256:<wheel> --hash=sha256:<sdist>
 
 The first works today for a commit that is on GitHub (pip clones and builds;
 it needs network and `hatchling`). The second resolves only once somebody
@@ -475,29 +483,29 @@ written, the strings. **Not known, because it was not run: whether
 hatchling's two builds are in fact the same bytes; what exactly its wheel
 holds; whether the sdist's own tests pass when unpacked** (`demo/` and
 `HANDOFF-pptmstr.md` were added to the sdist's list on this day, by
-reading). The name `advtext` is not claimed on PyPI and nothing here claims
+reading). The name `imscribe` is not claimed on PyPI and nothing here claims
 it; that, a tag and a GitHub release are the user's.
 
-What the wheel is meant to hold, by `pyproject.toml`: the package `advtext`
-with `advtext/py.typed`; no `tests/`, no `demo/`, no `examples/`, no
+What the wheel is meant to hold, by `pyproject.toml`: the package `imscribe`
+with `imscribe/py.typed`; no `tests/`, no `demo/`, no `examples/`, no
 `docs/`, no handoff files (those are in the sdist only). The demo
-application is inside the package (`advtext.ui.app`, `advtext.ui.pages`) and
+application is inside the package (`imscribe.ui.app`, `imscribe.ui.pages`) and
 its pages say so themselves when `demo/` is not there.
 
 ### The pins to hold together
 
 Three things are one compatible unit, and an update replaces all of them or
-none (imtypeset's rule, its `docs/sidecar.md` section 11; advtext's T7):
+none (imtypeset's rule, its `docs/sidecar.md` section 11; imscribe's T7):
 
 | what | pin | why exact |
 |---|---|---|
-| `imgui-bundle` | `==1.92.900` | the imtypeset library is linked against that wheel's extension module and refuses any other at import. advtext's own metadata states this pin |
+| `imgui-bundle` | `==1.92.900` | the imtypeset library is linked against that wheel's extension module and refuses any other at import. imscribe's own metadata states this pin |
 | `imtypeset` | `==0.3.0.192900` | the fourth number is the imgui-bundle line the wheel was built for (`1.92.900`). `imtypeset==0.3.0` matches nothing. **Never upgrade imtypeset alone** (`pip install -U imtypeset`): the resolver takes the newest line and replaces the application's imgui-bundle. Move the two pins together |
-| `advtext` | a commit, or a file by its sha256 (above) | a `.dev` version names no one commit |
+| `imscribe` | a commit, or a file by its sha256 (above) | a `.dev` version names no one commit |
 
-advtext's metadata does **not** list imtypeset (it is on no index, and the
+imscribe's metadata does **not** list imtypeset (it is on no index, and the
 other team's file says no licence is chosen and nothing is to be published
-from `v0.3.0`); when it can be resolved from somewhere, advtext will state
+from `v0.3.0`); when it can be resolved from somewhere, imscribe will state
 `imtypeset==0.3.*` and the application keeps the exact pin. The wheels
 imtypeset has built are **stand-in builds**, version
 `0.3.0.192900.dev0+standin`: a development release, which `==0.3.0.192900`
@@ -517,7 +525,7 @@ that copies files replaces `imtypeset/`, `imgui_bundle/` and
 
 Every face the typeset path sets text in is a file inside the `imgui-bundle`
 wheel, under `imgui_bundle/assets/fonts`, unless the host registers its own
-file for the role with `advtext.register_font`:
+file for the role with `imscribe.register_font`:
 
     Roboto/Roboto-Regular.ttf
     Roboto/Roboto-Bold.ttf
@@ -527,22 +535,22 @@ file for the role with `advtext.register_font`:
     latex/latinmodern-math.otf
 
 (and `Roboto/LICENSE.txt` beside the first four). imtypeset itself looks for
-no font: it opens what advtext hands it, and since `03b5cd4` its installed
+no font: it opens what imscribe hands it, and since `03b5cd4` its installed
 import gate reads none, so a freezer that drops `imgui_bundle/assets` does
-not break the import. What it does to advtext, by `load_fonts`'s docstring
+not break the import. What it does to imscribe, by `load_fonts`'s docstring
 and not by a run with the files taken away: a role whose file is missing is
-left out and said in `advtext.typesetter.trouble()`, and text in that role
+left out and said in `imscribe.typesetter.trouble()`, and text in that role
 is set in the document's face. Carry the six, or register a file for every
 role you draw. Seven roles are loaded from the six files: bold code has no
 file of its own and is Roboto Bold unless a host registers a bold monospace
-face (`advtext/fontfiles.py`).
+face (`imscribe/fontfiles.py`).
 
 ### What a frozen application must carry
 
-From imtypeset's `docs/sidecar.md` section 10 and advtext's builders' result
+From imtypeset's `docs/sidecar.md` section 10 and imscribe's builders' result
 files. **Nothing has been frozen by anyone**: the other team imitated a
 frozen interpreter's properties (`sys.frozen` set, `sys.executable` not an
-interpreter, process creation disabled, the package read-only) and advtext
+interpreter, process creation disabled, the package read-only) and imscribe
 deleted a wheel's `dist-info` by hand; no PyInstaller, py2app, Briefcase or
 Nuitka run exists.
 
@@ -551,22 +559,22 @@ Nuitka run exists.
   package's own directory. The last two are data files to a freezer and must
   be collected explicitly. `dist-info` is not needed when the attestation
   is there (N-IMT's builder: a real wheel with its `dist-info` deleted by
-  hand was found, accepted, fonts loaded). With neither, advtext answers
+  hand was found, accepted, fonts loaded). With neither, imscribe answers
   `not-installed` and does not import the package.
 - `imgui_bundle/` as the pinned wheel installed it, in the same directory,
   with the six font files above.
-- of advtext: the package. `import advtext` imports nothing else: every
+- of imscribe: the package. `import imscribe` imports nothing else: every
   name of the facade is resolved at first use by `importlib.import_module`
   of a module named in a string, which a freezer that follows `import`
-  statements does not see (from reading `advtext/__init__.py`; no freezer
+  statements does not see (from reading `imscribe/__init__.py`; no freezer
   was run). So tell the freezer to take the whole package, or name the
-  modules: **`advtext.fontfiles`** and **`advtext.typeset_metrics`**
-  (N-METRICS's builder's sentence for a freezer), `advtext.typesetter`,
-  `advtext.typeset_markdown`, `advtext.description`, and the views you draw
-  (`advtext.ui.typeset_view`, `advtext.ui.typeset_stream_view`,
-  `advtext.ui.typeset_diff_view`). **Optional**: the demo application
-  (`advtext.ui.app`, `advtext.ui.pages`), the reference core and
-  `advtext.backends.svg`; and `imtypeset.demo`, which advtext's gate no
+  modules: **`imscribe.fontfiles`** and **`imscribe.typeset_metrics`**
+  (N-METRICS's builder's sentence for a freezer), `imscribe.typesetter`,
+  `imscribe.typeset_markdown`, `imscribe.description`, and the views you draw
+  (`imscribe.ui.typeset_view`, `imscribe.ui.typeset_stream_view`,
+  `imscribe.ui.typeset_diff_view`). **Optional**: the demo application
+  (`imscribe.ui.app`, `imscribe.ui.pages`), the reference core and
+  `imscribe.backends.svg`; and `imtypeset.demo`, which imscribe's gate no
   longer requires (only the three gallery pages of the demo call it).
 - In a frozen application `verdict()` starts no child and answers
   `"unchecked"`; `kind()`, `module()` and every view constructor still run
@@ -574,12 +582,12 @@ Nuitka run exists.
 
 ### What `pairing()` gives an About box and an updater
 
-- **An About box or a bug report**: `advtext.pairing()`, the seventeen keys
+- **An About box or a bug report**: `imscribe.pairing()`, the seventeen keys
   above. It may be the import; it never raises.
 - **An updater, before it switches to a staged environment**: that
-  environment's `python -m advtext.typesetter`, which prints the same dict
+  environment's `python -m imscribe.typesetter`, which prints the same dict
   as one line of JSON and exits 0 ready, 3 not installed, 4 refused, 5
-  failed, 6 unsupported, 7 unchecked; or `advtext.verdict()` from the
+  failed, 6 unsupported, 7 unchecked; or `imscribe.verdict()` from the
   running application for its own interpreter (it blocks up to `timeout`
   seconds, 120 by default; call it off the UI thread). When a pair is
   refused, `imtypeset_kind` is imtypeset's word for which partial update it
@@ -589,15 +597,15 @@ Nuitka run exists.
 ### The order a host follows
 
 1. a Dear ImGui context (hello_imgui has made it by `load_additional_fonts`);
-2. `advtext.register_font(...)` for the host's own files, if any;
-3. `advtext.load_fonts()`, at the end of `load_additional_fonts`, never in
+2. `imscribe.register_font(...)` for the host's own files, if any;
+3. `imscribe.load_fonts()`, at the end of `load_additional_fonts`, never in
    `post_init`;
 4. then the themes: `Theme.at_pixel_height(...)`,
-   `advtext.em_size_for_pixel_height(...)`, `code_size(theme, pixel_height=)`.
+   `imscribe.em_size_for_pixel_height(...)`, `code_size(theme, pixel_height=)`.
 
-In that order no font file is opened by advtext and fontTools is not
+In that order no font file is opened by imscribe and fontTools is not
 imported (N-METRICS's builder: a document theme 0.22 ms cold against 373 ms
-by advtext's own reader, median of 9 fresh interpreters, load 3.5). A theme
+by imscribe's own reader, median of 9 fresh interpreters, load 3.5). A theme
 sized before step 3 is the same theme at the old cost. A file registered
 after step 3 is not what a theme is sized from until `load_fonts()` is
 called again.
@@ -613,14 +621,14 @@ called again.
 - **A GPU.** Every window here was on Xvfb with a software rasteriser.
 - **A display density other than 1.** imtypeset `v0.3.0` draws on the
   device's pixels at a framebuffer scale other than 1 (its H19 answer,
-  measured there headless on Linux). advtext's O-IMT2 builder measured that
+  measured there headless on Linux). imscribe's O-IMT2 builder measured that
   at scale 2 the vertex bytes of six demo pages differ from `03b5cd4`'s in
   24 of 24 draws and at scale 1 are the same in 24 of 24; no test of
-  advtext's sets a scale other than 1, advtext still assumes 96 px per inch
+  imscribe's sets a scale other than 1, imscribe still assumes 96 px per inch
   in five places (the Mac audit's count, by reading), and nobody has looked
   at either.
 - **Anything against GitHub**: the fetch of imtypeset by tag or hash, a
-  `pip install` of advtext from a git reference, the CI workflow.
+  `pip install` of imscribe from a git reference, the CI workflow.
 - **Whether two builds of the imtypeset library are the same bytes**: they
   are not (two builds of `2fd705e` differing only in the output directory's
   name gave different files; `HANDOFF-imtypeset.md`, H45), so a library is
@@ -717,8 +725,8 @@ it does not know; matrices are left out for now).
 `docs/decisions.md` says why for each. They are decisions, not omissions — but
 two of them now have a price somebody has looked at. Hyphenation's is measured
 and stated in `docs/status.md`, and a human has since said the loose lines it
-costs are not acceptable. **That list was written about advtext's own core.**
+costs are not acceptable. **That list was written about imscribe's own core.**
 What sets the text now is imtypeset, whose scope is its own tree's to state
 (`../imtypeset/docs/`); the list still describes the reference core `make svg`
-runs. The column split it used to mention (`\vsplit`, in `advtext/columns.py`)
+runs. The column split it used to mention (`\vsplit`, in `imscribe/columns.py`)
 is deleted here: the Columns page is cut by the library.

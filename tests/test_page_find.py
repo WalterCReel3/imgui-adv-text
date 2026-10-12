@@ -38,13 +38,13 @@ from test_page_document import (
     windowed_typeset,
 )
 
-from advtext.typeset_find import FindIndex
-from advtext.typeset_markdown import MarkdownConverter, parse_markdown
-from advtext.ui.app import parse_tab_request
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import find as page
-from advtext.ui.pages.find import CURRENT_MARK, HIT_MARK
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe.typeset_find import FindIndex
+from imscribe.typeset_markdown import MarkdownConverter, parse_markdown
+from imscribe.ui.app import parse_tab_request
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import find as page
+from imscribe.ui.pages.find import CURRENT_MARK, HIT_MARK
+from imscribe.ui.typeset_view import TypesetUnavailable
 
 if TYPE_CHECKING:
     from conftest import Window
@@ -53,7 +53,7 @@ assert unasked  # the fixture, imported: `typesetter.module()` fails the test if
 
 SIZE = (1300.0, 800.0)
 
-# What the OLD page's index (`advtext.spans.FindIndex` over `build_document`'s
+# What the OLD page's index (`imscribe.spans.FindIndex` over `build_document`'s
 # blocks) found in this page's document -- `demo/sample.md` five times over --
 # for nine needles: `(case ignored, case matched)`, matches outside table
 # cells plus matches in them. Frozen on 2026-10-11, before that page body was
@@ -337,7 +337,7 @@ def _frame_of(made: page.FindPage, draw: Any = None) -> int:
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-find-page-fake", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-find-page-fake", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             (made.draw if draw is None else draw)()
         finally:
@@ -556,7 +556,7 @@ def test_an_exception_that_is_not_the_librarys_is_a_bug_and_propagates(unasked: 
 # ----------------------------------------------------------------------
 
 _TYPESET = r"""
-from advtext.ui.pages import find as page
+from imscribe.ui.pages import find as page
 
 app = App(source="# t\n\nx\n", columns_source="x\n", open_tab="find")
 frame(app.gui, 2)

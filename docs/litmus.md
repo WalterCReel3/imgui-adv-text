@@ -1,5 +1,7 @@
 # The litmus tests
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 `docs/decisions.md` names two tests the project either passes or does not. This
 is what happened when both were run, what the artifacts show, and what is still
 wrong. It was written after looking at the rendered output rather than at the

@@ -1,5 +1,5 @@
 r"""
-The Columns page: `advtext.ui.pages.columns`, drawn through
+The Columns page: `imscribe.ui.pages.columns`, drawn through
 `TypesetView.set_columns` and through nothing else (tranche 5, T5-COLUMNS).
 
 **Four levels, so nobody reads more into a green run than is there.**
@@ -34,11 +34,11 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import columns as page
-from advtext.ui.pages.columns import ColumnsPage, pages_of, sheet_width
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe import typesetter
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import columns as page
+from imscribe.ui.pages.columns import ColumnsPage, pages_of, sheet_width
+from imscribe.ui.typeset_view import TypesetUnavailable
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from conftest import Window
@@ -66,47 +66,47 @@ def _context(count: int | None = None, *options: str, **fields: Any) -> PageCont
 # ----------------------------------------------------------------------
 
 # The old layout core and what stands on it, as `tests/test_typeset_closure.py`
-# lists it, with `advtext.units` and `advtext.fontmetrics`, which were the
-# floor of `advtext.theme` until T5-B2 and are not loaded any more.
+# lists it, with `imscribe.units` and `imscribe.fontmetrics`, which were the
+# floor of `imscribe.theme` until T5-B2 and are not loaded any more.
 OLD = (
-    "advtext.units",
-    "advtext.fontmetrics",
-    "advtext.badness",
-    "advtext.nodes",
-    "advtext.pack",
-    "advtext.linebreak",
-    "advtext.shipout",
-    "advtext.selection",
-    "advtext.fontlib",
-    "advtext.math",
-    "advtext.mathtext",
-    "advtext.spans",
-    "advtext.columns",
-    "advtext.blocklayout",
-    "advtext.backends",
-    "advtext.markdown",
-    "advtext.style",
-    "advtext.stream",
-    "advtext.ui.bare_view",
-    "advtext.ui.document_view",
-    "advtext.ui.stream_view",
-    "advtext.ui.units",
-    "advtext.ui.composition",
-    "advtext.ui.app",
+    "imscribe.units",
+    "imscribe.fontmetrics",
+    "imscribe.badness",
+    "imscribe.nodes",
+    "imscribe.pack",
+    "imscribe.linebreak",
+    "imscribe.shipout",
+    "imscribe.selection",
+    "imscribe.fontlib",
+    "imscribe.math",
+    "imscribe.mathtext",
+    "imscribe.spans",
+    "imscribe.columns",
+    "imscribe.blocklayout",
+    "imscribe.backends",
+    "imscribe.markdown",
+    "imscribe.style",
+    "imscribe.stream",
+    "imscribe.ui.bare_view",
+    "imscribe.ui.document_view",
+    "imscribe.ui.stream_view",
+    "imscribe.ui.units",
+    "imscribe.ui.composition",
+    "imscribe.ui.app",
 )
 
 _CLOSURE = r"""
 import importlib, json, sys
 before = set(sys.modules)
 if sys.argv[1] == "from":
-    from advtext.ui.pages import columns
+    from imscribe.ui.pages import columns
 else:
-    columns = importlib.import_module("advtext.ui.pages.columns")
-at_import = sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "advtext")
-from advtext.ui.pages import PageContext
+    columns = importlib.import_module("imscribe.ui.pages.columns")
+at_import = sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "imscribe")
+from imscribe.ui.pages import PageContext
 made = columns.PAGE.factory(PageContext.build(request_page="Columns", request_count=3))
 lines = made.lines()
-built = sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "advtext")
+built = sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "imscribe")
 print(json.dumps({"import": at_import, "built": built, "lines": list(lines),
                   "imgui": "imgui_bundle" in sys.modules, "imtypeset": "imtypeset" in sys.modules}))
 """
@@ -125,12 +125,12 @@ def test_importing_and_building_the_page_loads_none_of_the_old_core(form: str) -
     """
     A fresh interpreter with the library's variables removed: the import,
     in both spellings, and then the page BUILT from a context. Neither
-    loads `advtext.columns`, the old views, the old draw backend, the app or
+    loads `imscribe.columns`, the old views, the old draw backend, the app or
     any other module of the old core; nor Dear ImGui, nor imtypeset. A page
     built with no library holds the one line.
 
-    Building a `Theme` loaded `advtext.nodes`, `advtext.pack` and
-    `advtext.badness` until T5-B2 (the theme's interline glue was the old
+    Building a `Theme` loaded `imscribe.nodes`, `imscribe.pack` and
+    `imscribe.badness` until T5-B2 (the theme's interline glue was the old
     core's class) and those three were allowed after the build. A style's
     leading is a number now and nothing is allowed at either moment.
     """
@@ -147,8 +147,8 @@ def test_importing_and_building_the_page_loads_none_of_the_old_core(form: str) -
     assert done.returncode == 0, done.stderr
     told = json.loads(done.stdout.strip().splitlines()[-1])
     assert _old(told["import"]) == [], (form, _old(told["import"]))
-    assert "advtext.ui.pages.columns" in told["import"]
-    assert "advtext.ui.typeset_view" in told["import"]
+    assert "imscribe.ui.pages.columns" in told["import"]
+    assert "imscribe.ui.typeset_view" in told["import"]
     assert _old(told["built"]) == [], (form, _old(told["built"]))
     assert told["imgui"] is False and told["imtypeset"] is False
     assert len(told["lines"]) == 1 and told["lines"][0].startswith(page.NOT_DRAWING)
@@ -203,12 +203,12 @@ def test_a_count_the_library_would_refuse_is_refused_where_the_launch_is_parsed(
     library: the app's traceback page, and `PageError` after the window
     closed. The count is now held to the page's own limit
     (`PageSpec.max_count`, the view's `MAX_COLUMNS`) by
-    `advtext.ui.app.parse_tab_request`, before a window opens, in the words
+    `imscribe.ui.app.parse_tab_request`, before a window opens, in the words
     every other refused option gets. The same integer is still another
     page's to read as it likes (`stress:5000` is a number of paragraphs).
     """
-    from advtext.ui.app import parse_tab_request
-    from advtext.ui.typeset_view import MAX_COLUMNS
+    from imscribe.ui.app import parse_tab_request
+    from imscribe.ui.typeset_view import MAX_COLUMNS
 
     assert page.PAGE.max_count == MAX_COLUMNS
     assert parse_tab_request(f"columns:{MAX_COLUMNS}").columns == MAX_COLUMNS
@@ -272,7 +272,7 @@ def test_the_controls_move_state_that_needs_no_library() -> None:
 @pytest.fixture
 def unasked(monkeypatch: pytest.MonkeyPatch) -> Any:
     """
-    `advtext.typesetter` as at import, and a `module()` that fails the test if asked.
+    `imscribe.typesetter` as at import, and a `module()` that fails the test if asked.
     """
     typesetter._forget()
     monkeypatch.setattr(typesetter, "module", lambda: pytest.fail("the page asked for the library"))
@@ -299,7 +299,7 @@ def _frame(draw: Any) -> dict[str, Any]:
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-page-columns-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-page-columns-test", None, imgui.WindowFlags_.no_title_bar.value)
         before = imgui.get_window_draw_list().vtx_buffer.size()
         try:
             # What `draw` raises leaves here as itself: the window is ended first.
@@ -420,10 +420,10 @@ def test_any_other_exception_out_of_the_view_is_a_bug_and_leaves_the_page(
 CHILD_PRELUDE = r"""
 import json, math, sys
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import columns as page
-from advtext.ui.pages.columns import ColumnsPage
+from imscribe import typesetter
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import columns as page
+from imscribe.ui.pages.columns import ColumnsPage
 
 SIZE = (1300.0, 800.0)
 report = {"module": typesetter.module() is not None,
@@ -462,7 +462,7 @@ def frame(made, count=1):
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-            imgui.begin("##advtext-page-child", None, imgui.WindowFlags_.no_title_bar.value)
+            imgui.begin("##imscribe-page-child", None, imgui.WindowFlags_.no_title_bar.value)
             try:
                 calls.clear()
                 made.draw()
@@ -764,12 +764,12 @@ import sys
 
 from imgui_bundle import hello_imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
 
 TAB, WANT_LIBRARY = sys.argv[1], sys.argv[2] == "with"
 report = {"frames": 0, "seen": []}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def watched_gui(self):
@@ -802,10 +802,10 @@ def watched_gui(self):
         hello_imgui.get_runner_params().app_shall_exit = True
 
 
-advtext_app.App.gui = watched_gui
-advtext_app.run(tab=TAB)
+imscribe_app.App.gui = watched_gui
+imscribe_app.run(tab=TAB)
 report["imported"] = "imtypeset" in sys.modules
-OLD = ("advtext.columns", "advtext.ui.document_view")
+OLD = ("imscribe.columns", "imscribe.ui.document_view")
 report["old"] = sorted(m for m in sys.modules if m in OLD)
 print("REPORT " + json.dumps(report))
 """

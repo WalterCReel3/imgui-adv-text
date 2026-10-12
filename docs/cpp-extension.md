@@ -1,5 +1,7 @@
 # A C++ ImGui extension: notes
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 **Status: a design note from a conversation. Nothing is committed, nothing is
 implemented, and no decision has been taken.** It is written down because the
 reasoning turned on one verifiable finding that would otherwise be re-derived

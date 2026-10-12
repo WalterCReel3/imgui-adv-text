@@ -1,5 +1,5 @@
 """
-`advtext.diff`: the two constructors, the model they share, and its properties.
+`imscribe.diff`: the two constructors, the model they share, and its properties.
 
 The property tests draw their inputs from a seeded `random.Random`, so a
 failure names a seed and reruns the same way.
@@ -12,7 +12,7 @@ import random
 
 import pytest
 
-from advtext.diff import (
+from imscribe.diff import (
     COMBINED,
     NO_NEWLINE,
     NOT_A_DIFF,
@@ -27,7 +27,7 @@ from advtext.diff import (
     UnifiedDiffStream,
     tokenize,
 )
-from advtext.diff import _compare as compare_lines
+from imscribe.diff import _compare as compare_lines
 
 A, R, C, M = RowKind.ADD, RowKind.REMOVE, RowKind.CONTEXT, RowKind.META
 
@@ -285,7 +285,7 @@ def test_one_edit_in_a_long_file_does_not_cost_the_file() -> None:
     The common ends are set aside before `difflib` runs, so what is matched is
     the edit. Counted, not timed: the matcher is given two one-line lists.
     """
-    import advtext.diff as module
+    import imscribe.diff as module
 
     seen: list[tuple[int, int]] = []
     real = module.SequenceMatcher
@@ -895,7 +895,7 @@ def test_a_group_too_large_to_align_is_paired_by_position() -> None:
 
 
 def test_long_lines_and_spent_budgets_go_without_spans_and_still_pair() -> None:
-    import advtext.diff as module
+    import imscribe.diff as module
 
     long_old, long_new = "x" * 600 + " a", "x" * 600 + " b"
     (hunk,) = Diff.from_texts(long_old + "\n", long_new + "\n", "f").files[0].hunks
@@ -1125,7 +1125,7 @@ def test_item_7_pairing_an_open_hunk_costs_the_open_group_and_not_the_hunk(
     here). Now the rows walked per snapshot are the rows since the last point
     behind which nothing can change.
     """
-    from advtext import diff as module
+    from imscribe import diff as module
 
     stream = UnifiedDiffStream()
     stream.feed(settled)
@@ -1158,7 +1158,7 @@ def test_review3_item_8_a_run_of_removals_still_open_costs_the_line_that_arrived
     beside nothing, and that does not change when another removal follows:
     the walk now resumes inside the run.
     """
-    from advtext import diff as module
+    from imscribe import diff as module
 
     count = 1500
     stream = UnifiedDiffStream()
@@ -1392,7 +1392,7 @@ def test_review3_item_1_the_invisible_set_is_this_pythons_format_and_separator_c
     import sys
     import unicodedata
 
-    from advtext.diff import has_invisible
+    from imscribe.diff import has_invisible
 
     category = {chr(c): unicodedata.category(chr(c)) for c in range(sys.maxunicode + 1)}
     wanted = {c for c, kind in category.items() if kind in ("Cf", "Zl", "Zp")}
@@ -1409,7 +1409,7 @@ def test_review3_item_1_the_invisible_set_is_this_pythons_format_and_separator_c
 def test_review3_item_1_an_invisible_or_bidirectional_character_is_flagged_and_kept(
     character: str,
 ) -> None:
-    from advtext.diff import has_control, has_invisible
+    from imscribe.diff import has_control, has_invisible
 
     after = f"user = ad{character}min\n"
     assert has_invisible(after) and not has_control(after)
@@ -1431,7 +1431,7 @@ def test_review3_item_1_an_invisible_or_bidirectional_character_is_flagged_and_k
 
 
 def test_review3_item_1_c1_controls_are_controls_and_raw_lines_are_looked_at_too() -> None:
-    from advtext.diff import has_control
+    from imscribe.diff import has_control
 
     assert has_control("next\x85line") and has_control("\x9b[31m") and not has_control("\xa0")
     (raw,) = Diff.from_unified("just prose with a \u202e in it\n").files
@@ -1720,7 +1720,7 @@ def test_review3_item_10_ending_only_rows_are_marked_however_long_the_file() -> 
     from CRLF the budget ran out and the last 1,000 pairs were not marked as
     differing in their endings (10,000 of 12,000 rows).
     """
-    from advtext.diff import INTRALINE_BUDGET
+    from imscribe.diff import INTRALINE_BUDGET
 
     count = 6000
     lines = [f"line {i:05d} " + "x" * 29 for i in range(count)]

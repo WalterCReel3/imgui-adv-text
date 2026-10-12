@@ -1,5 +1,5 @@
 r"""
-`advtext.ui.typeset_stream_view.TypesetStreamView`.
+`imscribe.ui.typeset_stream_view.TypesetStreamView`.
 
 Which tests run depends on how the suite was started (`make test`, or `make
 test TYPESET=1`), as in `tests/test_typeset_view.py`:
@@ -17,9 +17,9 @@ test TYPESET=1`), as in `tests/test_typeset_view.py`:
     took. The child says whether `typesetter.module()` and `ready()` held
     there.
 
-The stream is an `advtext.typeset_markdown.MarkdownStream` everywhere. Until
-tranche 5 half of the replays fed the view an `advtext.stream.StreamDocument`
-and the window run timed `advtext.ui.stream_view.StreamView` beside it; both
+The stream is an `imscribe.typeset_markdown.MarkdownStream` everywhere. Until
+tranche 5 half of the replays fed the view an `imscribe.stream.StreamDocument`
+and the window run timed `imscribe.ui.stream_view.StreamView` beside it; both
 are deleted, and those cases went with them
 (`.concerns/T5-B1--builder--result.md` counts them). Where a replay was held
 against the old core's description of the whole document, it is held against
@@ -41,8 +41,8 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.description import (
+from imscribe import typesetter
+from imscribe.description import (
     BLOCK_TABLE_HEADER,
     BLOCK_TABLE_HELD,
     KIND_TABLE,
@@ -50,14 +50,14 @@ from advtext.description import (
     ColumnDescription,
     table_text,
 )
-from advtext.typesetter import (
+from imscribe.typesetter import (
     KIND_CODE,
     KIND_HOST,
     KIND_RULE,
     BlockDescription,
     RunDescription,
 )
-from advtext.ui.typeset_stream_view import appended, appended_cell_text, appended_rows
+from imscribe.ui.typeset_stream_view import appended, appended_cell_text, appended_rows
 
 _ROOT = Path(__file__).resolve().parent.parent
 _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
@@ -184,10 +184,10 @@ def test_a_block_that_holds_no_text_is_never_appended_to(kind: int) -> None:
 
 _WITHOUT = r"""
 import json, sys
-import advtext.ui.typeset_stream_view as module
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import MarkdownStream
+import imscribe.ui.typeset_stream_view as module
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import MarkdownStream
 
 loaded = sorted(name for name in sys.modules if name.split(".")[0] in ("imtypeset", "imgui_bundle"))
 try:
@@ -247,16 +247,16 @@ _HEADLESS = (
 import dataclasses, json, sys
 from pathlib import Path
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.description import BLOCK_TABLE_HELD
-from advtext.theme import Align, Theme
-from advtext.typeset_markdown import MarkdownStream
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import TypesetView
+from imscribe import typesetter
+from imscribe.description import BLOCK_TABLE_HELD
+from imscribe.theme import Align, Theme
+from imscribe.typeset_markdown import MarkdownStream
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import TypesetView
 
 def live_theme(theme):
     # The theme a stream's unfinished tail is built with under "reset": justified blocks set
-    # ragged. (`advtext.stream.live_theme`, deleted with that module; the Stream page has it
+    # ragged. (`imscribe.stream.live_theme`, deleted with that module; the Stream page has it
     # as `ragged`.)
     ragged = lambda style: (  # noqa: E731
         dataclasses.replace(style, align=Align.LEFT) if style.align is Align.JUSTIFY else style
@@ -649,7 +649,7 @@ def headless() -> dict[str, Any]:
 
 
 _REPLAYS = [
-    # Over an `advtext.typeset_markdown.MarkdownStream`: no old-core object on the way.
+    # Over an `imscribe.typeset_markdown.MarkdownStream`: no old-core object on the way.
     "sample 24 direct",
     "sample 5 direct",
     "tables 24 direct",
@@ -940,11 +940,11 @@ from pathlib import Path
 
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import MarkdownStream
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_stream_view import TypesetStreamView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import MarkdownStream
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_stream_view import TypesetStreamView
 """
     + _COUNTING
     + r"""

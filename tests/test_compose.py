@@ -1,15 +1,15 @@
 """
 Composition: the last pure step before ship-out, and the only part of the UI that runs.
 
-`advtext.ui.compose` breaks every paragraph, hangs every list marker and sizes
+`imscribe.ui.compose` breaks every paragraph, hangs every list marker and sizes
 every table column. It is roughly the same amount of real layout logic as the
 line breaker consumes, and none of it is ImGui's, so it is testable here and it
 is tested here.
 
 **Nothing in this file opens a window.** What is asserted here is everything
 that happens before a pixel would be touched. (Until tranche 5 it also held
-four tests of `advtext.ui.document_view.DocumentView`'s layout cache; that view
-is deleted with the old ImGui draw backend. `advtext.ui.composition` is kept as
+four tests of `imscribe.ui.document_view.DocumentView`'s layout cache; that view
+is deleted with the old ImGui draw backend. `imscribe.ui.composition` is kept as
 part of the reference core the SVG litmus renderer uses.)
 
 Widths are worked out from a fake font with round numbers, as in
@@ -25,17 +25,17 @@ from pathlib import Path
 
 import pytest
 
-import advtext.ui as ui_module
-from advtext.badness import INF_BAD, badness
-from advtext.fontmetrics import Face, FontMetrics, GlyphBBox
-from advtext.linebreak import LineBreakParams
-from advtext.markdown import TextBlock, build_document
-from advtext.nodes import Box, BoxKind, CharNode, FontKey, Glue, GlueSign, GlueSpec
-from advtext.pack import CharMeasure
-from advtext.selection import SelectionModel
-from advtext.shipout import Glyph, Line, Point, RuleRect, SetGlue, ship
-from advtext.style import Align, Spacing, Theme, char_measure, fontlib_metrics, parse_font_key
-from advtext.ui import (
+import imscribe.ui as ui_module
+from imscribe.badness import INF_BAD, badness
+from imscribe.fontmetrics import Face, FontMetrics, GlyphBBox
+from imscribe.linebreak import LineBreakParams
+from imscribe.markdown import TextBlock, build_document
+from imscribe.nodes import Box, BoxKind, CharNode, FontKey, Glue, GlueSign, GlueSpec
+from imscribe.pack import CharMeasure
+from imscribe.selection import SelectionModel
+from imscribe.shipout import Glyph, Line, Point, RuleRect, SetGlue, ship
+from imscribe.style import Align, Spacing, Theme, char_measure, fontlib_metrics, parse_font_key
+from imscribe.ui import (
     PROSE_BREAKING,
     PROSE_BREAKING_BOUNDED,
     PROSE_BREAKING_TOTAL_FIT_RAGGED,
@@ -45,8 +45,8 @@ from advtext.ui import (
     _theme_key,
     compose,
 )
-from advtext.ui.palette import DEFAULT_PALETTE, DrawStats, rgba
-from advtext.units import UNITY, GlueOrder, sp_from_px
+from imscribe.ui.palette import DEFAULT_PALETTE, DrawStats, rgba
+from imscribe.units import UNITY, GlueOrder, sp_from_px
 
 # Scaled points, not pixels: the theme's indents and sizes are in scaled points
 # and a fake measuring in raw units would make every list item overfull by a
@@ -64,7 +64,7 @@ class FakeMetrics:
     A `FontMetrics` with round numbers and no font behind it.
 
     `advance_scale` exists so a test can build a *second* measure that disagrees
-    with the first about every width. `advtext.ui.LayoutCache` keys the measure
+    with the first about every width. `imscribe.ui.LayoutCache` keys the measure
     by identity, so a second closure over the same metrics would miss for the
     wrong reason and prove nothing; this one produces a different layout.
     """
@@ -485,7 +485,7 @@ def test_a_block_quotes_bar_is_one_unbroken_rule_across_all_its_paragraphs(
 ) -> None:
     # The bar needs the quote's total height, which is known only once its
     # paragraphs are broken and packed, so it is the one second pass in
-    # `advtext.ui`. Two paragraphs and not one, because the obvious
+    # `imscribe.ui`. Two paragraphs and not one, because the obvious
     # implementation -- bar each block as it is composed -- gives two bars with a
     # gap between them and looks like a rendering glitch rather than a quote.
     cmds = composed("Before.\n\n> First quoted paragraph.\n>\n> Second one.\n\nAfter.\n", theme)
@@ -530,7 +530,7 @@ def test_a_fenced_blocks_indentation_survives_because_its_spaces_are_characters(
     assert letter.x - glyphs_on(cmds, first)[0].x == 4 * SPACE
 
 
-# -- the palette's pure parts (`advtext.ui.palette`; they were the draw backend's) --
+# -- the palette's pure parts (`imscribe.ui.palette`; they were the draw backend's) --
 
 
 def test_rgba_packs_bytes_the_way_im_col32_does() -> None:
@@ -912,12 +912,12 @@ def test_two_identical_paragraphs_share_a_cache_entry_and_still_stack(theme: The
 
 # -- the breaking tolerance ----------------------------------------------
 #
-# `advtext.ui.PROSE_BREAKING` is the one parameter in this project that is a
+# `imscribe.ui.PROSE_BREAKING` is the one parameter in this project that is a
 # judgement about how a page should look. What is *not* a judgement is that the
 # parameter should mean what it says. `tolerance` is the maximum badness the
 # breaker will accept on a line -- and while `PROSE_BREAKING` carried
 # `\emergencystretch` it bounded nothing at all, because §828 grants the extra
-# stretchability to the breaker's *scoring* and `advtext.linebreak._assemble`
+# stretchability to the breaker's *scoring* and `imscribe.linebreak._assemble`
 # packs the winner without it. A line admitted as "badness under 1000" came out
 # set at a measured badness of 10000.
 #
@@ -980,7 +980,7 @@ def _overfull(box: Box) -> list[Box]:
     """
     The hboxes that stick out past their own width: §666's black rule, as state.
 
-    `advtext.pack._set_glue` returns `glue_set` of exactly `1.0` with a shrinking
+    `imscribe.pack._set_glue` returns `glue_set` of exactly `1.0` with a shrinking
     sign when the overflow is *not* distributed, so this triple is the packer's
     own overfull flag read back off the box. `PackResult.fitness` says it more
     directly and `compose` does not return one.
@@ -1012,8 +1012,8 @@ def _worst_badness(theme: Theme, params: LineBreakParams) -> int:
     """
     The badness the packer's own `glue_set` implies, worst over the sweep.
 
-    `advtext.badness.badness` depends only on the ratio of what had to be made up
-    to what was available, and `glue_set` *is* that ratio (`advtext.nodes.Box`).
+    `imscribe.badness.badness` depends only on the ratio of what had to be made up
+    to what was available, and `glue_set` *is* that ratio (`imscribe.nodes.Box`).
     Going through the project's §108 transcription rather than through
     `100 * ratio ** 3` keeps the test and the breaker on one arithmetic: the
     integer approximation and the textbook cube disagree by a few units either
@@ -1042,7 +1042,7 @@ def test_prose_breaking_does_not_bound_how_loose_a_line_can_be(
     # **This asserts a defect, deliberately.** `tolerance` is the largest
     # badness the breaker will accept on a line, and while `\emergencystretch`
     # is in `PROSE_BREAKING` the packed line can be arbitrarily worse than that:
-    # §828 grants the stretch to the scoring and `advtext.linebreak._assemble`
+    # §828 grants the stretch to the scoring and `imscribe.linebreak._assemble`
     # packs without it. Over the two demo documents the shipped setting reaches
     # `INF_BAD` -- ten times its own declared 1000.
     #
@@ -1116,7 +1116,7 @@ def test_the_bounded_setting_costs_the_column_document_a_line_in_the_margin(
 # -- non-justified blocks are broken first-fit, at natural spacing ---------
 #
 # Decision 13 in `.concerns/lead--adoption-tasks.md`, wired in
-# `advtext.ui._text_boxes`. What changed is a statement about *which lines are
+# `imscribe.ui._text_boxes`. What changed is a statement about *which lines are
 # produced*, and each test below either compares the two paths or pins one of
 # the measured reasons for preferring one. None of them says which looks better.
 

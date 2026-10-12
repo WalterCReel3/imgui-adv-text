@@ -250,7 +250,7 @@ def test_the_frame_limit_chains_onto_a_callback_the_app_already_installed() -> N
     """
     Dropping the app's own `after_swap` would be a silent trap.
 
-    `advtext.ui.app.run` sets none today, so this guards the person who adds the
+    `imscribe.ui.app.run` sets none today, so this guards the person who adds the
     first one rather than any behaviour shipping now. Both orderings are pinned:
     the app's callback runs on every frame including the one that exits, so a
     patch that stopped chaining after the limit would also be caught.

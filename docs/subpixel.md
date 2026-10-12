@@ -1,5 +1,7 @@
 # Sub-pixel glyph phase
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 The user looked at the demo and reported that glyphs appeared touching or crowded, and
 guessed this was an old, well-studied problem. It is. This document is the research they
 asked for, the measurement, the option chosen, and the four options rejected.

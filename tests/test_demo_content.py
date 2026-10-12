@@ -16,7 +16,7 @@ rather than argued, because both were argued first and one of the arguments was
 wrong.
 
 **Vertical: how tall an indivisible slab the document contains.** Measured
-against this tree: `advtext.ui._stacked` joins two *lines of one paragraph* with
+against this tree: `imscribe.ui._stacked` joins two *lines of one paragraph* with
 interline glue and joins two *blocks* -- two paragraphs, two items of a list, a
 heading and the text under it -- with a rigid `Kern`. `docs/tex-notes.md` §5
 makes a break at glue legal only after a non-discardable node and makes a break
@@ -52,13 +52,13 @@ from pathlib import Path
 
 import pytest
 
-from advtext.markdown import build_document
-from advtext.nodes import Box, Glue, Kern, Node
-from advtext.pack import PackFitness
-from advtext.shipout import Glyph, Line, Point, ship
-from advtext.style import Theme, char_measure, fontlib_metrics
-from advtext.ui import PROSE_BREAKING, _shape, _skips, _stacked, compose
-from advtext.units import Scaled, pt_from_sp, sp_from_pt
+from imscribe.markdown import build_document
+from imscribe.nodes import Box, Glue, Kern, Node
+from imscribe.pack import PackFitness
+from imscribe.shipout import Glyph, Line, Point, ship
+from imscribe.style import Theme, char_measure, fontlib_metrics
+from imscribe.ui import PROSE_BREAKING, _shape, _skips, _stacked, compose
+from imscribe.units import Scaled, pt_from_sp, sp_from_pt
 
 DEMO = Path(__file__).resolve().parent.parent / "demo"
 
@@ -84,7 +84,7 @@ block-boundary `Kern`, so that those slabs become cuttable, takes the legal
 breakpoint count from 74 to 96 and produces an **identical** split. So a slab of
 this size buys a reader nothing and costs them nothing.
 
-Measured by the `advtext.columns` builder and reproduced here independently
+Measured by the `imscribe.columns` builder and reproduced here independently
 before the number was written down; `demo/sample.md @ 262pt` reports 90 legal
 breakpoints and a 195.9 pt tallest slab on this tree today.
 
@@ -116,8 +116,8 @@ def _overfull(source: str, theme: Theme, width: Scaled) -> list[tuple[str, float
     The same walk `test_litmus.py::test_no_line_in_the_document_is_overfull`
     does, at an arbitrary measure rather than the page's.
     """
-    from advtext.linebreak import break_paragraph
-    from advtext.markdown import TextBlock
+    from imscribe.linebreak import break_paragraph
+    from imscribe.markdown import TextBlock
 
     measure = char_measure(fontlib_metrics)
     document = build_document(source, theme, fontlib_metrics)
@@ -217,7 +217,7 @@ def _past_the_measure(source: str, theme: Theme, width: Scaled) -> list[Scaled]:
     """
     measure = char_measure(fontlib_metrics)
     box = compose(build_document(source, theme, fontlib_metrics), theme, width, measure)
-    from advtext.nodes import CharNode
+    from imscribe.nodes import CharNode
 
     overhangs = []
     for cmd in ship(box, Point(0, box.height), measure=measure):

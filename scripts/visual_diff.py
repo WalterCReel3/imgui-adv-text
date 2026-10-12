@@ -67,7 +67,7 @@ Regions are addressed by name, not by pixel coordinate:
 
 `text:` is the interesting one and the one that answers "the counting line".
 It has no OCR in it: it takes the advance width of each word from
-`advtext.fontlib`, then looks for a row of ink whose runs group into that
+`imscribe.fontlib`, then looks for a row of ink whose runs group into that
 sequence of widths with a real word space before each group. On
 `artifacts/demo-columns-2.png` the phrase "is shorter than most people guess."
 matches exactly one of the 55 text rows on that page; with the word-space
@@ -148,7 +148,7 @@ class NotStamped(Exception):
 
 
 _SIGNATURE = b"\x89PNG\r\n\x1a\n"
-_STAMP_KEY = b"advtext-shot"
+_STAMP_KEY = b"imscribe-shot"
 
 
 def _iter_chunks(data: bytes) -> list[tuple[bytes, bytes]]:
@@ -324,7 +324,7 @@ def build_id(root: Path = ROOT) -> str:
     two shots without committing.
 
     So the identity is the revision *and* a digest of the working tree: every
-    file git knows about under `advtext/`, `scripts/` and `demo/`, tracked or
+    file git knows about under `imscribe/`, `scripts/` and `demo/`, tracked or
     merely untracked-and-not-ignored, hashed by path and content. Two shots
     with the same id were taken from the same source; two with different ids
     were not, and `compare` will say so.
@@ -360,7 +360,7 @@ def _source_files(root: Path) -> list[Path]:
     ignored and hashing it would make every build id differ from every other.
     Falls back to a glob when git cannot answer.
     """
-    wanted = ("advtext", "scripts", "demo")
+    wanted = ("imscribe", "scripts", "demo")
     try:
         listed = subprocess.run(
             ["git", "-C", str(root), "ls-files", "-c", "-o", "--exclude-standard", "--", *wanted],
@@ -388,7 +388,7 @@ def _source_files(root: Path) -> list[Path]:
 
 def known_tabs() -> tuple[str, ...]:
     """
-    The tab names `advtext.ui.app.App.gui` actually draws.
+    The tab names `imscribe.ui.app.App.gui` actually draws.
 
     **This is a defence against a measured trap, not a tidiness check.** T15
     shot `--tab colums` and got a byte-identical photograph of the Document
@@ -397,15 +397,15 @@ def known_tabs() -> tuple[str, ...]:
     default tab is photographed under the wrong filename. A visual review of
     that file is a confident review of the wrong picture.
 
-    `advtext.ui.app.TAB_NAMES` is the single source, so there is no second
+    `imscribe.ui.app.TAB_NAMES` is the single source, so there is no second
     list here that could drift. That export landed with T18-colmargin; before
     it, three separate files had independently copied the tab list and two of
     them had gone stale. Since the demo's tab bar became a sidebar of
     discovered pages (2026-10-07) the name is no longer a literal: it is a
-    module `__getattr__` returning `advtext.ui.app.page_names()`, the scan of
-    `advtext/ui/pages/`, so "tab" throughout this file means a page.
+    module `__getattr__` returning `imscribe.ui.app.page_names()`, the scan of
+    `imscribe/ui/pages/`, so "tab" throughout this file means a page.
     """
-    from advtext.ui.app import TAB_NAMES
+    from imscribe.ui.app import TAB_NAMES
 
     return tuple(str(name) for name in TAB_NAMES)
 
@@ -419,7 +419,7 @@ def check_tab_spec(spec: str | None) -> str:
     legitimately want to photograph.
 
     The grammar and the name are both checked by
-    `advtext.ui.app.parse_tab_request`, which T18-colmargin taught to refuse an
+    `imscribe.ui.app.parse_tab_request`, which T18-colmargin taught to refuse an
     unknown name rather than ignore it. This calls it rather than
     re-implementing it, and turns its `ValueError` into a `SystemExit` so the
     message reaches the operator before the app is launched -- `shoot` costs
@@ -428,7 +428,7 @@ def check_tab_spec(spec: str | None) -> str:
     where the tool promises the stamp tells the truth about what was
     photographed, and that promise should not silently become someone else's.
     """
-    from advtext.ui.app import parse_tab_request
+    from imscribe.ui.app import parse_tab_request
 
     if not spec:
         return "default"
@@ -860,7 +860,7 @@ def expected_widths(words: list[str], face_name: str = "prose", size: float = 16
     """
     The ink width each word should have, from the project's own font metrics.
 
-    Advances and kerns come from `advtext.fontlib`, which is where every other
+    Advances and kerns come from `imscribe.fontlib`, which is where every other
     number in this project comes from, so this is not a second opinion about the
     font. The advance sum is then reduced by half the left side bearing of the
     first glyph and half the right of the last -- estimated as half the
@@ -870,8 +870,8 @@ def expected_widths(words: list[str], face_name: str = "prose", size: float = 16
     and correcting for it is what lets the tolerance be tight enough to be
     discriminating.
     """
-    from advtext.fontlib import metrics
-    from advtext.fontmetrics import Face
+    from imscribe.fontlib import metrics
+    from imscribe.fontmetrics import Face
 
     face = Face(face_name)
     m = metrics(face, size)

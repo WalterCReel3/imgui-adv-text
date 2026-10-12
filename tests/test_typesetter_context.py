@@ -33,19 +33,19 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.typesetter import Kind
+from imscribe import typesetter
+from imscribe.typesetter import Kind
 
 _ROOT = Path(__file__).resolve().parent.parent
 
 _COMMON = r"""
 import json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import parse_markdown
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
-from advtext.ui.typeset_diff_view import code_face_lacks
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import parse_markdown
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe.ui.typeset_diff_view import code_face_lacks
 
 ts = typesetter.module()
 if ts is None:
@@ -128,7 +128,7 @@ report["kept_view"] = frame(view)
 report["asked"] = asked()
 report["edits_after"] = dict(view.edits)
 report["still_in_use"] = [typesetter.module() is ts, typesetter.trouble()]
-report["font"] = typesetter.font(__import__("advtext").Face.CODE) is None
+report["font"] = typesetter.font(__import__("imscribe").Face.CODE) is None
 try:
     typesetter.window_draw_list()
     report["draw_list"] = "answered"
@@ -177,7 +177,7 @@ print(json.dumps(report))
 _CROWDED = r"""
 import json
 from imgui_bundle import imgui
-from advtext import Face, fontlib, typesetter
+from imscribe import Face, fontlib, typesetter
 
 def context():
     made = imgui.create_context()

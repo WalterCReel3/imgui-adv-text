@@ -9,7 +9,7 @@ glue is 8 wide with 4 of stretch and 3 of shrink, which is the claim that would
 actually catch the space-factor arithmetic going wrong.
 
 `tests/test_fontmetrics.py` is where real fonts are exercised. The two suites
-meet at `advtext.style.MetricsResolver`, and a fake that satisfies it here while
+meet at `imscribe.style.MetricsResolver`, and a fake that satisfies it here while
 `fontlib` satisfies it there is the evidence that the seam is real.
 
 Deliberately not here: anything that packs, breaks or positions. This module
@@ -24,9 +24,9 @@ from typing import Any
 
 import pytest
 
-from advtext.fontmetrics import Face, FontMetrics, GlyphBBox
-from advtext.linebreak import LineBreakParams, ParShape, break_paragraph
-from advtext.markdown import (
+from imscribe.fontmetrics import Face, FontMetrics, GlyphBBox
+from imscribe.linebreak import LineBreakParams, ParShape, break_paragraph
+from imscribe.markdown import (
     PARFILLSKIP,
     REPLACEMENT_CHARACTER,
     BlockSource,
@@ -48,7 +48,7 @@ from advtext.markdown import (
     replaced_characters,
     text_block,
 )
-from advtext.nodes import (
+from imscribe.nodes import (
     EJECT_PENALTY,
     INF_PENALTY,
     CharNode,
@@ -59,7 +59,7 @@ from advtext.nodes import (
     Node,
     Penalty,
 )
-from advtext.style import (
+from imscribe.style import (
     Align,
     BlockKind,
     Emphasis,
@@ -219,7 +219,7 @@ def test_a_text_block_leaves_section_816s_terminator_to_the_line_breaker(
     theme: Theme,
 ) -> None:
     # Section 816 lives in line_break, not in the code that builds the horizontal
-    # list: advtext.linebreak._prepare replaces a trailing glue with an infinite
+    # list: imscribe.linebreak._prepare replaces a trailing glue with an infinite
     # penalty and appends \\parfillskip itself. Emitting one here too leaves the
     # breaker a parfillskip after the forced break it already took, and every
     # block comes out with a blank line under it. tests/test_compose.py has the
@@ -741,7 +741,7 @@ def test_a_space_before_a_hard_break_no_longer_sets_an_empty_line(theme: Theme) 
     """
     from dataclasses import replace
 
-    from advtext.ui import PROSE_BREAKING, RAGGED_RIGHT
+    from imscribe.ui import PROSE_BREAKING, RAGGED_RIGHT
 
     now = convert(BACKSLASH_BREAK, theme).blocks[0]
     assert isinstance(now, TextBlock)
@@ -985,7 +985,7 @@ def test_constructed_blocks_and_all_six_headings_compose_and_ship(theme: Theme) 
     """
     The new kinds and the new constructors reach the far end of the pipeline.
 
-    `advtext.ui.compose` does not branch on `BlockKind` -- checked by reading it
+    `imscribe.ui.compose` does not branch on `BlockKind` -- checked by reading it
     -- so three new kinds should need nothing from it, and this is the run that
     says so: a document of all six headings from markdown, followed by blocks
     that never were markdown, composed and shipped. Every character comes out
@@ -993,8 +993,8 @@ def test_constructed_blocks_and_all_six_headings_compose_and_ship(theme: Theme) 
     not glue -- and the hard-broken text with a blank line in it sets three
     lines, the middle one empty.
     """
-    from advtext.shipout import Glyph, Line, Point, ship
-    from advtext.ui import compose
+    from imscribe.shipout import Glyph, Line, Point, ship
+    from imscribe.ui import compose
 
     measure = char_measure(fake_resolve)
     headings = convert("".join(f"{'#' * n} H{n}\n\n" for n in range(1, 7)), theme).blocks
@@ -1149,7 +1149,7 @@ def test_the_leading_fence_is_read_with_its_blank_lines_and_whether_it_closed(
     source: str, lines: list[str], closed: bool, theme: Theme
 ) -> None:
     """
-    `_leading_fence`, which `advtext.stream` trusts for the two facts a block does not keep.
+    `_leading_fence`, which `imscribe.stream` trusts for the two facts a block does not keep.
 
     "Closed" is inferred from a line count markdown-it does not document
     (the function's docstring has the reading), so every row here is a case
@@ -1296,7 +1296,7 @@ def test_the_demo_document_maps_every_block_and_leaves_only_blank_lines_unclaime
 
 
 # ----------------------------------------------------------------------
-# Review 2, items 3 and 5; and the parser `advtext.stream` reads with.
+# Review 2, items 3 and 5; and the parser `imscribe.stream` reads with.
 #
 # Item 3 is about geometry, which this file otherwise leaves alone. It is here
 # because the defect was in the *material* this module emits and the only way
@@ -1308,10 +1308,10 @@ def _line_starts_and_ends(block: TextBlock, theme: Theme, width: int) -> list[tu
     Left edge of the first glyph and right edge of the last, per line, composed and shipped.
 
     Through `compose_blocks`, because the alignment is carried out there
-    (`advtext.ui._skips`). Fake metrics: every glyph is 10 wide.
+    (`imscribe.ui._skips`). Fake metrics: every glyph is 10 wide.
     """
-    from advtext.shipout import Glyph, Point, ship
-    from advtext.ui import compose_blocks
+    from imscribe.shipout import Glyph, Point, ship
+    from imscribe.ui import compose_blocks
 
     measure = char_measure(fake_resolve)
     box = compose_blocks((block,), theme, width, measure)
@@ -1338,7 +1338,7 @@ def test_a_line_before_a_hard_break_is_placed_as_every_other_line_of_its_block_i
     changing anything; the fake numbers are the same defect in round figures.
 
     Only the first two lines are asserted exactly. The third is the paragraph's
-    last and is `advtext.linebreak`'s and `advtext.ui`'s to place; it is a unit
+    last and is `imscribe.linebreak`'s and `imscribe.ui`'s to place; it is a unit
     or two short, and the strict `xfail` below says why and whose that is.
 
     The lead's snippet compared the first glyph's x of `aaa` and `bbb`. Those
@@ -1374,7 +1374,7 @@ def test_the_fill_before_a_forced_break_is_left_out_only_where_a_left_skip_would
     The material itself: three nodes justified and ragged right, one otherwise.
 
     Justified and ragged-right material are *equal*, node for node. That is
-    relied on by `advtext.stream`, which sets a block ragged while it is being
+    relied on by `imscribe.stream`, which sets a block ragged while it is being
     written and may re-set it justified when it is finished: the two blocks
     then differ in their style and in nothing else.
     """
@@ -1401,7 +1401,7 @@ def test_a_blank_line_between_hard_breaks_is_still_a_blank_line_in_every_alignme
     alignments is exactly the kind of change that could have cost it: the
     middle line is then two penalties and nothing else.
     """
-    from advtext.ui import PROSE_BREAKING, _skips
+    from imscribe.ui import PROSE_BREAKING, _skips
 
     for align in Align:
         theme = Theme.build(align=align)
@@ -1421,7 +1421,7 @@ def test_the_last_line_of_a_ragged_left_block_ends_exactly_at_the_margin() -> No
     At a measure of twenty million units -- about 305 pt, a real one -- the
     last line of a ragged-left block ended 305 units (thousandths of a point)
     short of the margin, where the lines before the hard breaks ended on it
-    exactly: `advtext.ui._skips` left the `\parfillskip` at `1sp plus 1fil`
+    exactly: `imscribe.ui._skips` left the `\parfillskip` at `1sp plus 1fil`
     beside a left skip of 65536 times that, and the two shared the slack. Far
     below a pixel, and so a statement about exactness and not about anything a
     reader could see.
@@ -1507,7 +1507,7 @@ def test_references_off_reads_a_definition_as_text_and_leaves_the_default_alone(
 
 
 # ----------------------------------------------------------------------
-# Resuming inside an unfinished list or quote (`_resume_point`, for `advtext.stream`)
+# Resuming inside an unfinished list or quote (`_resume_point`, for `imscribe.stream`)
 
 
 @pytest.mark.parametrize(
@@ -1728,7 +1728,7 @@ def test_a_quoted_table_under_an_unended_quote_marker_does_not_crash_the_parse(
     markdown-it 4.2.0 raises `IndexError` on these; `build_document` must not.
 
     The control is the library itself, asked directly: if an upgrade fixes it
-    this test says so, and `advtext.markdown._parse` can go. What comes back
+    this test says so, and `imscribe.markdown._parse` can go. What comes back
     is what the same text with its last line ended gives.
     """
     from markdown_it import MarkdownIt
@@ -1759,7 +1759,7 @@ def _chars(nodes: tuple[Node, ...]) -> list[tuple[str, str]]:
 
 
 def test_the_faces_lack_what_the_tests_below_say_they_lack(bundled_fonts: Path) -> None:
-    from advtext import fontlib
+    from imscribe import fontlib
 
     code, prose = fontlib.metrics(Face.CODE, 16.0), fontlib.metrics(Face.PROSE, 16.0)
     maths = fontlib.math_metrics(16.0)
@@ -1773,7 +1773,7 @@ def test_the_faces_lack_what_the_tests_below_say_they_lack(bundled_fonts: Path) 
 def test_a_character_the_code_face_lacks_is_set_from_the_prose_face(
     theme: Theme, bundled_fonts: Path
 ) -> None:
-    from advtext.style import fontlib_metrics
+    from imscribe.style import fontlib_metrics
 
     (block,) = build_document("area `πr` done", theme, fontlib_metrics).blocks
     assert isinstance(block, TextBlock)
@@ -1790,7 +1790,7 @@ def test_a_character_the_code_face_lacks_is_set_from_the_prose_face(
 
 
 def test_the_order_is_prose_then_math_then_code(theme: Theme, bundled_fonts: Path) -> None:
-    from advtext.style import fontlib_metrics
+    from imscribe.style import fontlib_metrics
 
     (block,) = build_document("a → b `x ∀ π`", theme, fontlib_metrics).blocks
     assert isinstance(block, TextBlock)
@@ -1805,7 +1805,7 @@ def test_the_order_is_prose_then_math_then_code(theme: Theme, bundled_fonts: Pat
 def test_a_character_no_face_has_is_the_prose_faces_replacement_and_is_counted(
     theme: Theme, bundled_fonts: Path
 ) -> None:
-    from advtext.style import fontlib_metrics
+    from imscribe.style import fontlib_metrics
 
     source = (
         "# 速 title\n\n速度 is `速` here\n\n```\nv = 速度\n```\n\n"
@@ -1826,7 +1826,7 @@ def test_a_character_no_face_has_is_the_prose_faces_replacement_and_is_counted(
 
 
 def test_what_draws_nothing_on_purpose_is_left_alone(theme: Theme, bundled_fonts: Path) -> None:
-    from advtext.style import fontlib_metrics
+    from imscribe.style import fontlib_metrics
 
     # A zero-width joiner, a soft hyphen, a variation selector, a combining
     # mark: none is replaced, whatever the face has.
@@ -1845,8 +1845,8 @@ def test_text_the_faces_cover_is_node_for_node_what_it_was(
     the old behaviour back and comparing. The control is a document that does
     reach it.
     """
-    import advtext.markdown as markdown_module
-    from advtext.style import fontlib_metrics
+    import imscribe.markdown as markdown_module
+    from imscribe.style import fontlib_metrics
 
     source = (Path(__file__).resolve().parent.parent / "demo" / "sample.md").read_text(
         encoding="utf-8"
@@ -1889,8 +1889,8 @@ def test_a_resolver_that_knows_only_the_bound_face_changes_nothing(theme: Theme)
 
 
 # Until tranche 5 this file ended with seven tests of what the old views and the old
-# stream did with a replaced character: `advtext.stream.StreamDocument` standing in for
-# the same characters as one parse, `advtext.ui.units.UnitModel.copy_text` copying the
-# character that was written, `advtext.spans` finding it, and the old ImGui draw backend
+# stream did with a replaced character: `imscribe.stream.StreamDocument` standing in for
+# the same characters as one parse, `imscribe.ui.units.UnitModel.copy_text` copying the
+# character that was written, `imscribe.spans` finding it, and the old ImGui draw backend
 # drawing the stand-in in a real window. Those four modules are deleted. What is kept
 # above is the parser's own half: which character is replaced, by what, and how many.

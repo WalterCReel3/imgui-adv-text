@@ -1,5 +1,7 @@
 # TeX layout algorithms — implementation reference
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 Source: `/home/wreel/Downloads/tex.web` (Knuth, TeX82, WEB format, 25010 lines).
 
 All section numbers (`§n`) below are WEB section numbers, computed by counting `@*` / `@ ` /

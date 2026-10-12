@@ -46,15 +46,15 @@ from typing import TYPE_CHECKING, Any
 import pytest
 import test_typeset_closure as closure
 
-from advtext import typesetter
-from advtext.ui import pages
-from advtext.ui.app import App, parse_tab_request
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import tables as page
-from advtext.ui.pages import typeset as typeset_page
-from advtext.ui.pages.tables import dragged, fitted, readouts
-from advtext.ui.typeset_view import TypesetUnavailable
-from advtext.units import Scaled, px_from_sp, sp_from_px
+from imscribe import typesetter
+from imscribe.ui import pages
+from imscribe.ui.app import App, parse_tab_request
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import tables as page
+from imscribe.ui.pages import typeset as typeset_page
+from imscribe.ui.pages.tables import dragged, fitted, readouts
+from imscribe.ui.typeset_view import TypesetUnavailable
+from imscribe.units import Scaled, px_from_sp, sp_from_px
 
 if TYPE_CHECKING:
     from conftest import Window
@@ -283,7 +283,7 @@ def _frame(draw: Any) -> int:
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-tables-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-tables-page-test", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             vertices = imgui.get_window_draw_list().vtx_buffer
             before = vertices.size()
@@ -299,7 +299,7 @@ def _frame(draw: Any) -> int:
 @pytest.fixture
 def unasked(monkeypatch: pytest.MonkeyPatch) -> Any:
     """
-    `advtext.typesetter` as at import, and a `module()` that fails the test if asked.
+    `imscribe.typesetter` as at import, and a `module()` that fails the test if asked.
     """
     typesetter._forget()
     monkeypatch.setattr(typesetter, "module", lambda: pytest.fail("the page asked for the library"))
@@ -343,10 +343,10 @@ import sys
 
 from imgui_bundle import imgui
 
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import tables as page
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import tables as page
 
-at_import = sorted(name for name in sys.modules if name.startswith("advtext"))
+at_import = sorted(name for name in sys.modules if name.startswith("imscribe"))
 context = PageContext.build(request_page="tables", request_options=("floors",))
 before = set(sys.modules)
 made = page.TablesPage(context)
@@ -364,8 +364,8 @@ for _ in range(3):
 print(json.dumps({
     "at_import": at_import,
     "report": made.report(),
-    "added": sorted(name for name in set(sys.modules) - before if name.startswith("advtext")),
-    "loaded": sorted(name for name in sys.modules if name.startswith("advtext")),
+    "added": sorted(name for name in set(sys.modules) - before if name.startswith("imscribe")),
+    "loaded": sorted(name for name in sys.modules if name.startswith("imscribe")),
     "imtypeset": "imtypeset" in sys.modules,
 }))
 """
@@ -377,7 +377,7 @@ def test_without_the_library_importing_and_drawing_the_page_load_no_old_view(
     """
     A fresh interpreter, the library's variables removed. Importing the page
     loads nothing of the old core (two leaves until T5-B2) and three frames of it add no
-    `advtext` module to what a `PageContext` loaded: no `advtext.markdown`, no
+    `imscribe` module to what a `PageContext` loaded: no `imscribe.markdown`, no
     `BareView`, no compositor, no draw backend.
     """
     pytest.importorskip("imgui_bundle")
@@ -401,13 +401,13 @@ def test_without_the_library_importing_and_drawing_the_page_load_no_old_view(
     assert set(got["loaded"]) & closure.REFERENCE_CORE == set()
     loaded = set(got["loaded"])
     for gone in (
-        "advtext.markdown",
-        "advtext.linebreak",
-        "advtext.shipout",
-        "advtext.selection",
-        "advtext.ui.composition",
-        "advtext.ui.bare_view",
-        "advtext.backends.imgui_draw",
+        "imscribe.markdown",
+        "imscribe.linebreak",
+        "imscribe.shipout",
+        "imscribe.selection",
+        "imscribe.ui.composition",
+        "imscribe.ui.bare_view",
+        "imscribe.backends.imgui_draw",
     ):
         assert gone not in loaded
 
@@ -573,16 +573,16 @@ import json, sys
 
 from imgui_bundle import imgui
 
-from advtext import typesetter
-from advtext.ui.pages import PageContext
-from advtext.ui.pages import tables as page
-from advtext.ui.typeset_view import TypesetUnavailable
-from advtext.primitives import px_from_sp, sp_from_px
+from imscribe import typesetter
+from imscribe.ui.pages import PageContext
+from imscribe.ui.pages import tables as page
+from imscribe.ui.typeset_view import TypesetUnavailable
+from imscribe.primitives import px_from_sp, sp_from_px
 
 SIZE = (1300.0, 800.0)
 OFF = (-1.0e6, -1.0e6)
 def loaded():
-    return sorted(name for name in sys.modules if name.split(".")[0] == "advtext")
+    return sorted(name for name in sys.modules if name.split(".")[0] == "imscribe")
 
 report = {"module": typesetter.module() is not None, "loaded_at_import": loaded()}
 imgui.create_context()
@@ -621,7 +621,7 @@ def frame(made, *, mouse=None, button=None):
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
-        imgui.begin("##advtext-tables-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+        imgui.begin("##imscribe-tables-page-test", None, imgui.WindowFlags_.no_title_bar.value)
         try:
             calls.clear()
             made.draw()
@@ -1050,7 +1050,7 @@ def test_with_the_library_importing_the_page_and_opening_it_load_no_old_view(
     leaves until T5-B2). After five frames drawn through the library:
     nothing either. Until 2026-10-12 it was `fontlib` and the `fontmetrics`
     it imports, because `typesetter.load_fonts` read the font files from
-    it; the table of files is `advtext.fontfiles`' now (`Theme.build`
+    it; the table of files is `imscribe.fontfiles`' now (`Theme.build`
     loaded `nodes`, `pack` and `badness` until T5-B2). **No line breaker, no
     ship-out, no selection model, no compositor, no node, no draw backend.**
     """
@@ -1058,7 +1058,7 @@ def test_with_the_library_importing_the_page_and_opening_it_load_no_old_view(
     assert set(typeset["loaded_at_import"]) & core == set()
     opened = set(typeset["loaded_after_five_frames"])
     assert opened & core == set()
-    assert "advtext.markdown" not in opened and "advtext.ui.typeset_view" in opened
+    assert "imscribe.markdown" not in opened and "imscribe.ui.typeset_view" in opened
 
 
 def test_with_the_library_a_handle_hovered_pressed_and_moved_states_the_columns(
@@ -1245,13 +1245,13 @@ import sys
 
 from imgui_bundle import hello_imgui, imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
-from advtext.primitives import px_from_sp
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
+from imscribe.primitives import px_from_sp
 
 WANT_LIBRARY = sys.argv[1] == "with"
 state = {"frames": 0, "step": 0}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def watched_gui(self):
@@ -1311,8 +1311,8 @@ def watched_gui(self):
     state["step"] += 1
 
 
-advtext_app.App.gui = watched_gui
-advtext_app.run(tab="tables")
+imscribe_app.App.gui = watched_gui
+imscribe_app.run(tab="tables")
 """
 
 

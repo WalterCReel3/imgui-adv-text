@@ -1,5 +1,9 @@
 # Handoff: advtext ⇄ imtypeset
 
+**On 2026-10-12 the package was renamed `imscribe` ("Renamed", below).
+Everything in this file dated before that calls it advtext, this title
+included.**
+
 The channel between the two projects while they are worked on in tandem.
 
 - **advtext** — https://github.com/WalterCReel3/imgui-adv-text (this
@@ -502,19 +506,61 @@ A note: "advtext's views now skip `layout`, `draw` and `size` for a document
 wholly outside the clip rectangle, so a document can go many frames with no
 call and then be drawn again; nothing in 03b5cd4 was seen to mind."
 
-### Coming: advtext is to be renamed `imscribe` (the user, 2026-10-12)
+### Renamed: advtext is `imscribe` (2026-10-12)
 
-Decided by the user: "Being evocative is the win as it allows future
-extensions that _may_ include editing or other display aspects (mermaid
-diagrams for one)." "Let's work on the rename after the diff-view work."
-**Not done yet; nothing changes until this file says it has.** It will be
-one commit after the diff-view work lands. For you: the package you call
-advtext in `docs/advtext-swap-status.md`, in spike and oracle paths and in
-this channel becomes `imscribe`; **the tag `advtext-reference` (commit
-`32e3953`) keeps its name**, because it names the old Python core your oracle
-is pinned to, and that code is not renamed. The repository's name on GitHub
-is the user's to change; if it does, the URL in this file changes with it and
-this file will say so.
+**Done.** This replaces "Coming: advtext is to be renamed", which stood here
+from `976554b` until the rename. Decided by the user: "I'm really tempted by
+'imscribe' as it is a phonetic sound-a-like to 'inscribe' the word." "Being
+evocative is the win as it allows future extensions that _may_ include
+editing or other display aspects (mermaid diagrams for one)." "Let's work on
+the rename after the diff-view work." Carried out by the RENAME builder, an
+agent; one commit on `experimental/imtypeset-adoption`, the one that carries
+this section, not pushed when this was written.
+
+**For you it is a change of words, and of one path.**
+
+- **The name.** The package you call advtext in
+  `docs/advtext-swap-status.md`, `docs/advtext-rework-plan.md`,
+  `docs/advtext-migration.md` and in your half of this channel is `imscribe`:
+  the Python package (`import imscribe`), its directory in this repository
+  (`imscribe/`, where `advtext/` was) and its distribution name. Whether
+  your documents keep their file names is yours to say; this repository
+  goes on citing them by the names they have, and cites
+  `python/spike_advtext/` as it is.
+- **Paths you cite into this repository** move with the directory:
+  `advtext/typesetter.py` is `imscribe/typesetter.py`, and so on for every
+  module. `tests/`, `scripts/`, `examples/`, `demo/` and both handoff files
+  are where they were. The acceptance tests for H34 and H35 are still
+  `tests/test_mono_acceptance.py`.
+- **Anything of yours that imports the package from this checkout at its
+  head** (a spike, an oracle run against the new code) imports `imscribe`.
+  There is no alias: `import advtext` is a `ModuleNotFoundError` from that
+  commit on.
+
+**What does not change.**
+
+- **The tag `advtext-reference` (commit `32e3953`) keeps its name**, and at
+  that commit the package is still `advtext/` and imports as `advtext`:
+  your oracle, pinned to it, changes nothing.
+- Nothing this package asks of your library or passes to it: no call, no
+  argument, no order of calls, no number. `IMTYPESET_LIBRARY`,
+  `IMTYPESET_PYTHON` and every other `IMTYPESET_*` variable are yours and
+  are read as before. The pin is still `v0.3.0` (`imtypeset.ref`).
+- The request numbers (`H1` ...) and their wording. Every section of this
+  file dated before this one calls the package advtext, quotes included; it
+  is a record and was not rewritten. Read `imscribe` for the package there.
+- **The repository: `github.com/WalterCReel3/imgui-adv-text`, checked out at
+  `~/Source/imgui-adv-text`. Renaming it is the user's to do and has not
+  been done;** if it happens, the URL at the top of this file changes and
+  this file will say so.
+
+One thing you might meet: `python -m imscribe.typesetter` prints the pairing
+as one line of JSON, and its key `advtext_version` is now `imscribe_version`.
+
+Gates with the rename in the tree, alone on it, against your `v0.3.0`
+(RENAME's builder): `make check` 3611 passed, 720 skipped, 4 xfailed (293 s, load 3.3 to 9.5; it was 3610, 720, 4); `make check TYPESET=1`
+4218 passed, 8 skipped, 109 xfailed (474 s, load 10.4 to 9.6; it was 4217, 8, 109); test by test what they were on the commit before, plus one new
+test (`tests/test_rename.py`).
 
 ### H34 and H35: acceptance tests, and what Dear ImGui's advance is (added 2026-10-12)
 

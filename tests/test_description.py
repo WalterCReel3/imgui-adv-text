@@ -1,14 +1,14 @@
 """
-`advtext.description`: one definition of the description types, with nothing behind it.
+`imscribe.description`: one definition of the description types, with nothing behind it.
 
-Until tranche 3 `advtext.typesetter` and `advtext.typeset_markdown` each
+Until tranche 3 `imscribe.typesetter` and `imscribe.typeset_markdown` each
 defined `BlockDescription` and the rest (finding R8 of the SW-R1 review): equal
 field for field, and two classes. What is held here:
 
-1.  the module imports nothing of advtext, and nothing beyond the standard
+1.  the module imports nothing of imscribe, and nothing beyond the standard
     library;
 2.  every description name of the two converter modules and of
-    `advtext.typeset_find` IS this module's object;
+    `imscribe.typeset_find` IS this module's object;
 3.  the tables keyed by NAME agree with the enums they stand for, member for
     member, so a face or an alignment added to one and not the other fails
     here and not in a drawing;
@@ -24,8 +24,8 @@ from pathlib import Path
 
 import pytest
 
-from advtext import description, typeset_find, typeset_markdown, typesetter
-from advtext.description import (
+from imscribe import description, typeset_find, typeset_markdown, typesetter
+from imscribe.description import (
     ALIGNS,
     FACE_ROLES,
     KIND_HOST,
@@ -39,9 +39,9 @@ from advtext.description import (
     table_text,
     with_tags,
 )
-from advtext.fontmetrics import Face
-from advtext.markdown_rules import ColumnAlign
-from advtext.theme import Align, Theme
+from imscribe.fontmetrics import Face
+from imscribe.markdown_rules import ColumnAlign
+from imscribe.theme import Align, Theme
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -74,10 +74,10 @@ def test_the_module_imports_the_standard_library_and_nothing_else() -> None:
     code = """
 import json, sys
 before = set(sys.modules)
-import advtext.description
+import imscribe.description
 new = set(sys.modules) - before
 print(json.dumps({
-    "advtext": sorted(n for n in new if n.startswith("advtext")),
+    "imscribe": sorted(n for n in new if n.startswith("imscribe")),
     "foreign": sorted(
         n for n in new
         if n.split(".")[0] in ("imgui_bundle", "imtypeset", "markdown_it", "fontTools", "numpy")
@@ -95,7 +95,7 @@ print(json.dumps({
     )
     assert done.returncode == 0, done.stderr
     report = json.loads(done.stdout.strip().splitlines()[-1])
-    assert report["advtext"] == ["advtext", "advtext.description"]
+    assert report["imscribe"] == ["imscribe", "imscribe.description"]
     assert report["foreign"] == []
 
 
@@ -103,7 +103,7 @@ print(json.dumps({
 def test_both_converter_modules_have_the_very_same_objects(name: str) -> None:
     """
     R8. Identity and not equality: `isinstance(x, typesetter.BlockDescription)`
-    is true of a block `advtext.typeset_markdown` described.
+    is true of a block `imscribe.typeset_markdown` described.
     """
     one = getattr(description, name)
     assert getattr(typesetter, name) is one
@@ -203,7 +203,7 @@ def test_with_tags_keeps_runs_ascending_and_whole_formulas() -> None:
 
 
 def _described() -> description.Description:
-    from advtext.description import (
+    from imscribe.description import (
         KIND_CODE,
         KIND_TABLE,
         CellDescription,

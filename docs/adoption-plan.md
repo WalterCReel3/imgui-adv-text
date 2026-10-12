@@ -1,5 +1,7 @@
 # Adoption plan: advtext in `../pptmstr`
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 **Status (2026-10-07): built in this repository, phases 0 to 7, by an unattended
 team of agents in one session. Nothing is committed. No person has looked at any
 of it in a window, and no person took any of the decisions marked "agent

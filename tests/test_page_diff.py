@@ -2,7 +2,7 @@
 The Diff page: its cases as data, its controls as state, and the page in real frames.
 
 **What draws, and what these tests can see of it.** The page draws with
-`advtext.ui.typeset_diff_view.TypesetDiffView` and with nothing else: when the
+`imscribe.ui.typeset_diff_view.TypesetDiffView` and with nothing else: when the
 imtypeset library cannot draw it has no views and says why in one line
 (T5-FB-C removed the fallback to the old `DiffView`). In this process the
 library never can -- it is kept out of the pytest process and a headless frame
@@ -45,12 +45,12 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.diff import MAX_INTRALINE_CHARS, Diff, FileStatus, RowKind
-from advtext.ui.pages import PageContext, demo_text, discover
-from advtext.ui.pages import diff as page_module
-from advtext.ui.pages import typeset as typeset_page
-from advtext.ui.pages.diff import (
+from imscribe import typesetter
+from imscribe.diff import MAX_INTRALINE_CHARS, Diff, FileStatus, RowKind
+from imscribe.ui.pages import PageContext, demo_text, discover
+from imscribe.ui.pages import diff as page_module
+from imscribe.ui.pages import typeset as typeset_page
+from imscribe.ui.pages.diff import (
     BOTH_MIN_PX,
     CAP_PX,
     PAGE,
@@ -62,10 +62,10 @@ from advtext.ui.pages.diff import (
     unified_as_pptmstr,
     wide_texts,
 )
-from advtext.ui.pages.themes import COLOURS
-from advtext.ui.palette import DARK_PALETTE, DEFAULT_PALETTE
-from advtext.ui.typeset_diff_view import DiffLayout, DiffRows
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe.ui.pages.themes import COLOURS
+from imscribe.ui.palette import DARK_PALETTE, DEFAULT_PALETTE
+from imscribe.ui.typeset_diff_view import DiffLayout, DiffRows
+from imscribe.ui.typeset_view import TypesetUnavailable
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from conftest import Window
@@ -407,7 +407,7 @@ def test_hard_unseen_characters_are_flagged_by_the_model_and_are_rows_of_the_pag
 
 def test_hard_an_honest_u0_diff_with_dash_dash_lines_is_one_file_that_applies() -> None:
     """Review 3, item 2, on the page."""
-    from advtext.ui.pages.diff import u0_text
+    from imscribe.ui.pages.diff import u0_text
 
     text = u0_text()
     assert text.count("\n--- ") == 2 and "\n+++ added entry\n@@ " in text
@@ -710,7 +710,7 @@ def _frame(
     try:
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*size))
-        imgui.begin("##advtext-diff-page-test", None, imgui.WindowFlags_.no_decoration.value)
+        imgui.begin("##imscribe-diff-page-test", None, imgui.WindowFlags_.no_decoration.value)
         try:
             page.draw()
         finally:
@@ -881,14 +881,14 @@ def test_the_cost_readout_is_the_time_around_the_views_and_nothing_else(
 
 _CLOSURE = r"""
 import json, sys
-import advtext.ui.pages.diff as page
+import imscribe.ui.pages.diff as page
 
 def loaded():
-    return sorted(m for m in sys.modules if m.split(".")[0] == "advtext")
+    return sorted(m for m in sys.modules if m.split(".")[0] == "imscribe")
 
 report = {"at_import": loaded()}
 from imgui_bundle import imgui
-from advtext.ui.pages import PageContext
+from imscribe.ui.pages import PageContext
 
 context = PageContext.build(request_page="diff", request_options=("long", "both"))
 before = set(sys.modules)
@@ -907,7 +907,7 @@ for _ in range(3):
     made.draw()
     imgui.end()
     imgui.render()
-report["added"] = sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "advtext")
+report["added"] = sorted(m for m in set(sys.modules) - before if m.split(".")[0] == "imscribe")
 report["loaded"] = loaded()
 report["page"] = [made.renderer, made.reason, made.frames, list(made.readouts()), made.fed]
 report["imtypeset"] = "imtypeset" in sys.modules
@@ -916,19 +916,19 @@ print("REPORT " + json.dumps(report))
 
 # What the old `DiffView` stood on, none of which the page may load any more.
 _OLD_CORE = {
-    "advtext.ui.diff_view",
-    "advtext.ui.bare_view",
-    "advtext.ui.composition",
-    "advtext.ui.units",
-    "advtext.backends.imgui_draw",
-    "advtext.linebreak",
-    "advtext.selection",
-    "advtext.shipout",
-    "advtext.spans",
-    "advtext.fontlib",
-    "advtext.markdown",
-    "advtext.stream",
-    "advtext.mathtext",
+    "imscribe.ui.diff_view",
+    "imscribe.ui.bare_view",
+    "imscribe.ui.composition",
+    "imscribe.ui.units",
+    "imscribe.backends.imgui_draw",
+    "imscribe.linebreak",
+    "imscribe.selection",
+    "imscribe.shipout",
+    "imscribe.spans",
+    "imscribe.fontlib",
+    "imscribe.markdown",
+    "imscribe.stream",
+    "imscribe.mathtext",
 }
 
 
@@ -938,7 +938,7 @@ def test_importing_and_drawing_the_page_load_neither_diff_view_nor_the_old_core(
     the page loads nothing of what `DiffView` stood on (nor `pack`, `nodes`,
     `style`, which `PageContext.build` loads afterwards and the page does
     not); building the page, moving its state and drawing three frames of it
-    add no `advtext` module at all.
+    add no `imscribe` module at all.
     """
     pytest.importorskip("imgui_bundle")
     env = {name: value for name, value in os.environ.items() if name not in _VARIABLES}
@@ -954,8 +954,8 @@ def test_importing_and_drawing_the_page_load_neither_diff_view_nor_the_old_core(
     assert done.returncode == 0, done.stdout + done.stderr
     report = json.loads(done.stdout.split("REPORT ", 1)[1])
     at_import = set(report["at_import"])
-    assert {"advtext.ui.pages.diff", "advtext.ui.typeset_diff_view", "advtext.diff"} <= at_import
-    at_import_old = at_import & (_OLD_CORE | {"advtext.pack", "advtext.nodes", "advtext.style"})
+    assert {"imscribe.ui.pages.diff", "imscribe.ui.typeset_diff_view", "imscribe.diff"} <= at_import
+    at_import_old = at_import & (_OLD_CORE | {"imscribe.pack", "imscribe.nodes", "imscribe.style"})
     assert not at_import_old, sorted(at_import_old)
     assert report["added"] == [] and report["imtypeset"] is False
     assert not set(report["loaded"]) & _OLD_CORE, sorted(set(report["loaded"]) & _OLD_CORE)
@@ -966,7 +966,7 @@ def test_importing_and_drawing_the_page_load_neither_diff_view_nor_the_old_core(
 def test_headless_the_page_has_no_views_and_draws_one_line_saying_why(bare: DiffPage) -> None:
     """
     In this process the library has no fonts (and the page never asks for the
-    library itself: `advtext.ui.pages.typeset.why_not`), so there are no
+    library itself: `imscribe.ui.pages.typeset.why_not`), so there are no
     views, and the page's frame is its sentence and nothing else: no
     controls, no panes.
     """
@@ -984,7 +984,7 @@ def test_headless_the_page_has_no_views_and_draws_one_line_saying_why(bare: Diff
         try:
             imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
             imgui.set_next_window_size(imgui.ImVec2(*DISPLAY))
-            imgui.begin("##advtext-diff-page-test", None, imgui.WindowFlags_.no_decoration.value)
+            imgui.begin("##imscribe-diff-page-test", None, imgui.WindowFlags_.no_decoration.value)
             try:
                 vertices = imgui.get_window_draw_list().vtx_buffer
                 before = vertices.size()
@@ -1049,7 +1049,7 @@ def test_without_views_every_control_still_moves_the_pages_own_state(bare: DiffP
 def test_the_step_expand_uses_without_a_view_is_the_views_default() -> None:
     import inspect
 
-    from advtext.ui.typeset_diff_view import TypesetDiffView
+    from imscribe.ui.typeset_diff_view import TypesetDiffView
 
     default = inspect.signature(TypesetDiffView.__init__).parameters["expand_step"].default
     assert page_module.EXPAND_STEP == default
@@ -1238,7 +1238,7 @@ def test_an_error_that_is_not_the_library_s_refusal_is_not_caught(
     monkeypatch.setattr(_Stand, "raises", IndexError("a slip of the view's own"))
     imgui.new_frame()
     try:
-        imgui.begin("##advtext-diff-page-test", None, imgui.WindowFlags_.no_decoration.value)
+        imgui.begin("##imscribe-diff-page-test", None, imgui.WindowFlags_.no_decoration.value)
         try:
             with pytest.raises(IndexError, match="a slip of the view's own"):
                 stood.draw()
@@ -1261,12 +1261,12 @@ import sys
 
 from imgui_bundle import hello_imgui, imgui
 
-from advtext import typesetter
-from advtext.ui import app as advtext_app
+from imscribe import typesetter
+from imscribe.ui import app as imscribe_app
 
 WANT_LIBRARY = sys.argv[1] == "with"
 report = {"frames": 0}
-real_gui = advtext_app.App.gui
+real_gui = imscribe_app.App.gui
 
 
 def snapshot(made):
@@ -1285,7 +1285,7 @@ def snapshot(made):
         "readouts": list(made.readouts()),
         "case": made.case.key,
         "fed": made.fed,
-        "old_view_loaded": "advtext.ui.diff_view" in sys.modules,
+        "old_view_loaded": "imscribe.ui.diff_view" in sys.modules,
         "caps": [view.height_cap for view in views.values()],
         "hunk": [view.current_hunk for view in views.values()],
     }
@@ -1346,8 +1346,8 @@ def watched_gui(self):
         hello_imgui.get_runner_params().app_shall_exit = True
 
 
-advtext_app.App.gui = watched_gui
-advtext_app.run(tab="diff:long")
+imscribe_app.App.gui = watched_gui
+imscribe_app.run(tab="diff:long")
 report["imported"] = "imtypeset" in sys.modules
 print(json.dumps(report))
 """
@@ -1418,7 +1418,7 @@ def test_in_a_real_window_with_the_library_the_page_draws_with_typeset_diff_view
     """
     The application, `diff:long`, with the library: both views are
     `TypesetDiffView`s from the first frame until the library is switched
-    off, every draw answers True, `advtext.ui.diff_view` is never imported,
+    off, every draw answers True, `imscribe.ui.diff_view` is never imported,
     and the library is edited when the diff changes and not otherwise.
     """
     if not os.environ.get(typesetter.LIBRARY_VARIABLE):

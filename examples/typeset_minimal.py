@@ -1,7 +1,7 @@
 r"""
 `demo/sample.md` in a `TypesetView`: markdown source in, drawn by the imtypeset library.
 
-**Experimental**, with `advtext/ui/typeset_view.py` and `advtext/typesetter.py`
+**Experimental**, with `imscribe/ui/typeset_view.py` and `imscribe/typesetter.py`
 (branch `experimental/imtypeset-adoption`). It is the smallest program that
 shows what a host does to draw through the imtypeset library:
 
@@ -31,7 +31,7 @@ included.
    faces; `typesetter.ready()` says the same afterwards.
 3. **Make the view and draw it.** `TypesetView(markdown, theme=..., palette=...)`
    takes the markdown SOURCE: the view reads it
-   (`advtext.typeset_markdown`), nothing is converted by the host. `math=True`
+   (`imscribe.typeset_markdown`), nothing is converted by the host. `math=True`
    turns `$...$` on. `view.draw(...)` at the cursor of the current window,
    every frame. Both raise `TypesetUnavailable` when the library cannot draw
    (it failed and was switched off); a draw that raised has drawn nothing.
@@ -50,9 +50,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from advtext import DARK_PALETTE, Theme, TypesetUnavailable, TypesetView, typesetter
+from imscribe import DARK_PALETTE, Theme, TypesetUnavailable, TypesetView, typesetter
 
-WINDOW_TITLE = "advtext: typeset, minimal"
+WINDOW_TITLE = "imscribe: typeset, minimal"
 SAMPLE = Path(__file__).resolve().parent.parent / "demo" / "sample.md"
 NOT_DRAWING = "imtypeset is not drawing"
 

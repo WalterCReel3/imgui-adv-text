@@ -148,7 +148,7 @@ def test_the_two_regexes_find_what_they_are_supposed_to_and_reject_what_they_are
             ".PHONY: help svg",
             "VENV ?= .venv",
             "PY := $(shell echo python)",
-            "SRC = advtext tests",
+            "SRC = imscribe tests",
             "svg:               ## render the litmus artifacts",
             "\tsomething",
             "shot-all:",

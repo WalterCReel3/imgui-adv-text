@@ -6,7 +6,7 @@ that grows a word at a time and is re-broken on every change. A reader is
 looking at it while that happens, so the property that matters is not that each
 re-break is good but that it **agrees with the last one** -- every line except
 the one being written must be exactly where it was a word ago. This file asks
-whether `advtext.linebreak.break_paragraph`, unchanged, has that property.
+whether `imscribe.linebreak.break_paragraph`, unchanged, has that property.
 
 **The plan's argument, which this file exists to test rather than to repeat.**
 Set the block ragged (`right_skip=RAGGED_RIGHT`) and take the shrink out of the
@@ -37,7 +37,7 @@ about tie-breaking" and names the emergency pass as where it could fail.
    That much is observed. **The cause is read from the code and was not
    instrumented:** §854's last-resort break is taken from "the only active node
    left", `_try_break` walks the active list in line-number order, and with
-   `easy_line` dropped (the module docstring of `advtext.linebreak` says why it
+   `easy_line` dropped (the module docstring of `imscribe.linebreak` says why it
    was) the last node standing is the one with the highest line number -- the
    chain that put every preceding word on a line of its own. The output is what
    that reading predicts, and the prediction was made before the run.
@@ -96,7 +96,7 @@ emphasis run into a question about the breaker.
 ## Reproducing the numbers
 
     .venv/bin/python tests/test_stream_stability.py            # the table, ~15 min
-    ADVTEXT_SLOW=1 .venv/bin/python -m pytest tests/test_stream_stability.py -q
+    IMSCRIBE_SLOW=1 .venv/bin/python -m pytest tests/test_stream_stability.py -q
 
 The first is `_report` at the bottom of this file. The second runs the
 whole-paragraph assertion that the default suite skips for cost (about 80 s for
@@ -114,13 +114,13 @@ from pathlib import Path
 
 import pytest
 
-from advtext.linebreak import BreakPass, LineBreakParams, ParShape, break_paragraph
-from advtext.markdown import TextBlock, build_document
-from advtext.nodes import CharNode, Glue, GlueSpec, Node, Penalty
-from advtext.pack import PackFitness, PackResult, hpack
-from advtext.style import Theme, char_measure, fontlib_metrics
-from advtext.ui import PROSE_BREAKING, RAGGED_RIGHT
-from advtext.units import Scaled, pt_from_sp, sp_from_pt
+from imscribe.linebreak import BreakPass, LineBreakParams, ParShape, break_paragraph
+from imscribe.markdown import TextBlock, build_document
+from imscribe.nodes import CharNode, Glue, GlueSpec, Node, Penalty
+from imscribe.pack import PackFitness, PackResult, hpack
+from imscribe.style import Theme, char_measure, fontlib_metrics
+from imscribe.ui import PROSE_BREAKING, RAGGED_RIGHT
+from imscribe.units import Scaled, pt_from_sp, sp_from_pt
 
 DEMO = Path(__file__).resolve().parent.parent / "demo"
 
@@ -142,7 +142,7 @@ about 13 s; all 102 is about 80 s. It grows roughly as the cube because one
 ragged break grows roughly as the square (finding 4 in the module docstring).
 45 words is three settled lines at 420 pt and five at 270 pt. The whole
 paragraph is `test_the_whole_paragraph_is_prefix_stable`, behind
-`ADVTEXT_SLOW=1`, and was run when this was written.
+`IMSCRIBE_SLOW=1`, and was run when this was written.
 """
 
 _WIDE_WORD = "W" * 60
@@ -161,8 +161,10 @@ The paragraph on which a settled line changes; `test_the_counterexample_is_exact
 """
 
 needs_slow = pytest.mark.skipif(
-    os.environ.get("ADVTEXT_SLOW") != "1",
-    reason="about 80 s: every word-prefix of the 635-node paragraph. Set ADVTEXT_SLOW=1 to run it.",
+    os.environ.get("IMSCRIBE_SLOW") != "1",
+    reason=(
+        "about 80 s: every word-prefix of the 635-node paragraph. " "Set IMSCRIBE_SLOW=1 to run it."
+    ),
 )
 
 
@@ -203,7 +205,7 @@ def _without_shrink(nodes: Sequence[Node]) -> tuple[Node, ...]:
     The same material with every glue's shrink set to zero.
 
     This is the half of the plan's recipe that is not a breaking parameter: the
-    shrink is in the nodes `advtext.markdown` emitted, so a live block that wants
+    shrink is in the nodes `imscribe.markdown` emitted, so a live block that wants
     it gone has to rewrite its material or be built without it.
     """
     return tuple(
@@ -222,7 +224,7 @@ def _word_prefixes(nodes: Sequence[Node]) -> list[tuple[Node, ...]]:
 
 def _ragged(params: LineBreakParams) -> LineBreakParams:
     r"""
-    The parameters with `\rightskip = 0pt plus 1fil`, as `advtext.ui._skips` sets `Align.LEFT`.
+    The parameters with `\rightskip = 0pt plus 1fil`, as `imscribe.ui._skips` sets `Align.LEFT`.
     """
     return replace(params, left_skip=GlueSpec(), right_skip=RAGGED_RIGHT)
 
@@ -336,7 +338,7 @@ def test_the_sample_paragraph_is_the_one_the_plan_names(paragraph: tuple[Node, .
     costs, so the optimiser would add a line to avoid breaking there and the
     paragraph would no longer be first-fit at all. This paragraph has none, so
     it cannot show that failure -- which is a limit on what passing here means,
-    not a reassurance. `advtext.markdown` emits `INF_PENALTY` inside inline code
+    not a reassurance. `imscribe.markdown` emits `INF_PENALTY` inside inline code
     spans; that one only removes a breakpoint and is harmless.
     """
     assert len(paragraph) == _PARAGRAPH_NODES, (

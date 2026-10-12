@@ -7,7 +7,7 @@ immediate-mode UI that is the only way to check that a change did what it
 claimed: nothing in `tests/` composites a pixel, so a tab that lays out
 perfectly and draws in the background colour passes the whole suite.
 
-**This runs the real app, not a copy of it.** `advtext.ui.app.run` builds the
+**This runs the real app, not a copy of it.** `imscribe.ui.app.run` builds the
 `RunnerParams` and calls `immapp.run`; this script replaces `immapp.run` with a
 wrapper that adjusts the window size, counts frames, and asks the app to exit,
 then delegates to the real one. Every font, callback and draw call is the same
@@ -32,7 +32,7 @@ the session this script was written in; both are load-bearing for it:
     `pyproject.toml`, and cv2 is not involved. Without numpy the call raises
     `TypeError: could not export nanobind::ndarray: No module named 'numpy'` --
     the same nanobind failure mode already documented at
-    `advtext/ui/document_view.py:306-312` for `ImFont.find_glyph`, where a
+    `imscribe/ui/document_view.py:306-312` for `ImFont.find_glyph`, where a
     missing optional module turns a binding into a type error rather than an
     import error.
 
@@ -59,10 +59,10 @@ Usage:
 
 **`--list` is where `make shot-all` gets its list.** It prints one `--tab`
 request per line -- every state every discovered page asks to be photographed
-in (`advtext.ui.pages.PageSpec.shots`) -- and opens no window. The Makefile used
+in (`imscribe.ui.pages.PageSpec.shots`) -- and opens no window. The Makefile used
 to carry that list and it went stale; this script used to refuse to carry one for
 that reason. Neither carries one now: the pages are found by scanning
-`advtext/ui/pages/`, and a module there that cannot be loaded makes `--list`
+`imscribe/ui/pages/`, and a module there that cannot be loaded makes `--list`
 exit 1 naming it, so `make shot-all` stops instead of photographing what is
 left and reporting nothing missing.
 
@@ -118,7 +118,7 @@ def library_note(environ: Mapping[str, str]) -> str | None:
 
     A note and not a refusal: the window still opens, each page says the
     same thing in one line, and that is a legitimate thing to want to look
-    at. It is here because since 2026-10-11 no page falls back to advtext's
+    at. It is here because since 2026-10-11 no page falls back to imscribe's
     own layout, so an unadorned `make shot` shows no text at all, and a
     batch of one-line pages should not be the first anyone hears of it.
     Only the variable is read: whether the library then loads is the app's to
@@ -140,7 +140,7 @@ NOT_DRAWN_STATUS = 3
 The exit status of a shot whose library was asked for and was not drawing.
 
 Not 0, which is a photograph of the page; not 2, which is "no display"; not
-1, which is what a page that raised ends with (`advtext.ui.app.PageError`).
+1, which is what a page that raised ends with (`imscribe.ui.app.PageError`).
 """
 
 
@@ -148,7 +148,7 @@ def not_drawn(environ: Mapping[str, str], reason: str) -> str | None:
     """
     What to fail with when the library was ASKED FOR and was not drawing at exit, or `None`.
 
-    `reason` is `advtext.ui.app.not_drawing_at_exit()`: the sentence the
+    `reason` is `imscribe.ui.app.not_drawing_at_exit()`: the sentence the
     pages were showing when the window closed, empty when the library drew.
     With `IMTYPESET_LIBRARY` unset this is `None` whatever the reason: a shot
     of the one line is then what was asked for, and `library_note` has said
@@ -250,7 +250,7 @@ def apply_window_size(runner: Any, width: int, height: int) -> None:
     Force the window to the requested size, overriding any remembered geometry.
 
     `restore_previous_geometry` is cleared as well as the size being set.
-    `advtext.ui.app.run` points `ini_folder_type` at the app's user-config
+    `imscribe.ui.app.run` points `ini_folder_type` at the app's user-config
     folder, so a previous interactive run really can have left a geometry there;
     without this a shot asked for at 1400px would silently come back at whatever
     width the last human happened to leave the window, and column layouts are
@@ -318,7 +318,7 @@ def _grab(out: Path) -> tuple[int, int]:
 
     # Without numpy this raises TypeError, not ImportError: nanobind cannot
     # export its ndarray and reports that as a type error naming the missing
-    # module. Same shape of failure as advtext/ui/document_view.py:306-312.
+    # module. Same shape of failure as imscribe/ui/document_view.py:306-312.
     try:
         buffer = hello_imgui.final_app_window_screenshot()
     except TypeError as error:
@@ -347,7 +347,7 @@ def list_shots() -> int:
     """
     Print every `--tab` request `make shot-all` photographs; 1 if a page is broken.
 
-    The requests come from `advtext.ui.pages.discover`, which is what the app's
+    The requests come from `imscribe.ui.pages.discover`, which is what the app's
     sidebar is drawn from, so the list cannot name a page the app lacks or lack
     one it has. Imports no ImGui and opens nothing.
 
@@ -356,12 +356,12 @@ def list_shots() -> int:
     output and ignores the status gets an empty list rather than a plausible
     partial one.
     """
-    from advtext.ui.pages import discover
+    from imscribe.ui.pages import discover
 
     found = discover()
     if found.failures:
         print(
-            "not every module under advtext/ui/pages/ could be loaded as a page, so the "
+            "not every module under imscribe/ui/pages/ could be loaded as a page, so the "
             "list would be short:",
             file=sys.stderr,
         )
@@ -377,7 +377,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     Parse the arguments, run the real app for N frames, write the PNG.
     """
-    parser = argparse.ArgumentParser(description="Screenshot the advtext ImGui demo.")
+    parser = argparse.ArgumentParser(description="Screenshot the imscribe ImGui demo.")
     parser.add_argument("--out", type=Path, default=ROOT / "artifacts" / "shot.png")
     parser.add_argument(
         "--tab",
@@ -385,7 +385,7 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "page to select on the first frame, by name, case-insensitively, "
             "with options after a colon (columns:3,debug). Passed straight "
-            "through to advtext.ui.app.run, with no list of names here -- a "
+            "through to imscribe.ui.app.run, with no list of names here -- a "
             "copy of the list would go stale the first time a page was added. "
             "--list prints the requests make shot-all uses."
         ),
@@ -396,7 +396,7 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "print every --tab request `make shot-all` photographs, one per "
             "line, and exit without opening a window. Exits 1 if a module "
-            "under advtext/ui/pages/ could not be loaded as a page."
+            "under imscribe/ui/pages/ could not be loaded as a page."
         ),
     )
     parser.add_argument("--source", type=Path, default=None, help="a markdown file to display")
@@ -404,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
         "--width",
         type=int,
         default=None,
-        help="window width in pixels; the app's own (advtext.ui.app.WINDOW_SIZE) if omitted",
+        help="window width in pixels; the app's own (imscribe.ui.app.WINDOW_SIZE) if omitted",
     )
     parser.add_argument("--height", type=int, default=None, help="window height, likewise")
     parser.add_argument(
@@ -434,13 +434,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from imgui_bundle import hello_imgui, immapp
 
-    from advtext.ui import app as advtext_app
+    from imscribe.ui import app as imscribe_app
 
     # The app's own size when none is asked for, so an unadorned shot is a
     # photograph of what `make run` opens. That size is 1300 wide since the
     # sidebar replaced the tab bar; the body of a page is as wide as it was.
-    width = args.width if args.width is not None else advtext_app.WINDOW_SIZE[0]
-    height = args.height if args.height is not None else advtext_app.WINDOW_SIZE[1]
+    width = args.width if args.width is not None else imscribe_app.WINDOW_SIZE[0]
+    height = args.height if args.height is not None else imscribe_app.WINDOW_SIZE[1]
 
     real_run = immapp.run
 
@@ -456,14 +456,14 @@ def main(argv: list[str] | None = None) -> int:
     immapp.run = patched_run  # type: ignore[assignment]
     try:
         text = args.source.read_text(encoding="utf-8") if args.source else None
-        advtext_app.run(text, tab=args.tab)
+        imscribe_app.run(text, tab=args.tab)
     finally:
         # No `type: ignore` needed on the way back: `real_run` still carries
         # immapp.run's own overloaded type, and mypy calls the ignore redundant
         # here even though it is required on the assignment above.
         immapp.run = real_run
 
-    failure = not_drawn(os.environ, advtext_app.not_drawing_at_exit())
+    failure = not_drawn(os.environ, imscribe_app.not_drawing_at_exit())
     if failure is not None:
         print(failure + "No PNG was written.", file=sys.stderr)
         return NOT_DRAWN_STATUS

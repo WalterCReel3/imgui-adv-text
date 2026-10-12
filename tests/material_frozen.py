@@ -2,11 +2,11 @@
 What the old core answered, read back from `tests/data/`: the typeset tests' oracle.
 
 Until tranche 5 the typeset layer's tests asked the old core as they ran:
-`advtext.typesetter.Converter(theme).describe(build_document(source, ...).blocks)`
+`imscribe.typesetter.Converter(theme).describe(build_document(source, ...).blocks)`
 was "the material path", and a description made straight from markdown
-(`advtext.typeset_markdown`) was held equal to it. `Converter`,
-`advtext.mathtext` (whose builder decided which formulas the material path
-refused), `advtext.spans` and `advtext.stream` are deleted. What they answered
+(`imscribe.typeset_markdown`) was held equal to it. `Converter`,
+`imscribe.mathtext` (whose builder decided which formulas the material path
+refused), `imscribe.spans` and `imscribe.stream` are deleted. What they answered
 on the tree of 2026-10-11 was written down first, by
 `.concerns/T5-B1-scripts/freeze_descriptions.py`, and this module is how a
 test reads it: "new equals old" became "new equals frozen".
@@ -18,7 +18,7 @@ generated sources, four that single tests name); a test that asks about a
 source nobody froze has no oracle, and says so.
 
 Not a test module (no `test_` prefix), so pytest collects nothing here. It
-imports `advtext.description` and nothing else of advtext, and a child
+imports `imscribe.description` and nothing else of imscribe, and a child
 interpreter can use it with `tests/` on its path.
 """
 
@@ -33,7 +33,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from advtext.description import (
+from imscribe.description import (
     BlockDescription,
     CellDescription,
     ColumnDescription,
@@ -135,7 +135,7 @@ def description(
     What `Converter(theme, link_color=...).describe(build_document(source, ...).blocks)` answered.
 
     `theme` is a name of `tests/test_typeset_markdown.py`'s `THEMES`; `math`
-    true meant `math=advtext.mathtext.markdown_math()`. Raises `KeyError` for
+    true meant `math=imscribe.mathtext.markdown_math()`. Raises `KeyError` for
     a case that was not frozen.
     """
     answer = _answer(source, theme, references, math, more_may_follow, link_color)
@@ -151,7 +151,7 @@ def description(
     )
 
 
-#: `advtext.markdown_rules.TAB_WIDTH` on the day the old core was frozen.
+#: `imscribe.markdown_rules.TAB_WIDTH` on the day the old core was frozen.
 FROZEN_TAB_WIDTH = 4
 _KIND_CODE = 3
 
@@ -163,9 +163,9 @@ def with_the_old_tabs(described: Description) -> Description:
     THE ONE NORMALISATION between a description made now and a frozen one,
     and it is applied to the description made NOW, never to the frozen file.
     The old core expanded each tab of a fenced or indented block to spaces
-    before it described the block (`advtext.markdown._code_lines`:
+    before it described the block (`imscribe.markdown._code_lines`:
     `source.expandtabs(TAB_WIDTH)`, the column counted from the start of the
-    tab's own line). Since 2026-10-12 `advtext.typeset_markdown` hands the
+    tab's own line). Since 2026-10-12 `imscribe.typeset_markdown` hands the
     tab to the library (pptmstr's P29: a copy gives a tab back), so a code
     block's `text` holds `\t` where the frozen one holds one to four spaces.
     This puts the spaces back by the old core's own expression, in
@@ -214,7 +214,7 @@ def targets(
 
 def refuses(source: str, display: bool, size: int) -> bool:
     """
-    Whether `advtext.mathtext.markdown_math()` refused this formula: the old math core's decision.
+    Whether `imscribe.mathtext.markdown_math()` refused this formula: the old math core's decision.
 
     The value for `describe_markdown(..., refuses=)` that makes the direct
     description say what the material path said. `size` is not looked at:
@@ -250,7 +250,7 @@ def demo(name: str) -> dict[str, Any]:
     `Converter._text_of` read each cell); `glue` (the natural width of every
     interword glue, one list a text block or table cell, in order); `find`
     (`"<ignore case>|<needle>"` -> `[block, matches]` pairs:
-    `advtext.spans.FindIndex`).
+    `imscribe.spans.FindIndex`).
     """
     held: dict[str, Any] = _frozen()["demos"][name]
     return held
@@ -279,12 +279,12 @@ def space_widths(face_role: int, size: int) -> set[int]:
 
 
 def needle_cells() -> list[tuple[int, tuple[int, int] | None]]:
-    """(block, cell) of each match `advtext.spans.FindIndex` found for the table-search test."""
+    """(block, cell) of each match `imscribe.spans.FindIndex` found for the table-search test."""
     held = _frozen()["needle_cells"]
     return [(block, (cell[0], cell[1]) if cell is not None else None) for block, cell in held]
 
 
 def stream_pattern(name: str) -> str:
-    """The pattern of `advtext.stream._FENCE_OPENER` or `_TABLE_DELIMITER`, as it was."""
+    """The pattern of `imscribe.stream._FENCE_OPENER` or `_TABLE_DELIMITER`, as it was."""
     held: str = _frozen()["stream_patterns"][name]
     return held

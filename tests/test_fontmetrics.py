@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from advtext.fontlib import (
+from imscribe.fontlib import (
     SYNTHETIC_FIRST,
     SYNTHETIC_LAST,
     MathFaceMetrics,
@@ -42,7 +42,7 @@ from advtext.fontlib import (
     math_metrics,
     metrics,
 )
-from advtext.fontmetrics import Face
+from imscribe.fontmetrics import Face
 
 # Latin Modern Math is drawn on a 1000-unit em, so asking for a 1000.0 face makes
 # every scaled value equal to the raw font-unit integer and the assertions below
@@ -261,7 +261,7 @@ def test_the_tex_parameters_carry_the_fonts_own_numbers_where_opentype_has_a_fie
     bundled_fonts: Path,
 ) -> None:
     # Read straight out of latinmodern-math.otf's MathConstants at its 1000-unit em.
-    # If any of these move, the mapping table in advtext/fontlib.py is out of date.
+    # If any of these move, the mapping table in imscribe/fontlib.py is out of date.
     params = math_metrics(DESIGN_SIZE).math
     assert params.axis_height == 250.0
     assert params.default_rule_thickness == 40.0
@@ -282,7 +282,7 @@ def test_the_tex_parameters_carry_the_fonts_own_numbers_where_opentype_has_a_fie
 def test_the_two_parameters_opentype_folds_into_one_field_come_back_equal(
     bundled_fonts: Path,
 ) -> None:
-    # Documented in advtext/fontlib.py: OpenType has one SuperscriptShiftUp where TeX
+    # Documented in imscribe/fontlib.py: OpenType has one SuperscriptShiftUp where TeX
     # has sup1 and sup2, and one SubscriptShiftDown where TeX has sub1 and sub2. A
     # caller wanting TeX's split replaces the field rather than re-deriving it.
     params = math_metrics(DESIGN_SIZE).math
@@ -355,7 +355,7 @@ def test_the_em_size_reported_with_a_glyph_set_is_the_faces_own_design_grid(
 def test_a_truetype_glyf_outline_still_draws_after_the_font_file_is_closed(
     bundled_fonts: Path,
 ) -> None:
-    from advtext.backends.svg import glyph_outline
+    from imscribe.backends.svg import glyph_outline
 
     path = glyph_outline(Face.PROSE, glyph_name(Face.PROSE, ord("A")))
     assert path.startswith("M")
@@ -367,7 +367,7 @@ def test_a_cff_outline_still_draws_after_the_font_file_is_closed(bundled_fonts: 
     # They decompile from the table's own bytes rather than from the file, which is
     # what makes closing early safe -- a fontTools implementation fact, so it is
     # pinned here rather than assumed.
-    from advtext.backends.svg import glyph_outline
+    from imscribe.backends.svg import glyph_outline
 
     path = glyph_outline(Face.MATH, glyph_name(Face.MATH, 0x2211))
     assert path.startswith("M")
@@ -380,7 +380,7 @@ def test_the_display_size_summation_variant_draws_a_different_outline_from_the_b
     # The variant has no codepoint of its own, so it reaches an outline only through
     # the synthetic codepoint and `glyph_name`. If that route broke, the display sigma
     # would silently become the body sigma and still render.
-    from advtext.backends.svg import glyph_outline
+    from imscribe.backends.svg import glyph_outline
 
     variants = math_metrics(DESIGN_SIZE).vertical_variants(0x2211)
     biggest = glyph_name(Face.MATH, variants[-1].codepoint)
@@ -393,7 +393,7 @@ def test_a_composite_glyph_resolves_its_components_after_the_font_file_is_closed
 ) -> None:
     # A composite references other glyphs by index, so drawing one exercises a lookup
     # back into the glyph set that a half-loaded font would fail.
-    from advtext.backends.svg import glyph_outline
+    from imscribe.backends.svg import glyph_outline
 
     accented = glyph_outline(
         Face.PROSE, glyph_name(Face.PROSE, ord("\N{LATIN SMALL LETTER E WITH ACUTE}"))
@@ -410,9 +410,9 @@ def test_reading_metrics_and_outlines_leaves_no_unclosed_file_at_interpreter_exi
     # shutdown, after pytest has stopped converting warnings to errors -- so it cannot
     # be caught in-process and a subprocess is the only honest check.
     source = textwrap.dedent("""
-        from advtext import fontlib
-        from advtext.backends.svg import glyph_outline
-        from advtext.fontmetrics import Face
+        from imscribe import fontlib
+        from imscribe.backends.svg import glyph_outline
+        from imscribe.fontmetrics import Face
 
         for face in Face:
             m = fontlib.metrics(face, 16.0)
@@ -437,7 +437,7 @@ def test_reading_metrics_and_outlines_leaves_no_unclosed_file_at_interpreter_exi
 def test_the_radical_constants_are_texs_own_formulas_evaluated(bundled_fonts: Path) -> None:
     # `make_radical` (docs/tex.web line 14476) computes its clearance from the rule
     # thickness and the x-height; OpenType states the results. For this font they
-    # are the same numbers, which is what lets `advtext.math.mlist` read the font's
+    # are the same numbers, which is what lets `imscribe.math.mlist` read the font's
     # fields and still be following TeX. If a font swap breaks this, the radical's
     # clearance has silently stopped being TeX's.
     math = math_metrics(DESIGN_SIZE)

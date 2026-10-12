@@ -1,6 +1,6 @@
 [project]
-name = "advtext"
-# The same string as `advtext.__version__` (`tests/test_dist.py` holds them
+name = "imscribe"
+# The same string as `imscribe.__version__` (`tests/test_dist.py` holds them
 # equal), which is where a host reads it at run time and where what the number
 # promises is written. `.devN`: no release exists; a requirement names a commit
 # or a file's sha256, never this alone. `make dist` builds the files.
@@ -13,11 +13,11 @@ dependencies = [
     # Dear ImGui, the demo app, and the binary the imtypeset library is for.
     #
     # EXACT, and deliberately (2026-10-11; `.concerns/lead--level-1.md`,
-    # decision 1). Everything advtext draws is drawn by imtypeset, a shared
+    # decision 1). Everything imscribe draws is drawn by imtypeset, a shared
     # library loaded beside this wheel and linked against this wheel's own
     # extension module: one library is for one wheel binary, and its import
-    # gate refuses any other (`advtext/typesetter.py`). A range here would
-    # promise that advtext works on versions its library was never built for,
+    # gate refuses any other (`imscribe/typesetter.py`). A range here would
+    # promise that imscribe works on versions its library was never built for,
     # and the failure would arrive at import of the library, as a page that
     # draws one line, and not at install. So an upgrade is three acts and never
     # a side effect of `pip install -U`: change this pin, rebuild the library
@@ -27,7 +27,7 @@ dependencies = [
     # `tests/test_makefile_env.py` holds the pin to `==` one version and the
     # installed wheel to that version.
     #
-    # What the pin costs: advtext cannot be installed beside anything that
+    # What the pin costs: imscribe cannot be installed beside anything that
     # needs another imgui-bundle. That is true of the pairing whatever this
     # line says; the pin says it at install.
     #
@@ -61,8 +61,8 @@ dev = [
     # `TypeError: could not export nanobind::ndarray: No module named 'numpy'`,
     # which reads like a binding bug rather than a missing package. That is the
     # same failure mode already written up at
-    # advtext/ui/document_view.py:306-312 for a different call, and it cost
-    # time once here already. Dev-only: nothing advtext imports uses numpy, and
+    # imscribe/ui/document_view.py:306-312 for a different call, and it cost
+    # time once here already. Dev-only: nothing imscribe imports uses numpy, and
     # a layout engine that made every installer take it would be paying for a
     # screenshot script.
     "numpy>=1.24",
@@ -80,20 +80,20 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# The wheel is `advtext/` and its metadata: no tests, no `demo/` sources, no
-# examples, no handoff files. `advtext/py.typed` goes with the package. The
-# demo application's pages are inside the package (`advtext.ui.pages`) and say
+# The wheel is `imscribe/` and its metadata: no tests, no `demo/` sources, no
+# examples, no handoff files. `imscribe/py.typed` goes with the package. The
+# demo application's pages are inside the package (`imscribe.ui.pages`) and say
 # so themselves when `demo/` is absent. `scripts/make_dist.py` refuses a wheel
 # that holds anything else.
 [tool.hatch.build.targets.wheel]
-packages = ["advtext"]
+packages = ["imscribe"]
 
 # Listed explicitly rather than inferred: hatchling falls back to parsing
 # .gitignore when not told otherwise, which silently couples what ships to what
 # is ignored.
 [tool.hatch.build.targets.sdist]
 include = [
-    "/advtext", "/scripts", "/examples", "/tests", "/docs", "/README.md", "/Makefile",
+    "/imscribe", "/scripts", "/examples", "/tests", "/docs", "/README.md", "/Makefile",
     "/pyproject.toml",
     # Read by tests/test_ci_workflow.py (2026-10-12).
     "/imtypeset.ref", "/.github", "/HANDOFF-imtypeset.md",
@@ -136,7 +136,7 @@ ignore_missing_imports = true
 # Whether any given one of those ignores is redundant depends on the stub
 # version installed, so the redundancy warning fires on correct code here.
 # Confined to the two modules that touch ImGui rather than relaxed globally.
-module = ["advtext.backends.imgui_draw", "advtext.ui.*"]
+module = ["imscribe.backends.imgui_draw", "imscribe.ui.*"]
 warn_unused_ignores = false
 
 [tool.pytest.ini_options]

@@ -11,7 +11,7 @@
 # This file used to fall back to a *borrowed* interpreter from a sibling
 # project (pptmstr's .venv) when ./.venv was absent, because the sandbox this
 # project was first built in could not run `pip install`. That fallback is
-# removed, and deliberately: the goal is for pptmstr to depend on advtext, and
+# removed, and deliberately: the goal is for pptmstr to depend on imscribe, and
 # a project cannot be depended on by the one its build reaches back into. It
 # also hid a real difference -- the borrowed venv had no numpy and ran tool
 # versions far ahead of pyproject.toml's floors -- behind a build that looked
@@ -44,7 +44,7 @@ $(VENV_PY):
 #
 # `examples` is here because an example is the code a host copies. One that
 # does not pass the project's own lint is a worse advertisement than none.
-SRC := advtext tests $(wildcard scripts) $(wildcard examples)
+SRC := imscribe tests $(wildcard scripts) $(wildcard examples)
 
 .DEFAULT_GOAL := help
 
@@ -52,8 +52,8 @@ SRC := advtext tests $(wildcard scripts) $(wildcard examples)
 # imtypeset: what draws (branch experimental/imtypeset-adoption)
 #
 # Since 2026-10-11 the imtypeset library is the ONLY thing that sets and draws
-# text in the demo and the examples: advtext's own views and its ImGui draw
-# backend are deleted. advtext/typesetter.py loads the library when two
+# text in the demo and the examples: imscribe's own views and its ImGui draw
+# backend are deleted. imscribe/typesetter.py loads the library when two
 # environment variables say where it is. When they do not, every page draws
 # one line saying so and nothing else, and the suite's with-library tests
 # skip: plain `make check` is green without the library and proves less.
@@ -80,14 +80,14 @@ SRC := advtext tests $(wildcard scripts) $(wildcard examples)
 # of its command and nothing else -- the command's own arguments do not change,
 # which is what lets tests/test_shot_all.py read the shot-all recipe either way.
 #
-# IMTYPESET_PYTHON is where the ctypes package is (advtext/typesetter.py puts it
+# IMTYPESET_PYTHON is where the ctypes package is (imscribe/typesetter.py puts it
 # on sys.path itself). It is not passed as PYTHONPATH because a child process
 # that sets its own PYTHONPATH -- tests/conftest.py's `window` does -- would
 # keep the library and lose the package.
 #
 # IMTYPESET_ROOT is a sibling checkout and that is deliberate here in a way the
 # borrowed interpreter above was not: it is read only by `make typeset-lib`,
-# and advtext builds, lints and passes its plain suite without it. What it
+# and imscribe builds, lints and passes its plain suite without it. What it
 # does not do without the built library is draw (above).
 # `make clean` removes build/, and the library with it.
 IMTYPESET_ROOT    ?= ../imtypeset
@@ -311,7 +311,7 @@ IMTYPESET_HEADER_CACHE ?= $(CURDIR)/build/imtypeset-headers
 # BUILT-FROM's git lines are about IMTYPESET_ROOT's OWN repository. A directory
 # that is not the top of one -- an extract lying inside this repository, say --
 # is "not a git checkout", never the repository that happens to enclose it
-# (2026-10-11: such a file named advtext's HEAD as imtypeset's).
+# (2026-10-11: such a file named imscribe's HEAD as imtypeset's).
 #
 # The package is copied just before the build starts reading sources, which is
 # as close to "the same tree" as a copy of a tree in motion gets; the last step
@@ -486,7 +486,7 @@ endif
 # ---------------------------------------------------------------------------
 
 help:              ## this list
-	@echo "advtext targets:"
+	@echo "imscribe targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo
@@ -512,7 +512,7 @@ venv-info:         ## say which interpreter the other targets will use
 # interpreter with no pytest in it. So a venv this recipe created is removed again if the install
 # fails. One it did *not* create is left alone -- deleting a venv somebody built
 # by hand because a network blip failed one install would be its own defect.
-bootstrap:         ## create ./.venv and install advtext + dev tools into it
+bootstrap:         ## create ./.venv and install imscribe + dev tools into it
 	@command -v python3 >/dev/null 2>&1 || { \
 	  echo "python3 is not on PATH."; exit 2; }
 	@python3 -c 'import ensurepip' >/dev/null 2>&1 || { \
@@ -529,7 +529,7 @@ bootstrap:         ## create ./.venv and install advtext + dev tools into it
 	   && "$(VENV_PY)" -m pip install -e ".[dev]"; then \
 	  echo; \
 	  echo "Done. $(VENV) is now what every target uses -- no edit to this file."; \
-	  echo "The editable install also puts advtext on sys.path, so scripts/ runs"; \
+	  echo "The editable install also puts imscribe on sys.path, so scripts/ runs"; \
 	  echo "from any directory rather than only from the repo root."; \
 	else \
 	  echo; \
@@ -564,17 +564,17 @@ format-file: | $(NEED_VENV)  ## black, in place, on FILE= only
 	$(BIN)black $(FILE)
 
 typecheck: | $(NEED_VENV)  ## mypy over the package
-	$(BIN)mypy advtext
+	$(BIN)mypy imscribe
 
 check: lint typecheck test   ## everything the CI gate would run
 
 # The demo that works everywhere: no GPU, no display, no ImGui. This is how the
 # litmus tests are shown to have worked rather than merely asserted.
 #
-# Since 2026-10-11 this target is also the one remaining user of advtext's own
+# Since 2026-10-11 this target is also the one remaining user of imscribe's own
 # Python layout core (line breaking, packing, ship-out, the math list): what
-# scripts/render_litmus.py and advtext/backends/svg.py import, 22 modules, is
-# kept for it and for nothing else. Whether it stays in advtext is a question
+# scripts/render_litmus.py and imscribe/backends/svg.py import, 22 modules, is
+# kept for it and for nothing else. Whether it stays in imscribe is a question
 # the user has been asked and has not answered (docs/status.md, section 0d).
 svg: | $(NEED_VENV)  ## render the litmus artifacts to artifacts/
 	PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/render_litmus.py --out artifacts
@@ -593,7 +593,7 @@ svg: | $(NEED_VENV)  ## render the litmus artifacts to artifacts/
 # traceback. Refusing to try cost more than trying.
 #
 # PYTHONPATH covers an interpreter given as `PY=...` that has the dependencies
-# but no editable install of advtext. Under ./.venv, which `make bootstrap`
+# but no editable install of imscribe. Under ./.venv, which `make bootstrap`
 # installs editable, it is redundant and harmless.
 #
 # Arguments pass through:  make run ARGS="--source demo/sample.md"
@@ -632,7 +632,7 @@ shot: | $(NEED_VENV) $(NEED_TYPESET) $(NEED_PAIR)  ## screenshot one page of the
 # then exited 0 having silently skipped Columns and Specimen: a reviewer told to
 # use this target would have produced a confident review of the wrong thing,
 # with nothing anywhere reporting an omission. The app's pages are now modules
-# found by scanning advtext/ui/pages/, and `scripts/shot.py --list` prints the
+# found by scanning imscribe/ui/pages/, and `scripts/shot.py --list` prints the
 # requests to photograph -- each page in each state its own PAGE.shots names --
 # from that same scan. Adding a page adds its shots; nobody edits this file.
 # A page module that cannot be loaded makes --list exit non-zero and this
@@ -674,7 +674,7 @@ shot-headless: | $(NEED_VENV)  ## screenshot every tab via an Xvfb in a user nam
 # (DIST_REV=<rev> for another commit) with `git archive`, twice, builds each
 # export with `python -m build --no-isolation` under SOURCE_DATE_EPOCH = the
 # commit's time, and installs the pair into DIST_DIR only when the two builds
-# are the same bytes and the wheel holds advtext/ and its metadata and nothing
+# are the same bytes and the wheel holds imscribe/ and its metadata and nothing
 # else. Beside each file goes <file>.sha256, and BUILT-FROM names the commit
 # and the tools. It ends by printing the requirement strings: a git reference
 # by commit for now, a direct URL with the hash for a release once somebody

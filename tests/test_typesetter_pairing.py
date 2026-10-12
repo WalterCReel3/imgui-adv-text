@@ -1,7 +1,7 @@
 """
-`advtext.typesetter`: which imtypeset is found, by which route, and what `pairing()` says.
+`imscribe.typesetter`: which imtypeset is found, by which route, and what `pairing()` says.
 
-The order under test (`advtext/typesetter.py`, "Loading, gated"):
+The order under test (`imscribe/typesetter.py`, "Loading, gated"):
 
 1.  `IMTYPESET_LIBRARY` set: the environment route, as it always was.
 2.  otherwise an installed `imtypeset` DISTRIBUTION -- one `importlib.metadata`
@@ -11,7 +11,7 @@ The order under test (`advtext/typesetter.py`, "Loading, gated"):
 **No such distribution exists** (2026-10-11; HANDOFF-imtypeset.md, request
 H3). So route 2 is tested with stand-ins the tests build in a temporary
 directory, and what they stand in for is this contract, which is the whole of
-what advtext assumes:
+what imscribe assumes:
 
     With IMTYPESET_LIBRARY unset, `importlib.metadata.distribution("imtypeset")`
     finds the distribution, `import imtypeset` succeeds or raises ImportError
@@ -51,13 +51,13 @@ from typing import Any
 
 import pytest
 
-import advtext
-from advtext import typesetter
+import imscribe
+from imscribe import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
 _KEYS = {
-    "advtext_version",
+    "imscribe_version",
     "route",
     "reason",
     "kind",
@@ -78,7 +78,7 @@ _KEYS = {
 
 _REPORT = """
 import json, sys
-from advtext import typesetter
+from imscribe import typesetter
 before = sorted(n for n in sys.modules if n.split(".")[0] == "imtypeset")
 first = typesetter.pairing()
 loaded = typesetter.module()
@@ -152,7 +152,7 @@ def standin(source: str = _TWO_FUNCTIONS, without: tuple[str, ...] = (), **field
 
     The names are written from the list, so the stand-in cannot fall behind
     it: a function for a name of the package, a class holding its names for
-    an owner, a tuple type in advtext's field order where the library reads
+    an owner, a tuple type in imscribe's field order where the library reads
     by position. `without` leaves names out, spelled as `typesetter.missing`
     spells them (`"stats"`, `"Document.pack_marks"`); `fields` gives a tuple
     type other fields (`Block=("text", "kind")`). `source` comes last and so
@@ -212,8 +212,8 @@ def test_with_nothing_to_find_the_pairing_is_all_none_and_nothing_is_imported() 
     assert report["pairing"].pop("route") == typesetter.ROUTE_NONE
     assert report["pairing"].pop("reason") == "IMTYPESET_LIBRARY is not set"
     assert report["pairing"].pop("kind") == typesetter.Kind.NOT_INSTALLED.value
-    # The one key that is about advtext and not about what was found.
-    assert report["pairing"].pop("advtext_version") == advtext.__version__
+    # The one key that is about imscribe and not about what was found.
+    assert report["pairing"].pop("imscribe_version") == imscribe.__version__
     assert set(report["pairing"].values()) == {None}, report["pairing"]
     assert report["imtypeset"] == [] and report["imgui"] is False
     assert report["trouble"] == ""
@@ -248,12 +248,12 @@ def test_a_package_on_the_path_that_is_not_installed_is_not_a_distribution(tmp_p
 def test_an_installed_distribution_is_loaded_with_no_variable_set(tmp_path: Path) -> None:
     site = _a_distribution(tmp_path)
     report = _child(_REPORT, _without(), site)
-    assert report["before"] == [], "importing advtext.typesetter imported imtypeset"
+    assert report["before"] == [], "importing imscribe.typesetter imported imtypeset"
     assert report["module"] is True and report["reason"] == ""
     assert report["imtypeset"] == ["imtypeset"]
     assert report["path"] == [], "sys.path was touched on the distribution route"
     assert report["pairing"] == {
-        "advtext_version": advtext.__version__,
+        "imscribe_version": imscribe.__version__,
         "route": typesetter.ROUTE_DISTRIBUTION,
         "reason": "",
         "kind": typesetter.Kind.READY.value,
@@ -325,12 +325,12 @@ raise error
         ("no-library", typesetter.Kind.NOT_INSTALLED),
     ],
 )
-def test_a_refusal_that_carries_a_kind_is_carried_and_decides_advtexts_kind(
+def test_a_refusal_that_carries_a_kind_is_carried_and_decides_imscribes_kind(
     theirs: str, ours: typesetter.Kind, tmp_path: Path
 ) -> None:
     """
     imtypeset's T4 and its answer to H26. The word is `pairing()["imtypeset_kind"]`
-    as it was given; advtext's own kind is `unsupported` for a package built
+    as it was given; imscribe's own kind is `unsupported` for a package built
     for another system, `not-installed` for one that carries no library, and
     `refused` for every other word, one it has never heard included. The
     reason is the sentence alone: the line of paths is for a log.
@@ -418,7 +418,7 @@ def test_a_package_that_carries_an_attestation_is_a_distribution_without_metadat
     What a freezer leaves of an installed imtypeset: the package, the library
     and `_attestation.json` inside it, and no `dist-info`. It is loaded with
     no variable set; what the metadata would have said comes from the file
-    and from the library's own record. A file advtext cannot read still marks
+    and from the library's own record. A file imscribe cannot read still marks
     the package: whether it is damaged is the package's gate to say.
     """
     site = tmp_path / "site"
@@ -429,7 +429,7 @@ def test_a_package_that_carries_an_attestation_is_a_distribution_without_metadat
     assert report["module"] is True and report["reason"] == ""
     assert report["path"] == [] and report["trouble"] == ""
     assert report["pairing"] == {
-        "advtext_version": advtext.__version__,
+        "imscribe_version": imscribe.__version__,
         "route": typesetter.ROUTE_DISTRIBUTION,
         "reason": "",
         "kind": typesetter.Kind.READY.value,
@@ -587,7 +587,7 @@ def host_info():
 # taken out of the process, so that what it launches does not inherit them.
 _REMOVED = """
 import json, os, sys
-from advtext import typesetter
+from imscribe import typesetter
 first = typesetter.module()
 report = {"first": typesetter.pairing()}
 for name in ("IMTYPESET_LIBRARY", "IMTYPESET_PYTHON"):
@@ -779,7 +779,7 @@ def test_forget_pair_is_refused_nothing_and_a_pair_is_not_remembered_from_a_refu
     env[typesetter.PACKAGE_VARIABLE] = str(package)
     code = (
         "import json, os\n"
-        "from advtext import typesetter\n"
+        "from imscribe import typesetter\n"
         "typesetter.forget_pair()\n"
         "report = {'first': typesetter.pairing(), 'pair': typesetter._pair}\n"
         "for name in ('IMTYPESET_LIBRARY', 'IMTYPESET_PYTHON'):\n"
@@ -849,7 +849,7 @@ def test_the_distribution_is_looked_for_once_and_the_variable_still_works_later(
 _REAL = """
 import json, sys
 from imgui_bundle import imgui
-from advtext import typesetter
+from imscribe import typesetter
 report = {"pairing": typesetter.pairing(), "module": typesetter.module() is not None}
 context = imgui.create_context()
 imgui.get_io().backend_flags |= imgui.BackendFlags_.renderer_has_textures
@@ -955,7 +955,7 @@ def test_the_pinned_pair_as_a_distribution_loads_and_draws_with_no_variable_set(
 
 _GATED = """
 import json
-from advtext import typesetter
+from imscribe import typesetter
 answer = {"pairing": typesetter.pairing()}
 package = typesetter.module()
 if package is not None:
@@ -997,7 +997,7 @@ def test_a_real_refusal_carries_the_packages_own_word_when_it_has_one(tmp_path: 
     The package this run was given, handed a file that is no library. From
     03b5cd4 on its refusal is `not-a-library` and its first line a sentence;
     before, there is no word and the reason is the whole message. Either way
-    advtext's kind is `refused`.
+    imscribe's kind is `refused`.
     """
     _, package = _the_pair()
     impostor = tmp_path / "not-a-library.so"
@@ -1124,7 +1124,7 @@ def test_a_library_without_its_attestation_is_probed_in_a_child_and_accepted(
 _REAL_REMOVED = """
 import json, os, subprocess, sys
 from imgui_bundle import imgui
-from advtext import typesetter
+from imscribe import typesetter
 report = {"first": typesetter.pairing()}
 for name in ("IMTYPESET_LIBRARY", "IMTYPESET_PYTHON"):
     del os.environ[name]

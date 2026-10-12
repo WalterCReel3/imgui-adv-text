@@ -3,8 +3,8 @@ Stream replay: a document fed to the renderer a few characters at a time.
 
 A model writes an answer token by token and a host has to show it while it is
 being written. This example replays `demo/stream.md` through an
-`advtext.typeset_markdown.MarkdownStream` under an
-`advtext.ui.typeset_stream_view.TypesetStreamView`, drawn by the imtypeset
+`imscribe.typeset_markdown.MarkdownStream` under an
+`imscribe.ui.typeset_stream_view.TypesetStreamView`, drawn by the imtypeset
 library, at a rate you choose, and counts one thing while it does: **how many
 lines that had already been set moved.**
 
@@ -91,7 +91,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from advtext import (
+from imscribe import (
     Align,
     MarkdownStream,
     Theme,
@@ -105,7 +105,7 @@ SOURCE = Path(__file__).resolve().parent.parent / "demo" / "stream.md"
 The document replayed by default: written to be every kind of unfinished block for a while.
 """
 
-WINDOW_TITLE = "advtext: stream replay"
+WINDOW_TITLE = "imscribe: stream replay"
 
 DEFAULT_TOKENS_PER_SECOND = 40.0
 """
@@ -423,7 +423,7 @@ def show(playing: Replay, imgui: Any, seconds: float) -> bool:
 
     playing.advance(seconds)
     imgui.begin_child(
-        "##advtext-stream-replay",
+        "##imscribe-stream-replay",
         imgui.ImVec2(0.0, 0.0),
         imgui.ChildFlags_.borders.value,
         imgui.WindowFlags_.always_vertical_scrollbar.value,

@@ -6,6 +6,104 @@ before `README.md` if you are deciding whether to trust anything here.
 It is written to be useful rather than flattering. Section 4 is the longest on
 purpose.
 
+**The package was renamed `imscribe` on 2026-10-12 (section 0h). Every section
+dated before that, which is every section but 0h, says advtext, and names
+paths under `advtext/` that are now under `imscribe/`.**
+
+## 0h. Revision of 2026-10-12, last: the package is renamed `imscribe`
+
+The newest revision, put first; 0g below was the newest when it was written
+and is not changed. **Read every other section with one correction: where it
+says `advtext`, the package, its directory or its import name, read
+`imscribe`.** The exceptions, which keep the word: the git tag
+`advtext-reference`; the repository (`imgui-adv-text`, URL and checkout path);
+pptmstr's `HANDOFF-advtext.md`, `advtext.ref` and `ADVTEXT_*` variables;
+imtypeset's `docs/advtext-*.md` and `python/spike_advtext/`.
+
+**Whose decision.** The user's, 2026-10-12: "I'm really tempted by 'imscribe'
+as it is a phonetic sound-a-like to 'inscribe' the word." "Being evocative is
+the win as it allows future extensions that _may_ include editing or other
+display aspects (mermaid diagrams for one)." "Let's work on the rename after
+the diff-view work. Big task but I think worthwhile." Done by the builder of
+the task RENAME, an agent, after the diff-view work (`1128ea2`); uncommitted
+when this was written.
+
+**What it is.** A rename and nothing else: no signature, no behaviour, no
+number. `advtext/` is `imscribe/` (53 modules), and the word is replaced in
+the package, `tests/`, `scripts/`, `examples/`, `pyproject.toml`, the
+`Makefile`, the two workflows, `imtypeset.ref` and `README.md`:
+3,731 replacements in 138 files, by `.concerns/RENAME-scripts/rename.py`
+(not committed: `.concerns/` is scratch), six over-long lines rewrapped by
+hand.
+
+**What a host changes** (the whole list is `HANDOFF-pptmstr.md`, "Renamed"):
+
+- `import advtext` / `from advtext...` become `imscribe`. **There is no
+  alias**: the old name is a `ModuleNotFoundError`, and `tests/test_rename.py`
+  holds that (the lead's decision, an agent's: nothing was published, and one
+  host exists).
+- The distribution is `imscribe` (`pyproject.toml`): a requirement is
+  `imscribe @ git+https://github.com/WalterCReel3/imgui-adv-text.git@<commit>`,
+  the wheel is `imscribe-<version>-py3-none-any.whl`. The version is still
+  `0.2.0.dev0`.
+- **`pairing()` and `verdict()` answer `imscribe_version` where they answered
+  `advtext_version`**, and so does the one line of JSON
+  `python -m imscribe.typesetter` prints. A host that reads the key by name
+  reads `None` or raises until it changes. Still seventeen keys; in the JSON,
+  whose keys are sorted, it moves from second to seventh.
+- `python -m advtext.typesetter` is `python -m imscribe.typesetter`.
+- The logger `advtext.typesetter` is `imscribe.typesetter`.
+- Three keys of `Description.kinds` / `misfits` that named the package name
+  the new one ("... imscribe does not draw it)", "formulas refused by
+  imscribe's builder ...", "characters no face has (imscribe sets U+FFFD
+  ..."), and every message that said advtext says imscribe.
+- Dear ImGui IDs the views make begin `##imscribe-typeset-` (they began
+  `##advtext-typeset-`); the demo's window is titled `imscribe`, so
+  hello_imgui's settings file is `imscribe.ini`.
+- For this repository's own suite, `ADVTEXT_SLOW=1` is `IMSCRIBE_SLOW=1`. It
+  was the only environment variable with the word. `IMTYPESET_*` are
+  imtypeset's and are unchanged.
+
+**What did not change.** Every signature and every behaviour; `__all__`
+(102 names); the imtypeset pin (`v0.3.0`, `imtypeset.ref`); the frozen
+answers under `tests/data` (below); `demo/`; the tag; the repository's name,
+which is the user's to change.
+
+**The frozen answers.** `tests/data/material_descriptions.json` holds the
+three `kinds` / `misfits` keys above 115 times as keys. Those 115 strings
+were changed with the code that emits them, and nothing else in the file:
+every number and every text is the bytes it was. The other three files there
+are untouched; their `about` lines say `advtext.…` of modules as they were
+named when the answers were frozen. `demo/` is untouched because its text is
+the INPUT of those answers (a link to `advtext/linebreak.py` in
+`demo/sample.md`, a path in `demo/stream.md`, a shell transcript, the first
+sentence of `demo/diff/README.md`): `demo/sample.md` therefore links to a
+path that no longer exists, as a sample, and `tests/test_typeset_view.py`
+still expects that target.
+
+**`./.venv` was not touched and is stale in name only.** Its editable install
+is a `.pth` file naming this repository's root (`_editable_impl_advtext.pth`),
+not a finder that maps a name: `import imscribe` is found through it from any
+directory, with no change. What is stale is `advtext-0.1.0.dist-info`, which
+makes `pip list` say `advtext 0.1.0`; nothing in the tree reads it. With
+network, once: `.venv/bin/python -m pip uninstall advtext`, then
+`make bootstrap`. **Not run: no index is reachable from the session that
+did the rename.**
+
+**Not run, not known.** `make dist` with the real builder (still no `build`
+or `hatchling`; `tests/test_dist.py` runs the script against a stand-in, and
+passes with the new name); the two workflows; anything on macOS; pptmstr
+against the renamed package (its tree is read-only here and imports
+`advtext` in 19 files: **it does not import this tree until it changes
+them**). Nobody looked at a window: the rename changes three texts the demo draws
+(its first heading, a file name on the Diff page, the window's title).
+
+**Gates, alone on the tree, imtypeset `v0.3.0`** (RENAME's builder; each
+compared test by test with a run of the same suite taken on `68eb18b` just
+before the rename): `make check` 3611 passed, 720 skipped, 4 xfailed (293 s, load 3.3 to 9.5; it was 3610, 720, 4); `make check TYPESET=1`
+4218 passed, 8 skipped, 109 xfailed (474 s, load 10.4 to 9.6; it was 4217, 8, 109). One test is new in each (`tests/test_rename.py`); every other
+test has the outcome it had.
+
 ## 0g. Revision of 2026-10-12, later still: thirteen more host requests, imtypeset `v0.3.0`, a version and the recipe for a release artefact that has not been built
 
 The newest revision, put first. Section 0f below was the newest when it was

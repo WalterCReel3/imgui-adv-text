@@ -1,5 +1,5 @@
 r"""
-`advtext.ui.typeset_hosts`, and the host protocol of `advtext.ui.typeset_view.TypesetView`.
+`imscribe.ui.typeset_hosts`, and the host protocol of `imscribe.ui.typeset_view.TypesetView`.
 
 Three groups, the first two as in `tests/test_typeset_view.py`:
 
@@ -35,10 +35,10 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import MarkdownStream, parse_markdown
-from advtext.ui.typeset_hosts import HostedDiff, TypesetDiffFences
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import MarkdownStream, parse_markdown
+from imscribe.ui.typeset_hosts import HostedDiff, TypesetDiffFences
 
 _ROOT = Path(__file__).resolve().parent.parent
 _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
@@ -62,17 +62,17 @@ def _report_of(stdout: str) -> dict[str, Any]:
 
 _CLOSURE = r"""
 import json, sys
-import advtext.ui.typeset_hosts
+import imscribe.ui.typeset_hosts
 print("REPORT " + json.dumps(sorted(
     name for name in sys.modules
-    if name.split(".")[0] in ("advtext", "imtypeset", "imgui_bundle")
+    if name.split(".")[0] in ("imscribe", "imtypeset", "imgui_bundle")
 )))
 """
 
 
 def test_the_module_loads_neither_the_diff_view_nor_imgui_nor_the_old_views() -> None:
     """
-    `advtext.ui.typeset_diff_view` is imported when the first fence is met. What
+    `imscribe.ui.typeset_diff_view` is imported when the first fence is met. What
     the import of this module brings in is the typeset view and what that
     stands on; the names below are the ones that must NOT be among them.
     (`tests/test_typeset_closure.py` is where the whole closure is held.)
@@ -89,18 +89,18 @@ def test_the_module_loads_neither_the_diff_view_nor_imgui_nor_the_old_views() ->
     )
     assert done.returncode == 0, done.stdout + done.stderr
     loaded = set(json.loads(done.stdout.split("REPORT ", 1)[1]))
-    assert "advtext.ui.typeset_view" in loaded and "advtext.diff" in loaded
+    assert "imscribe.ui.typeset_view" in loaded and "imscribe.diff" in loaded
     for name in (
-        "advtext.ui.typeset_diff_view",
-        "advtext.ui.diff_view",
-        "advtext.ui.bare_view",
-        "advtext.ui.composition",
-        "advtext.markdown",
-        "advtext.stream",
-        "advtext.shipout",
-        "advtext.linebreak",
-        "advtext.selection",
-        "advtext.backends.imgui_draw",
+        "imscribe.ui.typeset_diff_view",
+        "imscribe.ui.diff_view",
+        "imscribe.ui.bare_view",
+        "imscribe.ui.composition",
+        "imscribe.markdown",
+        "imscribe.stream",
+        "imscribe.shipout",
+        "imscribe.linebreak",
+        "imscribe.selection",
+        "imscribe.backends.imgui_draw",
     ):
         assert name not in loaded, name
     assert not [name for name in loaded if name.split(".")[0] in ("imtypeset", "imgui_bundle")]
@@ -198,7 +198,7 @@ def test_a_fenced_diff_is_taken_and_a_fence_of_anything_else_is_not() -> None:
 @pytest.mark.parametrize("chunk", [1, 7, 24])
 def test_a_fence_still_being_written_is_fed_a_whole_line_at_a_time(chunk: int) -> None:
     """
-    Over an `advtext.typeset_markdown.MarkdownStream`: at every read the diff
+    Over an `imscribe.typeset_markdown.MarkdownStream`: at every read the diff
     holds whole lines of the fence's body and nothing else, it only ever
     grows, the widget is the same one throughout, and at the end it is the
     body. No line is read twice (`fed_lines`) and no fence is begun again.
@@ -250,13 +250,13 @@ _HEADLESS = r"""
 import json, sys
 from pathlib import Path
 from imgui_bundle import imgui
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import MarkdownStream
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_hosts import HostedDiff, TypesetDiffFences
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import TypesetView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import MarkdownStream
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_hosts import HostedDiff, TypesetDiffFences
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import TypesetView
 
 ROOT = Path(sys.argv[1])
 ts = typesetter.module()
@@ -479,7 +479,7 @@ view.close()
 
 # -- the real thing: a fenced diff ------------------------------------------
 
-loaded_before = "advtext.ui.typeset_diff_view" in sys.modules
+loaded_before = "imscribe.ui.typeset_diff_view" in sys.modules
 script = (ROOT / "demo" / "chat" / "script.md").read_text(encoding="utf-8")
 fences = TypesetDiffFences()
 plain = TypesetView(script, theme=theme, math=True)
@@ -493,7 +493,7 @@ for _ in range(6):
 geometry = whole.native_document.block_geometry(at)
 diff = report["diff"] = {
     "loaded_before": loaded_before,
-    "loaded_after": "advtext.ui.typeset_diff_view" in sys.modules,
+    "loaded_after": "imscribe.ui.typeset_diff_view" in sys.modules,
     "hosted": isinstance(hosted, HostedDiff), "view_of": fences.view_of(whole, at) is hosted.view,
     "language": whole.blocks[at].language,
     "text": whole.texts[at] + "\n" == hosted.text,
@@ -858,12 +858,12 @@ from pathlib import Path
 
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import typesetter
-from advtext.theme import Theme
-from advtext.typeset_markdown import MarkdownStream
-from advtext.ui.palette import DARK_PALETTE
-from advtext.ui.typeset_hosts import HostedDiff, TypesetDiffFences
-from advtext.ui.typeset_stream_view import TypesetStreamView
+from imscribe import typesetter
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import MarkdownStream
+from imscribe.ui.palette import DARK_PALETTE
+from imscribe.ui.typeset_hosts import HostedDiff, TypesetDiffFences
+from imscribe.ui.typeset_stream_view import TypesetStreamView
 
 ROOT = Path(sys.argv[1])
 PARKED = (5.0, 695.0)

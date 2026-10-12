@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-from advtext.badness import INF_BAD, badness
+from imscribe.badness import INF_BAD, badness
 
 # With s = 297, the approximation collapses to r = t, which makes r directly
 # addressable and lets the cutoff and the class boundaries be probed exactly.

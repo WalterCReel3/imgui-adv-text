@@ -1,5 +1,5 @@
 """
-`advtext.typeset_find`: find over a document described for imtypeset.
+`imscribe.typeset_find`: find over a document described for imtypeset.
 
 Two groups, as in `tests/test_typeset.py`:
 
@@ -25,10 +25,10 @@ from typing import Any
 import material_frozen
 import pytest
 
-from advtext import typesetter
-from advtext.description import cell_spans
-from advtext.theme import Theme
-from advtext.typeset_find import (
+from imscribe import typesetter
+from imscribe.description import cell_spans
+from imscribe.theme import Theme
+from imscribe.typeset_find import (
     CURRENT_COLOR,
     HIT_COLOR,
     MARK_BEHIND,
@@ -38,8 +38,8 @@ from advtext.typeset_find import (
     Match,
     marks_for,
 )
-from advtext.typeset_markdown import describe_markdown
-from advtext.typesetter import (
+from imscribe.typeset_markdown import describe_markdown
+from imscribe.typesetter import (
     KIND_CODE,
     KIND_HOST,
     KIND_TABLE,
@@ -62,10 +62,10 @@ def theme() -> Theme:
 
 def _described(source: str, theme: Theme) -> Description:
     """
-    A markdown source as the views describe it: `advtext.typeset_markdown`, formulas on.
+    A markdown source as the views describe it: `imscribe.typeset_markdown`, formulas on.
 
     Until tranche 5 this was the old core's blocks walked by
-    `advtext.typesetter.Converter`. The tests that use it name short sources
+    `imscribe.typesetter.Converter`. The tests that use it name short sources
     for which the two said the same thing; the demos, where the old path's
     answer is the oracle, are read from the frozen file (`_frozen`).
     """
@@ -164,13 +164,13 @@ def test_it_finds_in_each_block_what_the_material_index_finds_table_cells_includ
     path: Path, theme: Theme
 ) -> None:
     """
-    Block by block, as many matches as `advtext.spans.FindIndex` found, a table's cells included.
+    Block by block, as many matches as `imscribe.spans.FindIndex` found, a table's cells included.
 
     Counts and not offsets: that index answered material indices, this one
     `str` indices. A needle of one word cannot run across a formula's box, so
     the one rule that differs (the module's docstring) does not come into it.
 
-    `advtext.spans` is deleted (tranche 5). What its index found in the old
+    `imscribe.spans` is deleted (tranche 5). What its index found in the old
     core's blocks of each demo is frozen, by block, and this index is run
     over the description the old converter made of those same blocks.
     """
@@ -202,7 +202,7 @@ def test_case_is_folded_and_a_stretch_whose_folding_changes_length_is_searched_a
     None
 ):
     """
-    `advtext.spans.FindIndex`'s rule. `lower()`, which the spike used, shifts later offsets.
+    `imscribe.spans.FindIndex`'s rule. `lower()`, which the spike used, shifts later offsets.
     """
     plain = "Glue and GLUE"
     sharp = "Straße, then Glue and GLUE"  # casefold() makes the sharp s two letters
@@ -274,7 +274,7 @@ def test_a_table_is_searched_cell_by_cell_at_offsets_into_its_text(theme: Theme)
     # The cell's own text, not its formula's source; then the next cell; then the paragraph.
     assert here == (Match(0, 8, 14), Match(0, 25, 31), Match(1, 2, 8))
     assert all(described.texts[m.block][m.start : m.end] == "needle" for m in here)
-    # Where `advtext.spans.FindIndex` found it in the old core's blocks (frozen): the same
+    # Where `imscribe.spans.FindIndex` found it in the old core's blocks (frozen): the same
     # three places, as (block, (row, column)).
     assert material_frozen.needle_cells() == [(0, (1, 0)), (0, (1, 1)), (1, None)]
     assert [m.block for m in here] == [block for block, _ in material_frozen.needle_cells()]
@@ -433,10 +433,10 @@ def test_a_single_match_stepped_onto_itself_is_not_packed_again() -> None:
 
 _ALONE = """
 import json, sys
-import advtext.typeset_find
+import imscribe.typeset_find
 print(json.dumps(sorted(
     name for name in sys.modules
-    if name == "imtypeset" or name.startswith(("imtypeset.", "advtext.ui", "imgui_bundle"))
+    if name == "imtypeset" or name.startswith(("imtypeset.", "imscribe.ui", "imgui_bundle"))
 )))
 """
 
@@ -469,7 +469,7 @@ def test_the_module_imports_no_library_and_no_ui() -> None:
 _WITH_LIBRARY = r"""
 import json, sys
 from pathlib import Path
-from advtext import typesetter, typeset_find
+from imscribe import typesetter, typeset_find
 
 ts = typesetter.module()
 if ts is None:
@@ -477,8 +477,8 @@ if ts is None:
     sys.exit(0)
 
 from imgui_bundle import imgui
-from advtext.theme import Theme
-from advtext.typeset_markdown import describe_markdown
+from imscribe.theme import Theme
+from imscribe.typeset_markdown import describe_markdown
 
 report = {"module": True}
 report["enumerators"] = [

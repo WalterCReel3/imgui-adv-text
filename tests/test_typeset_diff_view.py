@@ -1,5 +1,5 @@
 r"""
-`advtext.ui.typeset_diff_view`: `DiffRows` and `TypesetDiffView`.
+`imscribe.ui.typeset_diff_view`: `DiffRows` and `TypesetDiffView`.
 
 Which tests run depends on how the suite was started, as in
 `tests/test_typeset_view.py`:
@@ -18,7 +18,7 @@ Which tests run depends on how the suite was started, as in
 
 ## What `DiffView` answers is frozen (T4-DIFF)
 
-`advtext.ui.diff_view.DiffView` is what this view is held against, and it is
+`imscribe.ui.diff_view.DiffView` is what this view is held against, and it is
 to be deleted. So what it answers for these cases is data,
 `tests/data/diff_view_answers.json`, written by
 `.concerns/T4-DIFF-scripts/freeze_diff_view.py` from the two functions here
@@ -31,7 +31,7 @@ a handful of tests that are about the two classes together run; when it is
 gone those skip, saying so, and the file is all that is left of it.
 
 The corpus is fixed too: the files under `demo/diff/` and `fixed_long_texts`,
-which is generated here. (It was `advtext.ui.pages.diff.long_texts`, this
+which is generated here. (It was `imscribe.ui.pages.diff.long_texts`, this
 package's own sources end to end, which moved whenever a module was edited and
 would have moved a great deal when the old core is deleted.) `inputs` in the
 file is a fingerprint of every diff, so a changed corpus is said to be that
@@ -60,11 +60,11 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.diff import Diff, RowKind
-from advtext.theme import Theme
-from advtext.ui import typeset_diff_view as module
-from advtext.ui.typeset_diff_view import (
+from imscribe import typesetter
+from imscribe.diff import Diff, RowKind
+from imscribe.theme import Theme
+from imscribe.ui import typeset_diff_view as module
+from imscribe.ui.typeset_diff_view import (
     CHUNK,
     CONTROL_PLACEHOLDER,
     DiffLayout,
@@ -122,7 +122,7 @@ def fixed_long_texts(lines: int = 4000) -> tuple[str, str]:
     bundled code face has, and U+03C0, which it lacks. One line in a hundred
     is 150 columns or more.
 
-    The rewrite is `advtext.ui.pages.diff.long_texts`'s: one line touched in
+    The rewrite is `imscribe.ui.pages.diff.long_texts`'s: one line touched in
     every ninety-seven, a block of forty dropped a third of the way down and
     twenty-five inserted two thirds of the way down.
     """
@@ -212,12 +212,12 @@ def frozen() -> dict[str, Any]:
 
 
 def _old() -> Any:
-    """`advtext.ui.diff_view`, or a skip that says the oracle is the file now."""
+    """`imscribe.ui.diff_view`, or a skip that says the oracle is the file now."""
     try:
-        from advtext.ui import diff_view
+        from imscribe.ui import diff_view
     except ImportError as exc:
         pytest.skip(
-            f"advtext.ui.diff_view cannot be imported ({exc}): DiffView's answers are "
+            f"imscribe.ui.diff_view cannot be imported ({exc}): DiffView's answers are "
             f"{_ANSWERS.relative_to(_ROOT)} now, and this test was about the class itself"
         )
     return diff_view
@@ -412,10 +412,10 @@ def diff_view_answers(diffs: dict[str, Diff]) -> dict[str, Any]:
     """
     Everything the pure half is held to, asked of `DiffView`: what
     `.concerns/T4-DIFF-scripts/freeze_diff_view.py` writes under `"pure"`. Needs
-    `advtext.ui.diff_view` and the bundled fonts (for the code face's metrics).
+    `imscribe.ui.diff_view` and the bundled fonts (for the code face's metrics).
     """
-    from advtext import markdown, units
-    from advtext.ui import diff_view
+    from imscribe import markdown, units
+    from imscribe.ui import diff_view
 
     theme = Theme.build()
 
@@ -460,13 +460,13 @@ def diff_view_answers(diffs: dict[str, Diff]) -> dict[str, Any]:
 
 _WITHOUT = r"""
 import json, sys
-import advtext.ui.typeset_diff_view as module
-from advtext import typesetter
-from advtext.diff import Diff
-from advtext.theme import Theme
-from advtext.ui.typeset_view import TypesetUnavailable
+import imscribe.ui.typeset_diff_view as module
+from imscribe import typesetter
+from imscribe.diff import Diff
+from imscribe.theme import Theme
+from imscribe.ui.typeset_view import TypesetUnavailable
 
-mine = sorted(name for name in sys.modules if name.split(".")[0] == "advtext")
+mine = sorted(name for name in sys.modules if name.split(".")[0] == "imscribe")
 other = sorted(name for name in sys.modules if name.split(".")[0] in ("imtypeset", "imgui_bundle"))
 diff = Diff.from_texts("a\nb\n", "a\nB\n", "x.py")
 try:
@@ -481,7 +481,7 @@ except TypesetUnavailable as exc:
 rows = module.DiffRows(diff)
 rows.select((0, 0, 0, 0), (0, 0, 2, 1))
 print("REPORT " + json.dumps({
-    "advtext": mine, "other": other, "refused": refused, "reason": typesetter.reason(),
+    "imscribe": mine, "other": other, "refused": refused, "reason": typesetter.reason(),
     "rows": rows.row_count, "copied": rows.selected_text(), "lacks": lacks,
     "ascii_lacks": list(module.code_face_lacks("plain ascii")),
     "height": [rows.content_height, rows.row_px, rows.row_top(3)],
@@ -492,24 +492,24 @@ print("REPORT " + json.dumps({
 _CLOSURE = r"""
 import importlib, json, sys
 importlib.import_module(sys.argv[1])
-print("REPORT " + json.dumps(sorted(m for m in sys.modules if m.split(".")[0] == "advtext")))
+print("REPORT " + json.dumps(sorted(m for m in sys.modules if m.split(".")[0] == "imscribe")))
 """
 
-# What `advtext.ui.diff_view` needs of the layout core that this module must
+# What `imscribe.ui.diff_view` needs of the layout core that this module must
 # not: the reason its pure parts were lifted here and not imported.
 _NOT_LOADED = {
-    "advtext.backends.imgui_draw",
-    "advtext.linebreak",
-    "advtext.selection",
-    "advtext.spans",
-    "advtext.fontlib",
-    "advtext.mathtext",
-    "advtext.columns",
-    "advtext.blocklayout",
-    "advtext.ui.bare_view",
-    "advtext.ui.diff_view",
-    "advtext.ui.units",
-    "advtext.ui.composition",
+    "imscribe.backends.imgui_draw",
+    "imscribe.linebreak",
+    "imscribe.selection",
+    "imscribe.spans",
+    "imscribe.fontlib",
+    "imscribe.mathtext",
+    "imscribe.columns",
+    "imscribe.blocklayout",
+    "imscribe.ui.bare_view",
+    "imscribe.ui.diff_view",
+    "imscribe.ui.units",
+    "imscribe.ui.composition",
 }
 
 
@@ -547,21 +547,21 @@ def test_without_the_library_the_constructor_refuses_and_the_rows_still_work() -
 
 def test_importing_the_module_loads_no_more_of_the_core_than_the_typeset_view_does() -> None:
     """
-    Measured, in fresh interpreters: this module adds `advtext.diff` and itself
-    to what `advtext.ui.typeset_view` loads, and none of what `DiffView` needs
+    Measured, in fresh interpreters: this module adds `imscribe.diff` and itself
+    to what `imscribe.ui.typeset_view` loads, and none of what `DiffView` needs
     of the layout core.
     """
-    mine = set(_child(_CLOSURE, "advtext.ui.typeset_diff_view"))
-    base = set(_child(_CLOSURE, "advtext.ui.typeset_view"))
-    assert mine - base == {"advtext.diff", "advtext.ui.typeset_diff_view"}
+    mine = set(_child(_CLOSURE, "imscribe.ui.typeset_diff_view"))
+    base = set(_child(_CLOSURE, "imscribe.ui.typeset_view"))
+    assert mine - base == {"imscribe.diff", "imscribe.ui.typeset_diff_view"}
     assert not mine & _NOT_LOADED
 
 
 def test_importing_diff_view_would_have_loaded_the_layout_core() -> None:
     """The reason for the lift, while there is a `DiffView` to import."""
     _old()
-    old = set(_child(_CLOSURE, "advtext.ui.diff_view"))
-    assert {"advtext.backends.imgui_draw", "advtext.selection", "advtext.linebreak"} <= old
+    old = set(_child(_CLOSURE, "imscribe.ui.diff_view"))
+    assert {"imscribe.backends.imgui_draw", "imscribe.selection", "imscribe.linebreak"} <= old
 
 
 def test_the_corpus_is_the_one_the_answers_were_frozen_for(
@@ -570,7 +570,7 @@ def test_the_corpus_is_the_one_the_answers_were_frozen_for(
     """
     Before any answer is compared: the diffs are the diffs. A difference here
     is a changed file under `demo/diff/`, a changed `fixed_long_texts`, or a
-    changed `advtext.diff` -- not a wrong row -- and the answers can be frozen
+    changed `imscribe.diff` -- not a wrong row -- and the answers can be frozen
     again only while `DiffView` exists to give them.
     """
     assert {name: fingerprint(diff) for name, diff in diffs.items()} == frozen["inputs"]
@@ -598,7 +598,7 @@ def test_the_frozen_answers_are_what_diff_view_answers_now(
 
 
 def test_what_was_lifted_is_what_diff_view_has(frozen: dict[str, Any]) -> None:
-    """Constants and small functions copied from `advtext.ui.diff_view`, held to it."""
+    """Constants and small functions copied from `imscribe.ui.diff_view`, held to it."""
     mine = lifted_answers(module, module._columns, module._width, module._px, module.TAB_WIDTH)
     assert json.loads(json.dumps(mine)) == frozen["pure"]["lifted"]
 
@@ -912,7 +912,7 @@ def test_a_diff_described_again_after_an_edit_is_what_a_fresh_view_describes(
 
     # A stream: a git diff, a line at a time, with U+2502 and a tab in it.
     text = _read("git.diff").replace("import", "import │", 1)
-    from advtext.diff import UnifiedDiffStream
+    from imscribe.diff import UnifiedDiffStream
 
     stream = UnifiedDiffStream()
     view = DiffRows(stream.diff, layout=layout)
@@ -969,7 +969,7 @@ def test_only_the_library_s_own_failure_switches_the_library_off(
     and becomes `TypesetUnavailable`; an `IndexError` of this module's own, a
     model's `KeyError` or a `TypeError` leaves as itself and switches nothing.
     """
-    from advtext.ui.typeset_view import TypesetUnavailable
+    from imscribe.ui.typeset_view import TypesetUnavailable
 
     class Error(Exception):
         pass
@@ -1007,13 +1007,13 @@ def test_the_view_does_not_look_for_the_draw_list_itself() -> None:
 
 def test_there_is_one_reader_of_fenced_diffs_and_it_is_not_here() -> None:
     """
-    The lead's decision 4 of tranche 4: `advtext.ui.typeset_hosts` has the one
+    The lead's decision 4 of tranche 4: `imscribe.ui.typeset_hosts` has the one
     reader of fenced `diff` blocks for the typeset views; T3-C's second copy
     (`FencedDiffs`, `HostedTypesetDiff`) is gone from this module.
     """
     for gone in ("FencedDiffs", "HostedTypesetDiff", "FENCE_LANGUAGES", "_Fence"):
         assert not hasattr(module, gone), gone
-    from advtext.ui import typeset_hosts
+    from imscribe.ui import typeset_hosts
 
     assert typeset_hosts.FENCE_LANGUAGES == ("diff", "patch")
     assert callable(typeset_hosts.HostedDiff.handle_keys)
@@ -1098,14 +1098,14 @@ from pathlib import Path
 
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import typesetter
-from advtext.diff import Diff, UnifiedDiffStream, tokenize
-from advtext.theme import Theme
-from advtext.ui.pages._syntax import line_colours
-from advtext.ui.pages.themes import COLOURS
-from advtext.ui.palette import DARK_PALETTE, DEFAULT_PALETTE
-from advtext.ui.typeset_diff_view import DiffLayout, TypesetDiffView, code_face_lacks
-from advtext.ui.typeset_view import TypesetUnavailable
+from imscribe import typesetter
+from imscribe.diff import Diff, UnifiedDiffStream, tokenize
+from imscribe.theme import Theme
+from imscribe.ui.pages._syntax import line_colours
+from imscribe.ui.pages.themes import COLOURS
+from imscribe.ui.palette import DARK_PALETTE, DEFAULT_PALETTE
+from imscribe.ui.typeset_diff_view import DiffLayout, TypesetDiffView, code_face_lacks
+from imscribe.ui.typeset_view import TypesetUnavailable
 
 ROOT = Path(sys.argv[1])
 sys.path.insert(0, str(ROOT / "tests"))
@@ -1114,8 +1114,8 @@ from test_typeset_diff_view import fixed_long_texts
 # `DiffView` is what this view is held against, while there is one. When it is gone its
 # answers are the file's (`oracle`), its fonts are not loaded and it is not drawn or timed.
 try:
-    from advtext.ui.diff_view import DiffLayout as OldLayout, DiffView
-    from advtext.ui.fonts import load_faces
+    from imscribe.ui.diff_view import DiffLayout as OldLayout, DiffView
+    from imscribe.ui.fonts import load_faces
 except ImportError:
     DiffView = None
 try:
@@ -2745,11 +2745,11 @@ from pathlib import Path
 
 from imgui_bundle import hello_imgui, imgui, immapp
 
-from advtext import typesetter
-from advtext.diff import Diff
-from advtext.theme import Theme
-from advtext.ui.typeset_diff_view import DiffLayout, DiffRows, TypesetDiffView
-from advtext.ui.typeset_hosts import HostedDiff
+from imscribe import typesetter
+from imscribe.diff import Diff
+from imscribe.theme import Theme
+from imscribe.ui.typeset_diff_view import DiffLayout, DiffRows, TypesetDiffView
+from imscribe.ui.typeset_hosts import HostedDiff
 
 LONG, VERDICT = sys.argv[1], sys.argv[2]
 POS = (10.0, 10.0)

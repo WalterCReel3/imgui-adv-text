@@ -4,7 +4,7 @@ Font setup as a host meets it: the registry, the size helper, and `load_faces`.
 Three things are under test and they are at three fidelities, so it is worth
 saying which is which before any of them is read as more than it is.
 
-- **The registry** (`advtext.fontlib.register_font` and friends) is tested
+- **The registry** (`imscribe.fontlib.register_font` and friends) is tested
   against real font files. There is no bold monospace in the fonts imgui-bundle
   ships -- that is the reason the registry exists -- so the "host's file" here is
   a copy of the bundle's one Inconsolata weight under another name. That proves a
@@ -33,9 +33,9 @@ from typing import Any
 
 import pytest
 
-from advtext import fontlib
-from advtext.fontmetrics import Face
-from advtext.ui.fonts import (
+from imscribe import fontlib
+from imscribe.fontmetrics import Face
+from imscribe.ui.fonts import (
     ALL_FACES,
     DEFAULT_LOAD_PX,
     TEXT_FACES,
@@ -43,7 +43,7 @@ from advtext.ui.fonts import (
     em_size_for_pixel_height,
     load_faces,
 )
-from advtext.units import px_from_sp, sp_from_px
+from imscribe.units import px_from_sp, sp_from_px
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -144,12 +144,12 @@ def test_registering_reaches_the_svg_backend_s_outline_cache(host_mono: Path) ->
     """
     A cache outside `fontlib` that is keyed by face is dropped too.
 
-    `advtext.backends.svg.glyph_outline` memoises path data per (face, name). It
+    `imscribe.backends.svg.glyph_outline` memoises path data per (face, name). It
     is the one such cache in the tree, and without `on_registry_change` it would
     go on drawing Roboto's outline for a role that now measures as Inconsolata --
     the right widths around the wrong shapes.
     """
-    from advtext.backends.svg import glyph_outline
+    from imscribe.backends.svg import glyph_outline
 
     name = fontlib.glyph_name(Face.CODE_BOLD, ord("m"))
     roboto = glyph_outline(Face.CODE_BOLD, name)
@@ -564,7 +564,7 @@ def test_a_face_that_will_not_load_costs_that_face_and_nothing_else(how: str) ->
     """
     A loader that returns `None` and one that raises are the same answer: no face.
 
-    This is `advtext.ui.app.load_fonts`'s old posture, which could not be tested
+    This is `imscribe.ui.app.load_fonts`'s old posture, which could not be tested
     where it was (its `except` carried a `no cover` pragma because the loader was
     `hello_imgui`'s). The failed role is not re-tried by `load_pending` -- a file
     that failed once fails every frame, and a host calling `load_pending` each
@@ -662,7 +662,7 @@ def test_a_role_with_no_file_at_all_is_a_missing_face_and_not_a_crash(
     `KeyError` out of `font_file`; it is now the `MissingFontError` the callers
     that degrade already catch.
     """
-    # The table itself, emptied: it is `advtext.fontfiles`' since 2026-10-12 and
+    # The table itself, emptied: it is `imscribe.fontfiles`' since 2026-10-12 and
     # `fontlib._STAND_INS` is that dictionary, so a rebinding of the name on
     # either module would be read by nobody.
     monkeypatch.delitem(fontlib._STAND_INS, Face.CODE_BOLD)
@@ -685,7 +685,7 @@ def imgui_context() -> Any:
 
     The same recipe as `tests/test_imgui_draw.py`'s fixture and for the same
     reasons, which that file gives. No backend, no window, and no frame: fonts
-    are added between frames, which is where `advtext.ui.fonts` says to add them.
+    are added between frames, which is where `imscribe.ui.fonts` says to add them.
     """
     from imgui_bundle import imgui
 
@@ -738,7 +738,7 @@ def test_the_demo_s_font_callback_loads_its_one_ui_font_through_load_faces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    `advtext.ui.app.load_fonts` is a caller of `load_faces`, for one face.
+    `imscribe.ui.app.load_fonts` is a caller of `load_faces`, for one face.
 
     One file, the running-text face's, at 16 px, by absolute path. Until
     tranche 5 (T5-APP) it was six files, every `Face` and mathematics among
@@ -751,7 +751,7 @@ def test_the_demo_s_font_callback_loads_its_one_ui_font_through_load_faces(
     """
     from imgui_bundle import hello_imgui
 
-    from advtext.ui import app
+    from imscribe.ui import app
 
     calls: list[tuple[str, float, bool]] = []
 
@@ -795,19 +795,19 @@ def test_importing_the_library_imports_no_fonttools() -> None:
     """
     fontTools is imported when a font is opened and not when a module is.
 
-    `advtext.fontlib` used to import `fontTools.ttLib` and a pen at module level,
-    so anything that imported it -- `advtext.ui.app` does, and so does this
-    module's `advtext.ui.fonts` -- paid for fontTools before measuring a glyph.
+    `imscribe.fontlib` used to import `fontTools.ttLib` and a pen at module level,
+    so anything that imported it -- `imscribe.ui.app` does, and so does this
+    module's `imscribe.ui.fonts` -- paid for fontTools before measuring a glyph.
     The second line of output is the control: the same interpreter, one metric
     later, *has* imported it, so the first line is not passing because the check
     cannot see the module.
     """
     out = _fresh("""
         import sys
-        import advtext, advtext.fontlib, advtext.style, advtext.markdown
-        import advtext.shipout, advtext.ui, advtext.ui.fonts
+        import imscribe, imscribe.fontlib, imscribe.style, imscribe.markdown
+        import imscribe.shipout, imscribe.ui, imscribe.ui.fonts
         print(sorted(name for name in sys.modules if name.split(".")[0] == "fontTools")[:1])
-        advtext.fontlib.metrics(advtext.fontlib.Face.PROSE, 16.0).advance(65)
+        imscribe.fontlib.metrics(imscribe.fontlib.Face.PROSE, 16.0).advance(65)
         print("fontTools.ttLib" in sys.modules)
         """)
     assert out.splitlines() == ["[]", "True"]
@@ -827,8 +827,8 @@ def test_a_document_without_mathematics_never_opens_the_math_font() -> None:
     not what was asked.
     """
     out = _fresh("""
-        from advtext import fontlib
-        from advtext.fontmetrics import Face
+        from imscribe import fontlib
+        from imscribe.fontmetrics import Face
 
         asked = []
         real = fontlib.font_file
@@ -839,12 +839,12 @@ def test_a_document_without_mathematics_never_opens_the_math_font() -> None:
 
         fontlib.font_file = spy
 
-        from advtext.markdown import build_document
-        from advtext.shipout import Point, ship
-        from advtext.style import Theme, char_measure, fontlib_metrics
-        from advtext.ui import compose
-        from advtext.ui.fonts import load_faces
-        from advtext.units import sp_from_px
+        from imscribe.markdown import build_document
+        from imscribe.shipout import Point, ship
+        from imscribe.style import Theme, char_measure, fontlib_metrics
+        from imscribe.ui import compose
+        from imscribe.ui.fonts import load_faces
+        from imscribe.units import sp_from_px
 
         source = (
             "# Title\\n\\nSome *prose* with `code`, **bold** and ***both***.\\n\\n"

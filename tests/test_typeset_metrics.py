@@ -1,12 +1,12 @@
 r"""
 A face's line metrics for sizing a theme: who answers, and that the two answers are one.
 
-`advtext.typeset_metrics` asks imtypeset once `advtext.typesetter.ready()` is
+`imscribe.typeset_metrics` asks imtypeset once `imscribe.typesetter.ready()` is
 true and the reference core's font reader before. Two halves:
 
 1.  **Without fonts in the library** (this process, with `ready` held false:
     another file's test may have loaded the library's fonts here): the old
-    reader answers, by the name on `advtext.style` read at the call.
+    reader answers, by the name on `imscribe.style` read at the call.
 2.  **With them** (a fresh interpreter with a Dear ImGui context of its own;
     skipped without the library): the library answers, and for every face at
     14 to 20 px its em for a pixel height, the theme sized from it and the
@@ -15,7 +15,7 @@ true and the reference core's font reader before. Two halves:
     matter of cost and not of result; if it ever fails, a theme sized before
     the fonts are loaded and one sized after break their lines differently.
 
-What reaching either loads of advtext is `tests/test_typeset_closure.py`'s.
+What reaching either loads of imscribe is `tests/test_typeset_closure.py`'s.
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ from typing import Any
 
 import pytest
 
-from advtext import fontfiles, typeset_metrics, typesetter
-from advtext.primitives import Face, sp_from_px
-from advtext.theme import Theme, font_key
+from imscribe import fontfiles, typeset_metrics, typesetter
+from imscribe.primitives import Face, sp_from_px
+from imscribe.theme import Theme, font_key
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -44,7 +44,7 @@ def no_fonts(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_without_fonts_in_the_library_the_old_reader_answers(no_fonts: None) -> None:
-    from advtext import fontlib, style
+    from imscribe import fontlib, style
 
     assert not typeset_metrics.library_answers()
     key = font_key(Face.PROSE, sp_from_px(16.0))
@@ -64,9 +64,9 @@ def test_a_replacement_of_the_old_readers_name_is_the_one_asked(
 ) -> None:
     """
     `Theme.at_pixel_height` with no resolver reads `typeset_metrics.face_metrics`
-    at the call, and that reads `advtext.style.fontlib_metrics` at the call.
+    at the call, and that reads `imscribe.style.fontlib_metrics` at the call.
     """
-    from advtext import style
+    from imscribe import style
 
     real = style.fontlib_metrics
     asked: list[str] = []
@@ -100,7 +100,7 @@ def test_the_library_asked_before_it_has_fonts_says_so(no_fonts: None) -> None:
 
 
 def test_what_is_no_face_is_a_type_error_at_the_call() -> None:
-    with pytest.raises(TypeError, match="takes an advtext Face, not str"):
+    with pytest.raises(TypeError, match="takes an imscribe Face, not str"):
         typeset_metrics.em_size_for_pixel_height("prose", 16.0)  # type: ignore[arg-type]
 
 
@@ -131,11 +131,11 @@ def test_the_two_calls_are_on_the_list_the_gate_holds_a_package_to() -> None:
 
 def test_registering_a_font_drops_what_the_old_reader_read() -> None:
     """
-    `register_font` is `advtext.fontfiles`' and knows nothing of
-    `advtext.fontlib`; the old reader is told as a listener, so a theme sized
+    `register_font` is `imscribe.fontfiles`' and knows nothing of
+    `imscribe.fontlib`; the old reader is told as a listener, so a theme sized
     by it after a registration is measured from the new file.
     """
-    from advtext import fontlib
+    from imscribe import fontlib
 
     try:
         before = fontlib.em_size_for_pixel_height(Face.CODE_BOLD, 16.0)
@@ -151,10 +151,10 @@ def test_registering_a_font_drops_what_the_old_reader_read() -> None:
 _WITH_FONTS = r"""
 import itertools, json, sys
 from imgui_bundle import imgui
-from advtext import fontfiles, fontlib, style, typeset_metrics, typesetter
-from advtext.primitives import Face, sp_from_px
-from advtext.theme import Faces, Theme, font_key
-from advtext.typeset_markdown import MarkdownConverter, parse_markdown
+from imscribe import fontfiles, fontlib, style, typeset_metrics, typesetter
+from imscribe.primitives import Face, sp_from_px
+from imscribe.theme import Faces, Theme, font_key
+from imscribe.typeset_markdown import MarkdownConverter, parse_markdown
 
 imgui.create_context()
 imgui.get_io().backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
@@ -249,10 +249,10 @@ def test_with_fonts_the_library_answers_and_its_answers_are_the_old_readers() ->
     assert out["themes"] == [], "a theme sized by the library differs from the old reader's"
     assert out["descriptions"] == []
     assert out["refused"] == [
-        "imtypeset does not answer a glyph's ink box; advtext.style.fontlib_metrics does",
-        "imtypeset does not answer a pair's kern; advtext.style.fontlib_metrics does",
+        "imtypeset does not answer a glyph's ink box; imscribe.style.fontlib_metrics does",
+        "imtypeset does not answer a pair's kern; imscribe.style.fontlib_metrics does",
     ]
     assert out["no_font"].startswith("imtypeset cannot measure code: ")
-    assert out["no_font"].endswith("give the role a font with advtext.typesetter.load_fonts()")
+    assert out["no_font"].endswith("give the role a font with imscribe.typesetter.load_fonts()")
     assert out["no_font_theme"] == "MissingFontError"
     assert out["one_role"] is True

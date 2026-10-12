@@ -38,8 +38,8 @@ from typing import Any
 
 import pytest
 
-from advtext import typesetter
-from advtext.description import (
+from imscribe import typesetter
+from imscribe.description import (
     FLOAT_MAX,
     INT_MAX,
     KIND_LIST_ITEM,
@@ -57,7 +57,7 @@ from advtext.description import (
     encodable,
     settled,
 )
-from advtext.typesetter import Kind
+from imscribe.typesetter import Kind
 
 _ROOT = Path(__file__).resolve().parent.parent
 _STYLE = StyleDescription()
@@ -213,7 +213,7 @@ def test_load_fonts_with_what_is_no_face_is_a_type_error_and_touches_nothing(
 
 
 def test_one_face_is_not_an_iterable_of_faces(untouched: Any) -> None:
-    from advtext import Face
+    from imscribe import Face
 
     with pytest.raises(TypeError, match="iterable"):
         typesetter.load_fonts(Face.PROSE)  # type: ignore[arg-type]
@@ -262,7 +262,7 @@ def test_verdict_reads_its_answer_under_whatever_is_written_after_it(
 
 
 def test_the_clipboard_is_never_handed_a_surrogate() -> None:
-    from advtext.ui.ownership import clipboard_text
+    from imscribe.ui.ownership import clipboard_text
 
     assert clipboard_text("a\udc80b") == f"a{REPLACEMENT}b"
     clipboard_text("a\udc80b").encode("utf-8")
@@ -271,7 +271,7 @@ def test_the_clipboard_is_never_handed_a_surrogate() -> None:
 
 
 def test_the_diff_view_shows_a_surrogate_as_its_placeholder() -> None:
-    from advtext.ui.typeset_diff_view import CONTROL_PLACEHOLDER, _shown
+    from imscribe.ui.typeset_diff_view import CONTROL_PLACEHOLDER, _shown
 
     shown, marked = _shown("two \udc80 bytes")
     assert shown == f"two {CONTROL_PLACEHOLDER} bytes" and marked == (4,)
@@ -285,20 +285,20 @@ def test_the_diff_view_shows_a_surrogate_as_its_placeholder() -> None:
 _CHILD = r"""
 import dataclasses, json, struct, sys
 from imgui_bundle import imgui
-from advtext import Face, typesetter
-from advtext.description import (
+from imscribe import Face, typesetter
+from imscribe.description import (
     KIND_LIST_ITEM, KIND_TABLE, BlockDescription, CellDescription, ColumnDescription,
     Description, RunDescription, StyleDescription, description_of,
 )
-from advtext.diff import Diff
-from advtext.theme import BlockKind, Theme
-from advtext.typeset_markdown import (
+from imscribe.diff import Diff
+from imscribe.theme import BlockKind, Theme
+from imscribe.typeset_markdown import (
     FormulaRange, MarkdownCell, MarkdownCode, MarkdownRule, MarkdownStream, MarkdownTable,
     MarkdownText, parse_markdown,
 )
-from advtext.ui.typeset_diff_view import TypesetDiffView
-from advtext.ui.typeset_stream_view import TypesetStreamView
-from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+from imscribe.ui.typeset_diff_view import TypesetDiffView
+from imscribe.ui.typeset_stream_view import TypesetStreamView
+from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 import collections
 
 ts = typesetter.module()

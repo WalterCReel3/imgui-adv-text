@@ -20,7 +20,7 @@ import dataclasses
 
 import pytest
 
-from advtext.nodes import (
+from imscribe.nodes import (
     EJECT_PENALTY,
     INF_PENALTY,
     Box,
@@ -39,7 +39,7 @@ from advtext.nodes import (
     is_discardable,
     permits_break_at_following_glue,
 )
-from advtext.units import RUNNING, GlueOrder, sp_from_pt
+from imscribe.units import RUNNING, GlueOrder, sp_from_pt
 
 PT = sp_from_pt(1.0)
 

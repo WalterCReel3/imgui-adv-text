@@ -34,9 +34,9 @@ from pathlib import Path
 
 import pytest
 
-from advtext import fontlib
-from advtext.fontmetrics import Face, GlyphBBox, GlyphVariant, MathParams
-from advtext.math import (
+from imscribe import fontlib
+from imscribe.fontmetrics import Face, GlyphBBox, GlyphVariant, MathParams
+from imscribe.math import (
     MED_SPACE,
     NEGATIVE_THIN_SPACE,
     QQUAD,
@@ -80,8 +80,8 @@ from advtext.math import (
     sub_style,
     sup_style,
 )
-from advtext.math import mlist as mlist_module
-from advtext.math.mlist import (
+from imscribe.math import mlist as mlist_module
+from imscribe.math.mlist import (
     DELIMITER_FACTOR,
     DELIMITER_SHORTFALL,
     LARGEST_VARIANT_MUST_COVER,
@@ -89,10 +89,10 @@ from advtext.math.mlist import (
     SURD,
     MathFonts,
 )
-from advtext.nodes import Box, BoxKind, CharNode, Glue, Kern, Node, Rule
-from advtext.pack import hpack
-from advtext.style import font_key, fontlib_metrics, parse_font_key
-from advtext.units import sp_from_pt, sp_from_px
+from imscribe.nodes import Box, BoxKind, CharNode, Glue, Kern, Node, Rule
+from imscribe.pack import hpack
+from imscribe.style import font_key, fontlib_metrics, parse_font_key
+from imscribe.units import sp_from_pt, sp_from_px
 
 # One math unit comes out at exactly 10 at this size, so thin/medium/thick are
 # 30, 40 and 50 and every assertion below can be checked by hand.

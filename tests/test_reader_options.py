@@ -1,7 +1,7 @@
 r"""
 A host's reader options (pptmstr's P7) and a size for inline code (its P11).
 
-`advtext.typeset_markdown.ReaderOptions` says what of a source a CommonMark
+`imscribe.typeset_markdown.ReaderOptions` says what of a source a CommonMark
 reader hides and this host wants set; `Theme.inline_code_scale` and
 `Theme.inline_code_step` say how big a code span is beside its block. Five
 groups.
@@ -51,12 +51,12 @@ import pytest
 import test_markdown as markdown_tests
 from markdown_it.rules_inline.escape import escape as markdown_it_escape
 
-from advtext import markdown_rules, typesetter
-from advtext import typeset_markdown as direct
-from advtext.description import RunDescription, face_role
-from advtext.primitives import Face, sp_from_px
-from advtext.theme import BlockKind, Faces, Theme
-from advtext.typeset_markdown import (
+from imscribe import markdown_rules, typesetter
+from imscribe import typeset_markdown as direct
+from imscribe.description import RunDescription, face_role
+from imscribe.primitives import Face, sp_from_px
+from imscribe.theme import BlockKind, Faces, Theme
+from imscribe.typeset_markdown import (
     MarkdownCode,
     MarkdownConverter,
     MarkdownStream,
@@ -462,7 +462,7 @@ def test_the_stars_of_a_glob_are_set_and_emphasis_is_still_emphasis(
 def test_what_tells_a_written_star_from_emphasis_is_the_character_on_each_side() -> None:
     """
     The rule, one case to a condition, and the two directions it is known to
-    get wrong (`advtext.markdown_rules._written_stars`). Pinned so that they
+    get wrong (`imscribe.markdown_rules._written_stars`). Pinned so that they
     are known and not found.
     """
     bold = face_role(Face.PROSE_BOLD)
@@ -1016,7 +1016,7 @@ def test_a_stream_sizes_a_span_as_a_settled_document_does() -> None:
 _LIBRARY = r"""
 import json, sys
 from dataclasses import replace
-from advtext import typesetter
+from imscribe import typesetter
 
 ts = typesetter.module()
 if ts is None:
@@ -1024,10 +1024,10 @@ if ts is None:
     sys.exit(0)
 
 from imgui_bundle import imgui
-from advtext.primitives import Face, px_from_sp, sp_from_px
-from advtext.style import fontlib_metrics
-from advtext.theme import BlockKind, Theme, font_key
-from advtext.typeset_markdown import MarkdownConverter, ReaderOptions, parse_markdown
+from imscribe.primitives import Face, px_from_sp, sp_from_px
+from imscribe.style import fontlib_metrics
+from imscribe.theme import BlockKind, Theme, font_key
+from imscribe.typeset_markdown import MarkdownConverter, ReaderOptions, parse_markdown
 
 imgui.create_context()
 io = imgui.get_io()

@@ -1,5 +1,7 @@
 # Postmortem: the adoption build and the demo build, 2026-10-06 to 2026-10-07
 
+> **2026-10-12:** the package this document calls `advtext` was renamed `imscribe` (`advtext/…` is `imscribe/…`, `import advtext` is `import imscribe`). Nothing below was changed for it.
+
 **Written by the session's lead agent, immediately after the merge (`32e3953`).**
 It is an account of how the work went, not a description of the code; for the
 code read `docs/adoption-plan.md` (its first two sections) and

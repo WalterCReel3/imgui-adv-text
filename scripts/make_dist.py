@@ -2,7 +2,7 @@
 """
 `make dist`: a wheel and an sdist of a COMMIT, built twice, with their hashes.
 
-What a host needs in order to name advtext in a requirement (pptmstr's P31)
+What a host needs in order to name imscribe in a requirement (pptmstr's P31)
 is a file with a hash, or a commit. This script makes the files and prints
 both forms. What it does, in order, and it stops at the first thing wrong:
 
@@ -21,11 +21,11 @@ both forms. What it does, in order, and it stops at the first thing wrong:
     are used because a path leaking into the output is the commonest way a
     build stops being reproducible (imtypeset's library does it:
     HANDOFF-imtypeset.md, H45).
-4.  Hold the wheel to what `pyproject.toml` says it is: `advtext/` and its
-    own metadata and nothing else, `advtext/py.typed` present; and the sdist
+4.  Hold the wheel to what `pyproject.toml` says it is: `imscribe/` and its
+    own metadata and nothing else, `imscribe/py.typed` present; and the sdist
     to carrying what the wheel must not (`examples/`, `tests/`, `demo/`, the
     two handoff files). The version in the file names, in the export's
-    `pyproject.toml` and in its `advtext/__init__.py` must be one string.
+    `pyproject.toml` and in its `imscribe/__init__.py` must be one string.
 5.  Put the two files into `--out` (default `dist/`) with `<file>.sha256`
     beside each (`sha256sum -c` reads them) and `BUILT-FROM`, and print the
     requirement strings.
@@ -64,7 +64,7 @@ from pathlib import Path
 REPOSITORY = "https://github.com/WalterCReel3/imgui-adv-text"
 """Where a requirement string points. Nothing here contacts it."""
 
-NAME = "advtext"
+NAME = "imscribe"
 
 TOOLS = ("build", "hatchling")
 """What the default builder imports. Asked for by name before anything is written."""
@@ -320,7 +320,7 @@ def compare(first: tuple[Path, Path], second: tuple[Path, Path]) -> list[str]:
 
 
 def declared_version(source: Path) -> tuple[str | None, str | None]:
-    """The version `pyproject.toml` states and the one `advtext/__init__.py` states."""
+    """The version `pyproject.toml` states and the one `imscribe/__init__.py` states."""
 
     def first(path: Path, pattern: str) -> str | None:
         try:
@@ -487,7 +487,7 @@ def make(
     problems: list[str] = []
     if stated is None or stated != at_run_time:
         problems.append(
-            f"pyproject.toml states version {stated!r} and advtext/__init__.py {at_run_time!r}"
+            f"pyproject.toml states version {stated!r} and imscribe/__init__.py {at_run_time!r}"
         )
     version = stated or ""
     if not wheel.name.startswith(f"{NAME}-{version}-") or sdist.name != f"{NAME}-{version}.tar.gz":
@@ -518,7 +518,7 @@ def make(
     (out / "BUILT-FROM").write_text(
         "\n".join(
             [
-                f"advtext: {REPOSITORY}",
+                f"imscribe: {REPOSITORY}",
                 f"commit: {commit}",
                 f"version: {version}",
                 f"source date epoch: {epoch}",

@@ -1,8 +1,8 @@
 r"""
 Render the two litmus tests to SVG, and assemble the document layer that joins the parts.
 
-Everything below `advtext.markdown` produces *blocks*; everything below
-`advtext.linebreak` produces *lines*. Nothing in the tree turns a document into
+Everything below `imscribe.markdown` produces *blocks*; everything below
+`imscribe.linebreak` produces *lines*. Nothing in the tree turns a document into
 a single vertical list, because that is the one piece of the pipeline that is
 policy rather than typesetting -- how much air goes above a heading, where a
 list marker hangs, how a table's columns are apportioned. That policy lives
@@ -32,9 +32,9 @@ about the machine and the session rather than about the code -- it has been
 recorded both ways in this tree -- so ask `make shot`, not this docstring.
 
 **The document policy is not here.** It was, once, and `docs/litmus.md` still
-records the period when this script and `advtext.ui.compose` were two
+records the period when this script and `imscribe.ui.compose` were two
 implementations of the same step that disagreed with each other. There is one
-now and it is `advtext.ui.compose`, which this script calls: how much air goes
+now and it is `imscribe.ui.compose`, which this script calls: how much air goes
 above a heading, where a list marker hangs, how a table's columns are
 apportioned and where a block quote's bar is drawn are all decided there. What
 is left here is the page -- margins, which artifacts exist, and the two formulas
@@ -59,16 +59,16 @@ from pathlib import Path
 if __package__ in (None, ""):  # pragma: no cover - import shim for direct execution
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from advtext import fontlib
-from advtext.backends.svg import render
-from advtext.fontmetrics import MathFontMetrics
-from advtext.markdown import (
+from imscribe import fontlib
+from imscribe.backends.svg import render
+from imscribe.fontmetrics import MathFontMetrics
+from imscribe.markdown import (
     build_document,
 )
-from advtext.math.atoms import Style, group, op, ord_, rel
-from advtext.math.mlist import math_fonts, mlist_to_hlist
-from advtext.nodes import Box, GlueSpec, Node
-from advtext.pack import (
+from imscribe.math.atoms import Style, group, op, ord_, rel
+from imscribe.math.mlist import math_fonts, mlist_to_hlist
+from imscribe.nodes import Box, GlueSpec, Node
+from imscribe.pack import (
     IGNORE_DEPTH,
     CharMeasure,
     InterlineSkip,
@@ -76,16 +76,16 @@ from advtext.pack import (
     hpack,
     vpack,
 )
-from advtext.selection import Granularity, SelectionModel
-from advtext.shipout import DrawCmd, Point, ship
-from advtext.style import (
+from imscribe.selection import Granularity, SelectionModel
+from imscribe.shipout import DrawCmd, Point, ship
+from imscribe.style import (
     BlockKind,
     Theme,
     char_measure,
     fontlib_metrics,
 )
-from advtext.ui import compose
-from advtext.units import Scaled, sp_from_pt
+from imscribe.ui import compose
+from imscribe.units import Scaled, sp_from_pt
 
 __all__ = ["Rendered", "main", "render_markdown", "render_sigma"]
 

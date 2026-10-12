@@ -9,7 +9,7 @@ as it did for every case the default theme can reach. Both are held against a
 *transcription of the old code kept in this file* -- `_build_as_it_was` and
 `_face_as_it_was` -- because a test that compared `Theme.build()` with
 `Theme.build()` would pass whatever either returned. The transcriptions were
-copied from `advtext/style.py` as it stood at commit `27b3b73`; if they are ever
+copied from `imscribe/style.py` as it stood at commit `27b3b73`; if they are ever
 "tidied" to call the new code they stop testing anything.
 
 **"A host can now say what it could not."** An all-monospace ragged theme at a
@@ -36,12 +36,12 @@ from typing import Any
 
 import pytest
 
-from advtext import fontlib
-from advtext.fontmetrics import Face
-from advtext.markdown import build_document
-from advtext.nodes import CharNode, GlueSpec
-from advtext.pack import InterlineSkip
-from advtext.style import (
+from imscribe import fontlib
+from imscribe.fontmetrics import Face
+from imscribe.markdown import build_document
+from imscribe.nodes import CharNode, GlueSpec
+from imscribe.pack import InterlineSkip
+from imscribe.style import (
     BODY_SIZE_PX,
     DEFAULT_FACES,
     MARKER_GAP_EM,
@@ -59,7 +59,7 @@ from advtext.style import (
     fontlib_metrics,
     parse_font_key,
 )
-from advtext.units import DEFAULT_PX_PER_INCH, Scaled, px_from_sp, sp_from_px
+from imscribe.units import DEFAULT_PX_PER_INCH, Scaled, px_from_sp, sp_from_px
 
 EVERY_EMPHASIS = [
     Emphasis(bold=bold, italic=italic, code=code)
@@ -306,7 +306,7 @@ def test_every_face_the_default_theme_can_ask_for_is_the_face_it_asked_for_befor
     """
     `face_for` is unchanged wherever the default theme's own converter can reach.
 
-    `advtext.markdown` calls `font_for` with the kind of a block of *text* --
+    `imscribe.markdown` calls `font_for` with the kind of a block of *text* --
     never `BlockKind.CODE`, whose lines are set from the style's font directly --
     so the reachable cases are the kinds whose base face is proportional, under
     every emphasis. That is every kind but the fenced block, by eight emphases.
@@ -472,7 +472,7 @@ def test_headings_four_to_six_are_body_size_and_told_apart_by_face() -> None:
     The scale is 1.25 from the body: h1 to h3 are the third, second and first
     powers, so h4 is the zeroth -- the body size. The powers after that are
     below the body size, so h5 and h6 stay at it and differ by face instead.
-    Recorded in `advtext.style`'s docstring; this is the test that makes the
+    Recorded in `imscribe.style`'s docstring; this is the test that makes the
     record binding.
     """
     theme = Theme.build()
@@ -547,7 +547,7 @@ def test_faces_changes_which_face_a_block_is_in_and_nothing_about_its_measuremen
     assert mono.faces == Faces.mono() != DEFAULT_FACES
     # What each default face becomes in the mono table. Headings four to six are
     # set in bold, bold italic and italic; with no monospace italic the last of
-    # those is the regular weight, which is the weakness `advtext.style`'s
+    # those is the regular weight, which is the weakness `imscribe.style`'s
     # docstring records for h6 in an all-mono theme.
     becomes = {
         Face.PROSE: Face.CODE,
@@ -621,7 +621,7 @@ def test_a_theme_at_a_host_s_pixel_height_is_drawn_at_that_height(
     rounding to scaled points, and ImGui's own `floor(size + 0.5)` must then
     select exactly that size.
 
-    The em itself is checked against `advtext.fontlib.em_size_for_pixel_height`,
+    The em itself is checked against `imscribe.fontlib.em_size_for_pixel_height`,
     so the theme and the standalone helper cannot come to disagree.
     """
     theme = Theme.at_pixel_height(height_px, faces=faces)
@@ -724,14 +724,14 @@ def test_at_pixel_height_with_no_resolver_asks_the_one_this_module_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    `Theme` lives in `advtext.theme` now and the default resolver stayed here.
+    `Theme` lives in `imscribe.theme` now and the default resolver stayed here.
 
     When both were in this module the default was a global of it, read at the
-    call, so replacing `advtext.style.fontlib_metrics` replaced what a theme
+    call, so replacing `imscribe.style.fontlib_metrics` replaced what a theme
     was measured with. The method reads it from this module at the call still;
     binding it at import over there would have silently ended that.
     """
-    from advtext import style
+    from imscribe import style
 
     asked: list[str] = []
 
@@ -770,7 +770,7 @@ def _characters(document: Any) -> list[CharNode]:
     Every `CharNode` anywhere in a built document, by walking it rather than naming fields.
 
     A walk and not a list of attributes because the block types are
-    `advtext.markdown`'s and are about to gain members; a test that named
+    `imscribe.markdown`'s and are about to gain members; a test that named
     `material`, `lines` and `cells` would silently stop looking inside whatever
     is added next.
     """
@@ -832,7 +832,7 @@ def test_without_a_registered_bold_the_mono_theme_s_bold_is_the_stand_in_and_is_
     """
     The same call with nothing registered, so the limitation is on the record.
 
-    Bold is still keyed `Face.CODE_BOLD`, and `advtext.fontlib` backs that role
+    Bold is still keyed `Face.CODE_BOLD`, and `imscribe.fontlib` backs that role
     with the bold prose file -- so bold runs are proportional and do break the
     columns. That is the glyphs the old `face_for` produced for this case; it is
     stated here as a test so that nobody reads the test above as saying an

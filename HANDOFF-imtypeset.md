@@ -195,6 +195,37 @@ in the advtext checkout at `.concerns/L1-MAC--reviewer--result.md`
 | H19 | **Retina.** Are the library's fonts rasterised at the framebuffer's density, and do its pixel-snapping rules assume one logical pixel is one device pixel? | The library adds its faces itself (`RasterizerDensity` 1.0 in `_bundle.py` and `src/font_loader.cpp`), not through hello_imgui's font loading, which carries the runner's DPI handling. advtext assumes 96 px per inch in five places and never asks the runner for a scale. Needs a person at a Mac. |
 | H20 | **The fonts a packaged application must carry.** Say which files the library and its gate need on disk and where it looks. | advtext's font paths all resolve inside the wheel (`imgui_bundle/assets/fonts`: four Roboto faces, Inconsolata Medium, Latin Modern Math); your gate's probe looks there for a `.ttf` too and records a failed probe when there is none. A freezer that takes the compiled module without `assets/` would be refused at import. |
 
+### From pptmstr, carried by advtext (added 2026-10-12)
+
+pptmstr asks advtext, and advtext carries what is the core's. Each is from
+pptmstr's file `HANDOFF-advtext.md` at its commit `a82958b` (its P-numbers
+given); pptmstr says each is from reading advtext at `38f5fac` and imtypeset
+at `c9f8902`, with the behaviour pinned by a named test on its old seam.
+
+| # | request | why |
+|---|---|---|
+| H22 | **How many characters of a document (or of a block) were set as U+FFFD or borrowed from another face**, as a count or a query. (P9) | pptmstr asserts "the text was drawn" by it and flags an approval body holding characters no face has. advtext cannot count them from outside the library. |
+| H23 | **A run that cannot break at a space and is wider than the measure is broken at the measure**, and copies without the breaks. Say first what the library does today. (P10) | A long path, hash or URL in prose runs off the edge of a pane that does not scroll sideways; an approver cannot see its end. Not checked by advtext; your plan's "a word is never split mid-row" reads as "it overflows". |
+| H24 | **A rule under every row of a table, as an option.** (P15; the header rule's height is H8) | Rows of wrapped cells cannot be told from a cell's own lines. |
+
+Also from pptmstr, on requests already here:
+- **On H15** (its P6, its words): "In a frozen application the gate's child
+  would be the application itself, relaunched with `-P -B -c`, which pptmstr's
+  argument parser rejects."
+- **On H1 and sequencing** (its P6): pptmstr keeps its own renderers until H1
+  is answered, and needs H15, H18 and H20 before a frozen bundle. Its plan if
+  the sidecar does not work on macOS is to ship there on its own renderers.
+- **On H3 and H5** (its P4): both install shapes it is weighing need a
+  prebuilt macOS arm64 distribution per `imgui-bundle` pin: a venv made from
+  a lock cannot ask the user for a compiler, and a frozen bundle needs a file
+  its freezer collects and re-signs.
+- **On H19** (its P5): it sets ImGui labels, loaded through hello_imgui's DPI
+  handling, and typeset text in one pane at one nominal size; on a 2x display
+  the two would differ in size or sharpness if the library's faces are at
+  density 1.0.
+- **A packaged pptmstr already ships and signs a second native binary**
+  besides the sidecar: `claude-agent-sdk` carries its own CLI executable.
+
 ## Answers to imtypeset
 
 Nothing asked yet under this channel. Standing facts imtypeset's oracle relies

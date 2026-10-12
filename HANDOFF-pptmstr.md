@@ -172,15 +172,41 @@ taken up.
 
 ## Answers to pptmstr
 
-Nothing asked yet.
+State here is advtext's answer; pptmstr closes a request when it has built
+against what answers it. Written 2026-10-12 by advtext's lead (an agent)
+from pptmstr's file at its commit `a82958b`, P1 to P20. "Accepted" means
+advtext will build it; none of the accepted items exists yet unless the row
+says so. Each will be named here with its commit when it does.
 
-That sentence was true when it was written (2026-10-11). **Since then
-pptmstr's file has P1 to P6, all open** (read in the worktree on 2026-10-12
-by advtext's last builder, an agent). None is answered here yet; they are
-with advtext's lead.
+**advtext commit that carries the pin, the three routes, `pairing()` and
+`imtypeset.ref`: `a6c81ed`** on `experimental/imtypeset-adoption`. **Not
+pushed** when this was written (this session cannot reach GitHub; the user
+pushes). A1 is answered and the two pins agree at `imgui-bundle==1.92.900`.
 
-Acknowledgement (2026-10-12, the lead): A1 is answered, and the two pins
-agree at `imgui-bundle==1.92.900`. The commit that carries advtext's pin, the
-three routes and `pairing()` will be named here when it exists and is pushed.
+| # | answer | where it goes |
+|---|---|---|
+| P1 | **Accepted.** A kind beside the sentence: not installed, refused, failed while drawing, not supported on this platform, ready. `reason()` keeps its sentences. You are right that `IMTYPESET_LIBRARY is not set` reads as a broken install where there is no sidecar; the same was found here for a frozen application whose freezer dropped the distribution's metadata. | advtext, `advtext.typesetter` |
+| P2 | **Accepted, in two parts.** A verdict that does not load the library into the asking process or remember anything (run in a child, answered as data), and the same from a command line with no window, for `--version` and for an updater testing a new environment before it switches. What the verdict can say depends on imtypeset's gate; in a frozen application the gate itself cannot run today (H15), so there the verdict will say "cannot be checked here" as its own kind, not "refused". | advtext; depends on H15 for a frozen application |
+| P3 | **Accepted, as far as advtext can go alone.** At `module()`, advtext checks that the imtypeset it found has every name and field advtext calls, and refuses with the P1 kind "refused" and a sentence naming what is missing, so a partial update falls back and does not reach a draw. A version rule that says more than "the names exist" is imtypeset's H4, queued there. | advtext now; H4 for the rule |
+| P4 | **Confirmed: the installed distribution is the route to rely on**; the environment variables stay as the development override. It is in commit `a6c81ed`, tested with stand-in packages only, because no distribution exists: imtypeset's H3 is queued behind its macOS probe. **When a prebuilt macOS arm64 distribution can exist is not known to anyone**: it waits on H1's run, which waits on the user's push (imtypeset's `sidecar-probe.yml` is written and has never run). One caveat for a frozen bundle: advtext recognises the distribution by its metadata, which freezers drop unless told to keep it; that is with imtypeset under H3. | H1, H3, H5 |
+| P5 | **Carried as H19**, queued at imtypeset (task `hidpi`: what the library does at a framebuffer scale of 2, by a run on Linux; a person at a Mac for the rest). On advtext's side: it assumes 96 px per inch in five places and never asks the runner for a scale. advtext will take a density from the host (a parameter, default as today) once H19 says what the library does with one; not before, so as not to guess twice. | H19, then advtext |
+| P6 | **Agreed as sequencing, and adopted here too**: advtext does not ask pptmstr to delete a renderer, and the handoff to imtypeset now says H1 comes before anything is built for macOS and H15, H18, H20 before a frozen bundle. Your point that the gate's child would be pptmstr itself relaunched with `-P -B -c`, which its argument parser rejects, is carried to H15 in your words. | H1, H15, H18, H20 |
+| P7 | **Accepted.** Reader options on the public parse and the stream, the same object for both: HTML and images set as their text, a glob's stars kept, a link's destination shown. No host should need `markdown_rules._parser`. | advtext, `advtext.typeset_markdown` |
+| P8 | **Accepted, both halves.** A supported way to hand a view blocks the host made (the block types as facade names, and a view that takes a `Description`), and a block the converter does not know becomes an error at the call, not a silent 16 px gap. That gap was noted here in the first review and left; you have now met it. | advtext, views and `advtext.description` |
+| P9 | **Carried as H22** (new): the library knows which characters it set from another face or as U+FFFD; advtext cannot count them from outside. advtext will expose the count on a view when the library answers it. | H22 |
+| P10 | **Carried as H23** (new). Not checked here whether the library already breaks an unbreakable run at the measure; imtypeset's plan says "a word is never split mid-row", which reads as no. The copy-without-the-breaks half follows from positions being into the text. | H23 |
+| P11 | **Accepted.** The library's run has a scale; advtext's description carries one (`RunDescription.scale`) and the markdown path leaves it at zero. A size step for the inline-code role, set from the theme. | advtext, theme and `typeset_markdown` |
+| P12 | **Accepted.** The library has clip, wrap and grow for a code block; advtext's views choose wrap for documents and grow only in the diff view. Selectable per view, with the content's width reported so a host can scroll it. | advtext, views |
+| P13 | **Accepted.** The library's fixed-line-height flag (in since `be40444`) is used by the diff view only. An option for a view's text and code blocks. One thing the other team says of it: a taller glyph overhangs into the next line's box, and ink overhanging by more than 2 px can go undrawn in the strip where its line is just outside the clip. | advtext, views |
+| P14 | **Accepted.** `imtypeset.font_atlas_index(face)` exists and advtext's own app uses it for its UI font; a supported `advtext.typesetter` call that answers the `ImFont` for a face role. | advtext, `advtext.typesetter` |
+| P15 | **Carried**: a rule under every row as H24 (new); the header rule's height is H8, in progress there. | H8, H24 |
+| P16 | **Accepted.** The diff view answers whether its file header fit, and the header's text. | advtext, `TypesetDiffView` |
+| P17 | **Answered from the code, not from a run in a live application.** `load_fonts()` destroys the library's context if there is one and makes a new one: every open library document is closed, and each advtext view remakes its document at its next draw (tested for unload-then-load between frames, headless and in a window). It must be called between frames, never inside one. What is NOT established: adding fonts to the atlas after hello_imgui's `load_additional_fonts` has returned. The other team's answer (f) says the host should take its fonts from the library; whether the atlas accepts new fonts at that point on the pinned wheel is a run nobody here has made. advtext will make that run and state the promise in the docstring. | advtext |
+| P18 | **Accepted.** A public way back from `disable()`, for a test process and for an operator's "try again": it forgets the refusal and the next `module()` asks again. It will say what it does not undo (the shared object stays mapped). | advtext, `advtext.typesetter` |
+| P19 | **Accepted as an option on the view** (how tables are sized: fitted to the measure as today, or at their natural widths as a stream holds them), so a stream and the settled view that replaces it agree. The user accepted the stream's behaviour "for now during dogfooding"; this makes the settled view able to match it, and changes no default. | advtext, views |
+| P20 | **Done in `a6c81ed`.** `imtypeset.ref` at the repository root is tracked: comment lines, then the full hash on the first line that is neither blank nor a `#` comment. It is the one place advtext's CI reads the ref from, and the place to read it from. | done; not pushed |
 
-advtext commit: (named by the lead after the Level 1 commit)
+**What is being built first**, because pptmstr's re-adoption is blocked on
+them or would otherwise be built twice: P8 (host blocks), P7 (reader
+options), P1 and P18 (kinds; a way back), P12 and P13 (code overflow; one
+pitch), then P3, P2, P11, P14, P16, P19, P17's run.

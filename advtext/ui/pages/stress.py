@@ -13,24 +13,45 @@ every frame.
 - **length** -- the document is `demo/sample.md` once, five times or twenty
   times over. Longer documents are what culling is for: a pane shows the same
   screenful whatever the length.
-- **all streaming** -- each pane becomes a `StreamView` whose document arrives
-  a few characters at a time and starts again when it is finished, so there is
-  always a block still being written in every pane. Otherwise each pane is a
-  `BareView` over a finished document.
+- **all streaming** -- each pane becomes an
+  `advtext.ui.typeset_stream_view.TypesetStreamView` over its own
+  `advtext.typeset_markdown.MarkdownStream`, read ragged throughout, whose
+  document arrives a few characters at a time and starts again when it is
+  finished, so there is always a block still being written in every pane.
+  Otherwise each pane is an `advtext.ui.typeset_view.TypesetView` over one
+  shared `parse_markdown` of the text.
 - **select all in every pane** -- every pane draws a whole-document selection.
-  A selection belongs to one view at a time (`BareView.owns_selection`), so
-  the page selects each pane again just before drawing it.
+  A selection belongs to one view at a time (`owns_selection`), so the page
+  selects each pane again just before drawing it.
+
+## When the library is not drawing
+
+There is no other renderer. While `advtext.typesetter.ready()` is false the
+page draws ONE wrapped line and nothing else
+(`advtext.ui.pages.typeset.say_why_not`). A `Stress` holds the controls'
+values from the start and makes no pane until its first `configure`, which the
+first frame the library can draw calls: a pane is a view, and a view is a
+document in the library.
+
+A call that raises `TypesetUnavailable` ends that frame's drawing; the page
+keeps the sentence and from the next frame on draws the one line, for good.
+The exception does not leave `draw`. Any other exception is a bug and is not
+caught. The page asks `ready()` and never `typesetter.module()`
+(`advtext/ui/pages/typeset.py` has why).
 
 ## The readout, and exactly what is in it
 
-Timed with `time.perf_counter` around two calls per pane per frame:
+Timed with `time.perf_counter` around two calls per pane per frame. The
+library lays text out inside its draw call, so a host cannot time "layout"
+apart from "draw" and the page does not pretend to:
 
-- **layout** is `view.layout_for(width)`, and for a streaming pane the
-  `view.sync()` before it, which is where what arrived is parsed. On a frame
-  where nothing changed this is a cache hit and costs microseconds.
-- **draw** is `view.draw(...)` after that: culling to the pane's window,
-  building and submitting the draw-list calls, the selection highlight, hit
-  testing and the copy shortcut.
+- **parse and edit** (`Pane.sync`) is `view.sync()`: for a streaming pane the
+  parse, the description and the one edit handed to the library; for a
+  finished pane nothing is called and it is the cost of two readings of the
+  timer.
+- **layout and draw** (`Pane.draw`) is `view.draw(...)` after that: the
+  library's layout of whatever in the window is not yet laid out, its draw,
+  the selection, the hit test.
 
 Each is shown as a **rolling median** over the last `WINDOW` frames, per pane
 and summed over panes. A median, so one slow frame -- a first layout, a
@@ -49,11 +70,11 @@ company):
   the panes share the window, so more panes means a narrower measure in each
   (`pane measure`), and a narrower measure is more lines.
 - **per piece of text** is, for each frame in which a streaming pane took
-  text, that pane's layout and draw over the number of pieces it took. A
-  frame is not a piece: at 40 pieces a second and 60 frames a second a pane
-  takes a piece on two frames of three, and a frame that runs long takes
-  more pieces at once, so cost per frame rises with frame time while cost
-  per piece falls. Both are shown, with the pieces a frame.
+  text, that pane's two times over the number of pieces it took. A frame is
+  not a piece: at 40 pieces a second and 60 frames a second a pane takes a
+  piece on two frames of three, and a frame that runs long takes more pieces
+  at once, so cost per frame rises with frame time while cost per piece
+  falls. Both are shown, with the pieces a frame.
 
 **The streaming panes are staggered.** Each starts at another place in the
 document (pane `i` of sixteen starts `i` sixteenths in, fed in one go before
@@ -64,15 +85,15 @@ same frame, and the page measured that one event once per pane.
 
 **Not included**: ImGui's own work on what was submitted (tessellation, the
 render, the buffer swap); the grid's child windows; this page's own readout;
-feeding the streams; and the second culling pass the page runs to count units,
-below. So the figure is the library's cost inside the frame and is less than
-the frame.
+feeding the streams; and the one call a pane a frame that reads the library's
+counters, below. So the figure is the library's cost inside the frame and is
+less than the frame.
 
-- **glyphs** -- `DrawStats.glyphs`, the glyphs submitted this frame, all panes.
-- **units drawn / culled** -- a document is laid out as units, one per block
-  or per piece of a long block. Drawn is how many met the pane's window this
-  frame; culled is the rest. Counted by asking the layout again
-  (`UnitLayout.visible_units`) after the draw and outside the timing.
+- **vertices** -- what each pane's draw added to its draw list this frame,
+  all panes (the library counts no glyphs).
+- **blocks drawn / not drawn** -- the growth of the library's own
+  `blocks_drawn` counter over the frame, against the blocks in the document.
+  Read from `view.stats` after the draw and outside the timing.
 
 ## The reference line
 
@@ -83,26 +104,24 @@ met, and it is not this page's to say**: the number here is from this machine,
 this renderer and this window, and 1.7 ms is another project's line for another
 workload.
 
-## Caches are per view, and that is in the numbers
+## What is shared between panes, and that is in the numbers
 
-Each `BareView` (and so each `StreamView`) owns its `LayoutCache` and its
-`UnitCache`; nothing in the library shares them between views. Sixteen panes
-over the same text therefore lay it out sixteen times, and the first frame after
-a change of pane count, length or width costs sixteen cold layouts -- seen as a
-jump in the layout figure that the median then forgets. The steady figure is
-unaffected: an unchanged document is a hit in its own view's cache. What *is*
-shared is below the views: font metrics and the glyph measure, which are
-process-wide, and the parsed `Document`, which this page builds once per length
-and hands to every finished pane, since a `Document` is immutable. Streaming
-panes each parse their own.
+Each pane owns one `imtypeset.Document`; nothing of a layout is shared between
+panes. Sixteen panes over the same text therefore lay it out sixteen times,
+and the first frame after a change of pane count, length or width costs
+sixteen cold layouts -- seen as a jump that the median then forgets. What *is*
+shared is the parse of a finished document, which this page makes once per
+length and hands to every finished pane. Streaming panes each parse their own.
 
 ## What has been run
 
-`tests/test_page_stress.py` checks the arithmetic and that the counters count
-what they say, in frames of an ImGui context with no backend, and runs the page
-in a real window at 1, 4 and 16 panes. Those window figures come from a
-software rasteriser on a virtual display and are labelled so wherever they are
-written down.
+`tests/test_page_stress.py` checks the arithmetic and, over a stand-in for the
+views, that the panes follow the controls, with no library; that the page is
+one line without the library; and, in children that load the library, that
+the counters count what they say in frames of an ImGui context with no
+backend, and the page in a real window at 1, 4 and 16 panes, finished and
+streaming. Those window figures come from a software rasteriser on a virtual
+display and are labelled so wherever they are written down.
 
 Options (`--tab stress:...`): an integer is the number of panes; `streaming`,
 `selected`, `x5` and `x20` are the toggles.
@@ -119,18 +138,18 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
-from advtext.backends.imgui_draw import DARK_PALETTE, DrawStats
-from advtext.markdown import Document, build_document
-from advtext.pack import CharMeasure
-from advtext.stream import StreamDocument
-from advtext.style import MetricsResolver, Theme, fontlib_metrics
-from advtext.ui.bare_view import MIN_WIDTH_PX, BareView
+from advtext import typesetter
+from advtext.typeset_markdown import MarkdownDocument, MarkdownStream, parse_markdown
+from advtext.ui.ownership import MIN_WIDTH_PX
 from advtext.ui.pages import PageContext, PageSpec, caption, demo_text
-from advtext.ui.stream_view import StreamView
-from advtext.units import DEFAULT_PX_PER_INCH, sp_from_px
+from advtext.ui.pages.stream import ragged
+from advtext.ui.pages.typeset import say_why_not, why_not
+from advtext.ui.palette import DARK_PALETTE
+from advtext.ui.typeset_stream_view import TypesetStreamView
+from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
-    from advtext.backends.imgui_draw import FaceFont
+    from advtext.theme import Theme
 
 __all__ = [
     "LENGTHS",
@@ -145,6 +164,7 @@ __all__ = [
     "grid_shape",
     "readouts",
     "repeated",
+    "report",
 ]
 
 MAX_PANES: Final = 16
@@ -232,40 +252,48 @@ class Pane:
     One pane: a view, the stream behind it if it has one, and what its frames cost.
     """
 
-    view: BareView
-    stream: StreamDocument | None = None
+    view: TypesetView
+    """A `TypesetView`; a `TypesetStreamView` when streaming."""
+    stream: MarkdownStream | None = None
+    """The stream behind a streaming pane."""
     pieces: list[str] = field(default_factory=list)
     fed: int = 0
     laps: int = 0
     """How many times a streaming pane has finished its document and started it again."""
     took: int = 0
     """How many pieces the last `Stress.feed` gave this pane."""
-    layout: Rolling = field(default_factory=Rolling)
+    sync: Rolling = field(default_factory=Rolling)
+    """`view.sync()`: the parse, the description and the edit. Nothing, for a finished pane."""
     draw: Rolling = field(default_factory=Rolling)
+    """`view.draw(...)`: the library's layout of what the window shows, and the draw."""
     per_piece: Rolling = field(default_factory=Rolling)
-    """Layout plus draw over the pieces taken, for the frames in which any were."""
+    """The two times together over the pieces taken, for the frames in which any were."""
     taken: deque[int] = field(default_factory=lambda: deque(maxlen=WINDOW))
     """Pieces taken on each of the last `WINDOW` frames."""
     width_px: float = 0.0
-    """The measure this pane was last laid out to, in pixels."""
-    glyphs: int = 0
-    units_total: int = 0
-    units_drawn: int = 0
+    """The measure this pane was last drawn to, in pixels."""
+    vertices: int = 0
+    """Vertices the pane's last draw added to its draw list."""
+    blocks_total: int = 0
+    """Blocks of the document, as the library counted them at the last draw."""
+    blocks_drawn: int = 0
+    """Blocks the library drew this frame: the growth of its own counter."""
     _owed: float = 0.0
+    _drawn_before: int = 0
 
     @property
-    def units_culled(self) -> int:
-        return self.units_total - self.units_drawn
+    def blocks_not_drawn(self) -> int:
+        return self.blocks_total - self.blocks_drawn
 
-    def sample(self, layout_seconds: float, draw_seconds: float) -> None:
+    def sample(self, sync_seconds: float, draw_seconds: float) -> None:
         """
         One frame's two times, and -- if the pane took text this frame -- their sum per piece.
         """
-        self.layout.add(layout_seconds)
+        self.sync.add(sync_seconds)
         self.draw.add(draw_seconds)
         self.taken.append(self.took)
         if self.took > 0:
-            self.per_piece.add((layout_seconds + draw_seconds) / self.took)
+            self.per_piece.add((sync_seconds + draw_seconds) / self.took)
 
 
 def _pieces(source: str) -> list[str]:
@@ -281,13 +309,15 @@ class Stress:
     The page's state and its per-frame work, with nothing that needs a window in the logic.
 
     `configure` rebuilds the panes when a control changes; `feed` moves the
-    streaming panes' clocks; `frame` is one pane's timed layout and draw.
+    streaming panes' clocks; `frame` is one pane's timed sync and draw.
+
+    Made with the controls' values and **no panes**: a pane is a view and a
+    view needs the library, so the first `configure` makes them and raises
+    `TypesetUnavailable` when the library is not in use. The values, the text
+    and the shared parse need none.
     """
 
     theme: Theme
-    measure: CharMeasure
-    metrics: MetricsResolver = fontlib_metrics
-    px_per_inch: float = DEFAULT_PX_PER_INCH
     source: str | None = None
     """The text of one copy. `demo/sample.md` when `None`."""
     timer: Callable[[], float] = time.perf_counter
@@ -299,14 +329,22 @@ class Stress:
 
     panes: list[Pane] = field(default_factory=list, init=False)
     _built: tuple[int, bool] | None = field(default=None, init=False)
-    _documents: dict[int, Document] = field(default_factory=dict, init=False)
+    _documents: dict[int, MarkdownDocument] = field(default_factory=dict, init=False)
     _texts: dict[int, str] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
         if self.source is None:
             found = demo_text("sample.md")
             self.source = FALLBACK if found is None else found
-        self.configure()
+        self._clamp()
+
+    def _clamp(self) -> None:
+        """
+        The pane count into 1 to `MAX_PANES`; a length the control does not offer to the first.
+        """
+        self.count = max(1, min(MAX_PANES, self.count))
+        if self.length not in LENGTHS:
+            self.length = LENGTHS[0]
 
     # -- material ------------------------------------------------------
 
@@ -319,16 +357,17 @@ class Stress:
             self._texts[length] = repeated(self.source, length)
         return self._texts[length]
 
-    def document(self, length: int) -> Document:
+    def document(self, length: int) -> MarkdownDocument:
         """
         The parsed document at `length` copies, built once and shared by every finished pane.
 
-        Shared because a `Document` is immutable and parsing twenty copies
-        sixteen times over is a second of nothing to look at. The views do not
-        share anything derived from it: each lays it out in its own caches.
+        Shared because it is immutable and parsing twenty copies sixteen
+        times over is a second of nothing to look at. The views do not share
+        anything derived from it: each has its own document in the library.
+        Read with no math and reference definitions on. Needs no library.
         """
         if length not in self._documents:
-            self._documents[length] = build_document(self.text(length), self.theme, self.metrics)
+            self._documents[length] = parse_markdown(self.text(length), self.theme)
         return self._documents[length]
 
     # -- panes ---------------------------------------------------------
@@ -339,19 +378,28 @@ class Stress:
 
         A change of length or of streaming rebuilds every pane, since every
         pane's document is different. A change of count alone keeps the panes
-        there are -- with their warm caches and their medians -- and adds or
-        drops at the end.
+        there are -- with their documents in the library and their medians --
+        and adds or drops at the end. Raises `TypesetUnavailable` when a view
+        cannot be made or let go of.
         """
-        self.count = max(1, min(MAX_PANES, self.count))
-        if self.length not in LENGTHS:
-            self.length = LENGTHS[0]
+        self._clamp()
         kind = (self.length, self.streaming)
         if kind != self._built:
+            self._drop(self.panes)
             self.panes = []
             self._built = kind
+        self._drop(self.panes[self.count :])
         del self.panes[self.count :]
         while len(self.panes) < self.count:
             self.panes.append(self._pane(len(self.panes)))
+
+    @staticmethod
+    def _drop(panes: list[Pane]) -> None:
+        """
+        Let go of what each pane that is leaving holds in the library.
+        """
+        for pane in panes:
+            pane.view.close()
 
     def _pane(self, index: int = 0, *, restart: bool = False) -> Pane:
         """
@@ -364,19 +412,14 @@ class Stress:
         starts at the beginning: it is out of step with the rest already.
         """
         if not self.streaming:
-            view = BareView(
-                document=self.document(self.length),
-                theme=self.theme,
-                measure=self.measure,
-                px_per_inch=self.px_per_inch,
+            return Pane(
+                view=TypesetView(self.document(self.length), theme=self.theme, palette=DARK_PALETTE)
             )
-            return Pane(view=view)
-        stream = StreamDocument(self.theme, self.metrics)
         pieces = _pieces(self.text(self.length))
+        # Ragged throughout: a block is read the same before and after it commits.
+        stream = MarkdownStream(ragged(self.theme))
         pane = Pane(
-            view=StreamView(stream, self.measure, px_per_inch=self.px_per_inch),
-            stream=stream,
-            pieces=pieces,
+            view=TypesetStreamView(stream, palette=DARK_PALETTE), stream=stream, pieces=pieces
         )
         if not restart:
             pane.fed = index * len(pieces) // MAX_PANES
@@ -392,9 +435,10 @@ class Stress:
         Give every streaming pane the pieces `seconds` allow. Returns how many, all panes.
 
         A pane that has had its whole document is started again from nothing
-        on the next call -- a new stream and a new view -- so that there is
-        always something still being written. That restart is a cold layout
-        and shows in the figures as one.
+        on the next call -- a new stream and a new view, the old view's
+        document given back to the library -- so that there is always
+        something still being written. That restart is a cold layout and shows
+        in the figures as one.
         """
         total = 0
         for index, pane in enumerate(self.panes):
@@ -403,8 +447,9 @@ class Stress:
             if pane.fed >= len(pane.pieces):
                 fresh = self._pane(index, restart=True)
                 fresh.laps = pane.laps + 1
-                fresh.layout, fresh.draw = pane.layout, pane.draw
+                fresh.sync, fresh.draw = pane.sync, pane.draw
                 fresh.per_piece, fresh.taken = pane.per_piece, pane.taken
+                self._drop([pane])
                 self.panes[index] = pane = fresh
             assert pane.stream is not None
             pane._owed += max(0.0, seconds) * STREAM_TOKENS_PER_SECOND
@@ -419,13 +464,14 @@ class Stress:
 
     # -- one pane, one frame -------------------------------------------
 
-    def frame(self, pane: Pane, fonts: FaceFont, imgui: Any) -> DrawStats:
+    def frame(self, pane: Pane, imgui: Any) -> bool:
         """
-        One pane's frame inside its child window: timed layout, timed draw, then the counts.
+        One pane's frame inside its child window: timed `sync`, timed `draw`, then the counts.
 
-        The layout is asked for first, at the width `draw` is about to choose,
-        so that `draw`'s own request for it is a hit and the two times do not
-        overlap.
+        The timer is read three times. Returns what `draw` did: whether
+        everything in view was set as asked. Raises `TypesetUnavailable`,
+        having drawn nothing, when the library cannot draw; nothing has been
+        sampled then.
         """
         view = pane.view
         if self.select_all:
@@ -433,38 +479,33 @@ class Stress:
             # selection passes to this pane for the length of its own draw.
             view.select_all()
         width_px = max(imgui.get_content_region_avail().x, MIN_WIDTH_PX)
+        buffer = imgui.get_window_draw_list().vtx_buffer
+        before = buffer.size()
 
         began = self.timer()
-        if isinstance(view, StreamView):
+        if isinstance(view, TypesetStreamView):
             view.sync()
-        layout = view.layout_for(sp_from_px(width_px, self.px_per_inch))
-        laid = self.timer()
-        stats = view.draw(fonts=fonts, palette=DARK_PALETTE, width_px=width_px)
+        synced = self.timer()
+        whole: bool = view.draw(palette=DARK_PALETTE, width_px=width_px)
         drawn = self.timer()
 
-        pane.sample(laid - began, drawn - laid)
+        pane.sample(synced - began, drawn - synced)
         pane.width_px = width_px
-        pane.glyphs = stats.glyphs
+        pane.vertices = buffer.size() - before
 
-        # Counted after the fact, from the same three numbers the view culled
-        # with. This is a second culling pass and it is not in the times above.
-        origin = view.origin
-        pane.units_total = len(layout.placed)
-        if origin is None:
-            pane.units_drawn = 0
-        else:
-            viewport = view.viewport_in(
-                origin[1], imgui.get_window_pos().y, imgui.get_window_size().y
-            )
-            pane.units_drawn = sum(1 for _ in layout.visible_units(viewport))
-        return stats
+        # One call into the library, after the draw and outside the timing.
+        stats = view.stats
+        pane.blocks_total = stats.blocks
+        pane.blocks_drawn = max(0, min(stats.blocks_drawn - pane._drawn_before, stats.blocks))
+        pane._drawn_before = stats.blocks_drawn
+        return whole
 
     # -- totals --------------------------------------------------------
 
     @property
-    def layout_ms(self) -> float:
-        """The sum over panes of each pane's median layout time."""
-        return sum(pane.layout.median_ms for pane in self.panes)
+    def sync_ms(self) -> float:
+        """The sum over panes of each pane's median `sync` time."""
+        return sum(pane.sync.median_ms for pane in self.panes)
 
     @property
     def draw_ms(self) -> float:
@@ -473,7 +514,7 @@ class Stress:
 
     @property
     def total_ms(self) -> float:
-        return self.layout_ms + self.draw_ms
+        return self.sync_ms + self.draw_ms
 
     @property
     def per_view_ms(self) -> float:
@@ -498,27 +539,28 @@ class Stress:
 
     @property
     def pane_px(self) -> float:
-        """The measure the panes were last laid out to: the first pane's, in pixels."""
+        """The measure the panes were last drawn to: the first pane's, in pixels."""
         return self.panes[0].width_px if self.panes else 0.0
 
     @property
-    def glyphs(self) -> int:
-        return sum(pane.glyphs for pane in self.panes)
+    def vertices(self) -> int:
+        """The vertices every pane's last draw added, summed."""
+        return sum(pane.vertices for pane in self.panes)
 
     @property
-    def units_drawn(self) -> int:
-        return sum(pane.units_drawn for pane in self.panes)
+    def blocks_drawn(self) -> int:
+        return sum(pane.blocks_drawn for pane in self.panes)
 
     @property
-    def units_culled(self) -> int:
-        return sum(pane.units_culled for pane in self.panes)
+    def blocks_not_drawn(self) -> int:
+        return sum(pane.blocks_not_drawn for pane in self.panes)
 
     def forget(self) -> None:
         """
         Empty every median, so the next figures are of the frames from now on.
         """
         for pane in self.panes:
-            pane.layout.clear()
+            pane.sync.clear()
             pane.draw.clear()
             pane.per_piece.clear()
             pane.taken.clear()
@@ -540,24 +582,27 @@ def readouts(stress: Stress) -> tuple[str, ...]:
         else f"per piece of text {per_piece:.2f} ms, at {stress.pieces_per_frame:.2f} "
         "pieces a view a frame"
     )
-    kind = "StreamView, text arriving" if stress.streaming else "BareView, finished"
+    kind = "TypesetStreamView, text arriving" if stress.streaming else "TypesetView, finished"
     return (
         f"{len(stress.panes)} panes ({kind})  ·  document x{stress.length}"
         f"  ·  median of the last {WINDOW} frames, summed over panes:"
-        f"  layout {stress.layout_ms:.2f} ms  +  draw {stress.draw_ms:.2f} ms"
-        f"  =  {total:.2f} ms",
+        f"  parse and edit {stress.sync_ms:.2f} ms"
+        f"  +  layout and draw {stress.draw_ms:.2f} ms  =  {total:.2f} ms",
         f"reference line {REFERENCE_MS:.1f} ms a frame (pptmstr's figure for a live block)"
         f"  ·  this total is {total / REFERENCE_MS:.2f} x that",
-        f"glyphs submitted {stress.glyphs}  ·  units drawn {stress.units_drawn}"
-        f", culled {stress.units_culled}",
-        "timed: the views' layout_for and draw calls.  not timed: ImGui's render, "
-        "the child windows, this readout.  each pane has its own layout caches.",
-        f"per view {per_view:.2f} ms a frame ({per_view / REFERENCE_MS:.2f} x the reference line)"
-        f"  ·  {piece}  ·  pane measure {stress.pane_px:.0f} px",
+        f"vertices submitted {stress.vertices}  ·  blocks drawn {stress.blocks_drawn}"
+        f", not drawn {stress.blocks_not_drawn}",
+        "timed: each view's sync (the parse, the description, the edit) and its draw "
+        "(the library's layout of what the window shows, and the draw).  not timed: "
+        "ImGui's render, the child windows, this readout.  each pane has its own "
+        "document in the library.",
+        f"per view {per_view:.2f} ms a frame ({per_view / REFERENCE_MS:.2f} x the "
+        f"reference line)  ·  {piece}  ·  pane measure {stress.pane_px:.0f} px",
         "the total rises with the pane count because every view is laid out and drawn "
         "and nothing is shared between views; per view is the figure to set beside "
         "another pane count, at another pane measure.  a frame is not a piece of text: "
-        "a longer frame takes more pieces.  streaming panes are staggered in place and in time.",
+        "a longer frame takes more pieces.  streaming panes are staggered in place and "
+        "in time.",
     )
 
 
@@ -568,18 +613,22 @@ def report(stress: Stress) -> str:
     samples = min((len(pane.draw.samples) for pane in stress.panes), default=0)
     return (
         f"panes={len(stress.panes)} streaming={int(stress.streaming)} length={stress.length} "
-        f"samples={samples} layout_ms={stress.layout_ms:.3f} draw_ms={stress.draw_ms:.3f} "
-        f"total_ms={stress.total_ms:.3f} glyphs={stress.glyphs} "
-        f"units_drawn={stress.units_drawn} units_culled={stress.units_culled} "
+        f"samples={samples} sync_ms={stress.sync_ms:.3f} draw_ms={stress.draw_ms:.3f} "
+        f"total_ms={stress.total_ms:.3f} vertices={stress.vertices} "
+        f"blocks_drawn={stress.blocks_drawn} blocks_not_drawn={stress.blocks_not_drawn} "
         f"per_view_ms={stress.per_view_ms:.3f} "
         f"per_piece_ms={-1.0 if stress.per_piece_ms is None else stress.per_piece_ms:.3f} "
         f"pieces_per_frame={stress.pieces_per_frame:.3f} pane_px={stress.pane_px:.0f}"
     )
 
 
+RENDERER_LINE: Final = "renderer: TypesetView / TypesetStreamView (imtypeset), one document a pane"
+"""The first caption while the library draws."""
+
+
 class StressPage:
     """
-    The page: a `Stress` and the frame that draws its grid.
+    The page: a `Stress` and the frame that draws its grid, or the one line that says why not.
     """
 
     def __init__(self, context: PageContext) -> None:
@@ -588,21 +637,83 @@ class StressPage:
         count = context.count_for(PAGE.name)
         self.stress = Stress(
             theme=context.theme,
-            measure=context.measure,
-            metrics=context.metrics,
-            px_per_inch=context.px_per_inch,
             count=4 if count is None else count,
             length=20 if "x20" in words else 5 if "x5" in words else 1,
             streaming="streaming" in words,
             select_all="selected" in words,
         )
+        """The controls' values from the start; its panes from the first frame that can draw."""
+        self.frames = 0
+        self.failed = ""
+        """What a `TypesetUnavailable` out of a frame said; empty until one was raised."""
+        self._released = False
+
+    @property
+    def reason(self) -> str:
+        """
+        Why imtypeset is not drawing this page; empty while it is.
+
+        What a frame raised, for good once one has; otherwise `why_not()`, read
+        at each asking.
+        """
+        return self.failed or why_not()
+
+    @property
+    def renderer(self) -> str:
+        """`"TypesetView"` while the library draws the panes, `"none"` when nothing does."""
+        return "none" if self.reason else "TypesetView"
+
+    def report(self) -> str:
+        """
+        `report` of this page's panes, with the frames it has drawn and the renderer.
+        """
+        return f"frames={self.frames} {report(self.stress)} renderer={self.renderer}"
 
     def draw(self) -> None:
         from imgui_bundle import imgui
 
+        self.frames += 1
+        reason = self.reason
+        if reason:
+            self._release()
+            say_why_not(reason)
+            return
+        self._released = False
+        try:
+            self._frame(imgui)
+        except TypesetUnavailable as exc:
+            # The library was switched off under this frame. What it had drawn
+            # of the frame stays; from the next one on the page is the one line.
+            self.failed = str(exc) or typesetter.reason() or "imtypeset raised TypesetUnavailable"
+            self._release()
+
+    def _release(self) -> None:
+        """
+        Give back what the page's views hold in the library, once, when the page gives up.
+
+        Called when a frame or a call raised `TypesetUnavailable` and on the
+        first frame that finds the library not drawing. The views are closed
+        and KEPT, with everything else the page knows: `report()` reads them,
+        and a closed view makes its document again if it is ever drawn. Until
+        2026-10-11 only the Diff page let go of anything.
+        """
+        if self._released:
+            return
+        self._released = True
+        for pane in self.stress.panes:
+            pane.view.close()
+
+    def _frame(self, imgui: Any) -> None:
+        """
+        The controls, the readouts and the grid. `TypesetUnavailable` may leave it.
+
+        Every `begin_child` here is ended on the way out, so the exception
+        leaves ImGui's stack as it found it.
+        """
         stress = self.stress
         self._controls(imgui)
         stress.configure()
+        caption(RENDERER_LINE)
         for line in readouts(stress):
             caption(line)
         imgui.separator()
@@ -622,9 +733,11 @@ class StressPage:
                 imgui.ChildFlags_.borders.value,
                 imgui.WindowFlags_.always_vertical_scrollbar.value,
             )
-            pane.view.debug = self.context.debug
-            stress.frame(pane, self.context.fonts, imgui)
-            imgui.end_child()
+            try:
+                pane.view.debug = self.context.debug
+                stress.frame(pane, imgui)
+            finally:
+                imgui.end_child()
 
     def _controls(self, imgui: Any) -> None:
         stress = self.stress

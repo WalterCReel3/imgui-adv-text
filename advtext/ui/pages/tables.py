@@ -1,13 +1,54 @@
 r"""
 The Tables page: drag a column's edge and its cells are broken again, live.
 
-A document with five tables in it is drawn by one `advtext.ui.bare_view.BareView`.
-Every column of every table has a handle on its right edge. Dragging one sets
-the table's column widths through `advtext.ui.with_columns`, which is the hook
-the library has for exactly this, and the view lays out again. Above the pane
-are readouts: each column's width against its natural width and its
-longest-word floor, and how many of the document's units the last drag
-re-shipped.
+A document with five tables in it is drawn by one view. Every column of every
+table has a handle on its right edge. Dragging one states the table's column
+widths, and the table is set again at them. Above the pane are readouts: each
+column's width against its natural width and its longest-word floor, and what
+the last drag cost.
+
+## What draws: the imtypeset library, or nothing
+
+Chosen once, when the page is built, as `advtext.ui.pages.typeset` chooses
+(`why_not`): with `advtext.typesetter.ready()` the page is a `TypesetBoard`
+over an `advtext.ui.typeset_view.TypesetView`, where a table is a block of
+the library's document (imtypeset commit `be40444`) and a drag is
+`TypesetView.set_table_columns`. Otherwise `TablesPage.board` is `None` and
+the page draws one wrapped line saying why (`pages.typeset.say_why_not`) and
+nothing else. A view call that raises `TypesetUnavailable` anywhere in the
+frame (the controls and the readouts ask the view too) has drawn no text: the
+page drops the board, keeps the sentence, and is that one line from the next
+frame on. Any other exception is a bug and leaves `draw`.
+
+**Nothing of the old core's views or layout is imported here**, at import or
+later. `advtext.primitives` is: scaled points are the board's unit.
+
+## Where the numbers come from
+
+- A column's natural width and its floor are the library's
+  (`TypesetView.table_column`: `natural`, `floor`), its width and the
+  handles' places are the table's geometry as laid out (`table_geometry`,
+  `table_column`, `table_row`), all asked once after a layout and kept until
+  the document's height, the measure or the chosen widths change.
+- **What a drag costs** is read from the library's own counters
+  (`imtypeset.DocumentStats`: `TableRowsSet`, `TableCellsMeasured`): the third
+  readout line is how many table rows the last drag's layout set again and
+  how many cells it measured again. Counts.
+- **A stated width is used as given by the library**, so squeezing chosen
+  widths into a measure that became too narrow is this page's (`fitted`).
+- **The handles are placed from the layout as it stands before the draw**
+  (`TypesetView.layout_for`, then the geometry). The library lays a block out
+  when the window first reaches it, so on a frame where blocks above a table
+  are laid out for the first time (the first frame, a scroll into new text) a
+  handle can be where the table was a frame ago; the next frame has it right.
+- The debug overlay is the library's own (line boxes); `report()` has no
+  glyph or missing-glyph count (the library reports neither); a table is
+  never split into pieces of rows.
+- **A defect of the library at `be40444` that shows**
+  (`../imtypeset/docs/advtext-swap-status.md`): the rule under a header takes
+  a whole line of height. (Another is gone at `7a7bc36`: a point on the blank
+  part of a cell answered the next cell. This page never read it: the focus
+  is the table under the pointer, and the block of a hit was right.)
 
 ## What a drag does
 
@@ -21,67 +62,46 @@ re-shipped.
 - **Reset to automatic** drops every width that was chosen and the library
   apportions the columns again.
 
-Widths are clamped here, in `dragged` and `fitted`, before `with_columns` is
-called: it raises on a width under one scaled point or one that is not finite,
-and a mouse can ask for either. A table that was dragged keeps the widths that
-were chosen while they fit; when the measure becomes too narrow for them they
-are squeezed toward the floors for as long as it stays narrow (`fitted`), and
-come back when it widens.
+Widths are clamped here, in `dragged` and `fitted`, before
+`set_table_columns` is called: a mouse can ask for a width under one scaled
+point or one that is not finite. A table that was dragged keeps the widths
+that were chosen while they fit; when the measure becomes too narrow for them
+they are squeezed toward the floors for as long as it stays narrow (`fitted`),
+and come back when it widens.
 
 ## How the drag coexists with the view's selection drag
 
-`BareView` submits no item while idle and begins a selection on a left press
-over its rectangle unless *an item of the host's is under the mouse*
-(`advtext.ui.bare_view`, "Where the mouse goes"). So each handle is an
+The view begins a selection on a left press over its rectangle unless *an
+item of the host's is under the mouse*. So each handle is an
 `invisible_button` this page submits **before** `view.draw()`, in the frame's
-own geometry: `view.layout_for(width)` for the layout the draw is about to
-use, `view.next_origin()` for where it is about to put it, and
-`advtext.ui.table_columns` for the edges.
+own geometry: `layout_for(width)` for the layout the draw is about to use,
+the cursor snapped to a whole pixel for where it is about to put it, and the
+table's geometry for the edges.
 
 - a press on a handle is the handle's: the handle is already ImGui's hovered
   item when the view judges the press, on the very frame the pointer arrives;
 - while the handle is held it is ImGui's active item, so the view's window is
   not "hovered" and the view begins nothing and follows no link;
 - a press anywhere else on the text begins a selection as it always does;
-- a selection made before a drag is carried across each relayout by the view
-  (`advtext.ui.units.carry_selection`), so it is still there afterwards.
+- a selection made before a drag is still there afterwards.
 
-The handles used to be submitted *after* the view, from the origin and layout
-of the frame before, because the view had no way to say where it was about to
-draw. That had two single-frame edges. One is gone: a press arriving on the
-same frame the pointer first reached a handle went to the view as a
-selection, since the handle did not exist yet when the view looked. The other
-is the view's and remains: on the frame the pointer *leaves* a handle, ImGui
-still reports the handle as the hovered item (its hovered ID is this frame's
-or, until something is hovered, the last frame's), so a link is not hovered
-and a press would not select until the frame after. Both are pinned by
-`tests/test_page_tables.py`.
-
-A held handle is applied before the view lays out, from the mouse position
-and `next_origin()`, so the table follows the pointer on the frame it moves.
-
-## Where the numbers come from
-
-Everything is asked through public names: the longest-word floors are
-`advtext.ui.table_column_limits(...).floor`, and "re-shipped" is
-`UnitLayout.stats.built`, the layout's own account of the units it composed
-and shipped. (Both were roundabout before the library said them: floors by
-asking `table_columns` at a one-point measure, and re-shipping by comparing
-unit objects position by position.)
+A held handle is applied before the view draws, from the mouse position and
+that origin, so the table follows the pointer on the frame it moves.
 
 ## The readouts report change and cost, never quality
 
-A count of units re-shipped is a fact about what the caches did. Whether a
+A count of rows set again is a fact about what the library did. Whether a
 table reads well at the widths somebody dragged it to is what the page exists
 to let a person judge (`docs/visual-review.md`).
 
 ## What has been run
 
-`tests/test_page_tables.py`: the arithmetic on its own; the board with no
-ImGui; the page in frames of a real ImGui context with no backend, with mouse
-events queued (hover, press, move, release on a handle, and a press on text);
-and the real app in a window with the same gesture injected, reporting counts.
-Nobody has dragged a column with a hand.
+`tests/test_page_tables.py`: the arithmetic on its own; the page without the
+library (its one line, its launch options); with the library, the page in
+frames of a real ImGui context with no backend, with mouse events queued
+(hover, press, move, release on a handle, and a press on text); and the real
+app in a window with the same gesture injected, reporting counts. Nobody has
+dragged a column with a hand.
 
 Options (`--tab tables:...`): `floors` opens with every column of every table
 at its floor; an integer is the pane's measure in pixels.
@@ -91,31 +111,31 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
-from typing import Any, Final
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Final
 
-from advtext.backends.imgui_draw import DARK_PALETTE, DrawStats, rgba
-from advtext.markdown import Document, TableBlock, build_document
-from advtext.pack import CharMeasure
-from advtext.style import MetricsResolver, Theme, fontlib_metrics
-from advtext.ui import table_column_limits, table_columns, table_natural_widths, with_columns
-from advtext.ui.bare_view import MIN_WIDTH_PX, BareView
+from advtext.primitives import DEFAULT_PX_PER_INCH, UNITY, Scaled, px_from_sp, sp_from_px
+from advtext.ui.ownership import MIN_WIDTH_PX
 from advtext.ui.pages import PageContext, PageSpec, caption, debug_toggle, demo_text
-from advtext.ui.units import UnitLayout
-from advtext.units import DEFAULT_PX_PER_INCH, UNITY, Scaled, px_from_sp, sp_from_px
+from advtext.ui.pages.typeset import say_why_not, why_not
+from advtext.ui.palette import DARK_PALETTE, rgba
+from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+
+if TYPE_CHECKING:  # pragma: no cover - imported for types only
+    from advtext.theme import Theme
 
 __all__ = [
     "DEFAULT_PANE_PX",
     "FALLBACK",
     "GRIP_PX",
     "PAGE",
-    "Board",
     "Grip",
     "TablesPage",
+    "TypesetBoard",
     "dragged",
     "fitted",
-    "floors_of",
     "readouts",
+    "typeset_report",
 ]
 
 DEFAULT_PANE_PX: Final = 720.0
@@ -147,6 +167,14 @@ The line drawn on a handle that is hovered or held. This page's chrome, not a pa
 
 FLOORS_OPTION: Final = "floors"
 
+_ROUNDING_SP: Final = 8
+"""
+How far under its floor a width the library answered may be and still be "at the floor".
+
+In scaled points: 8 is about a ten-thousandth of a pixel. The library answers
+single-precision pixels (an edge near 700 px is good to about 6e-5 px).
+"""
+
 FALLBACK: Final = (
     "No `demo/` directory was found, so this is the only table.\n\n"
     "| Column | What dragging its edge does |\n"
@@ -161,18 +189,6 @@ FALLBACK: Final = (
 # ----------------------------------------------------------------------
 
 
-def floors_of(block: TableBlock, theme: Theme, measure: CharMeasure) -> tuple[Scaled, ...]:
-    """
-    Each column's longest unbreakable stretch, padding included: the narrowest it can be set.
-
-    `advtext.ui.table_column_limits(...).floor`: the widths `table_columns`
-    squeezes a too-wide table towards and never below, whatever widths the
-    block itself carries. Never under one scaled point, which is the least
-    `with_columns` takes.
-    """
-    return tuple(max(1, floor) for floor in table_column_limits(block, theme, measure).floor)
-
-
 def dragged(
     widths: Sequence[Scaled],
     floors: Sequence[Scaled],
@@ -185,7 +201,7 @@ def dragged(
 
     `x` is measured from the table's left edge, in scaled points, and may be
     anything a mouse can produce: negative, far past the pane, not finite.
-    What comes back is always a set of widths `with_columns` accepts.
+    What comes back is always whole widths at or above the floors.
 
     An edge between two columns moves the boundary: the two keep the width
     they had between them and neither goes under its floor. The last edge
@@ -221,9 +237,8 @@ def fitted(
 
     As given when they fit. Otherwise every column keeps its floor and what is
     left of `available` is shared in proportion to how far each was above its
-    floor, the last column taking the rounding remainder so the sum is exact
-    -- the rule `advtext.ui` applies to its own default, restated because that
-    function is private. When the floors alone exceed `available` they are
+    floor, the last column taking the rounding remainder so the sum is
+    exact. When the floors alone exceed `available` they are
     what comes back and the table is wider than the measure.
     """
     current = tuple(max(width, floor) for width, floor in zip(widths, floors, strict=True))
@@ -249,8 +264,9 @@ class Grip:
     """
     One handle: which table, which column's right edge, and where it is in the document.
 
-    `table` indexes `Document.blocks`. `x`, `top` and `bottom` are document
-    scaled points; `view.origin` plus these in pixels is where it is on screen.
+    `table` is the block's number in the view. `x`, `top` and `bottom` are
+    document scaled points; the view's origin plus these in pixels is where it
+    is on screen.
     """
 
     table: int
@@ -261,26 +277,33 @@ class Grip:
 
 
 @dataclass
-class Board:
+class TypesetBoard:
     """
-    A document with tables in it, the view that draws it, and the column widths chosen so far.
+    A document with tables in it over a `TypesetView`, and the column widths chosen so far.
 
     Everything the page does except the ImGui calls: `settle` is told the
     measure a frame is about to lay out at, `drag` and `reset` are the
     gestures, `grips` says where the handles are, `observe` counts what a
-    relayout re-shipped. None of it needs a window.
+    drag made the library set again. The tables are the imtypeset library's
+    blocks: a column's natural width and floor are
+    `TypesetView.table_column`'s, its width and the handles' places are the
+    table's geometry as laid out, and a drag is
+    `TypesetView.set_table_columns`. Everything is kept in scaled points at
+    the board's density (`dragged` and `fitted` are whole-number arithmetic);
+    a pixel the library answers is converted once.
+
+    **Nothing is known before the library has the document**, which is the
+    first `lay_out` (the page calls it each frame before the handles): until
+    then `columns`, `natural`, `floors` and `grips` are empty and a drag
+    moves nothing. Raises `TypesetUnavailable` as the view does.
     """
 
     theme: Theme
-    measure: CharMeasure
-    metrics: MetricsResolver = fontlib_metrics
     px_per_inch: float = DEFAULT_PX_PER_INCH
     text: str | None = None
     """The markdown to show in place of `demo/tables.md`. For a test, or a host's own."""
 
-    source: Document = field(init=False)
-    """The document as converted, every table automatic. Never changed."""
-    view: BareView = field(init=False)
+    view: TypesetView = field(init=False)
     tables: tuple[int, ...] = field(init=False)
     """Which of the document's blocks are tables, in order."""
     chosen: dict[int, tuple[Scaled, ...]] = field(default_factory=dict, init=False)
@@ -291,91 +314,121 @@ class Board:
     """The measure of the last `settle`, or `None` before the first."""
     followed: list[str] = field(default_factory=list, init=False)
     """Every link target clicked, in order."""
-    reshipped: int | None = field(default=None, init=False)
-    """How many units the latest drag's (or reset's) relayout shipped again; `None` before any."""
-    units: int = field(default=0, init=False)
-    """How many units that layout had."""
+    rows_set: int | None = field(default=None, init=False)
+    """How many table rows the latest drag's (or reset's) layout set again; `None` before any."""
+    cells_measured: int | None = field(default=None, init=False)
+    """How many cells that layout measured again. The library says none, for a drag."""
     relayouts: int = field(default=0, init=False)
-    """How many layouts drags and resets have caused."""
-    _floors: dict[int, tuple[Scaled, ...]] = field(default_factory=dict, init=False)
-    _natural: dict[int, tuple[Scaled, ...]] = field(default_factory=dict, init=False)
+    """How many times a drag or a reset has stated columns and a draw followed."""
+    _limits: dict[int, tuple[tuple[Scaled, ...], tuple[Scaled, ...]]] = field(
+        default_factory=dict, init=False
+    )
+    _lefts: dict[int, Scaled] = field(default_factory=dict, init=False)
     _automatic: dict[int, tuple[Scaled, tuple[Scaled, ...]]] = field(
         default_factory=dict, init=False
     )
-    _seen: UnitLayout | None = field(default=None, init=False)
-    _pending: bool = field(default=False, init=False)
+    _stated: set[int] = field(default_factory=set, init=False)
+    _laid: Scaled | None = field(default=None, init=False)
+    _epoch: int = field(default=0, init=False)
+    _grips: tuple[tuple[object, ...], tuple[Grip, ...]] | None = field(default=None, init=False)
+    _drawn: bool = field(default=False, init=False)
+    _pending: tuple[int, int] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         found = demo_text("tables.md") if self.text is None else self.text
-        self.source = build_document(FALLBACK if found is None else found, self.theme, self.metrics)
-        self.tables = tuple(
-            number
-            for number, block in enumerate(self.source.blocks)
-            if isinstance(block, TableBlock)
-        )
-        self.focus = self.tables[0] if self.tables else None
-        self.view = BareView(
-            self.source,
-            self.theme,
-            self.measure,
-            px_per_inch=self.px_per_inch,
+        self.view = TypesetView(
+            FALLBACK if found is None else found,
+            theme=self.theme,
+            palette=DARK_PALETTE,
             on_link=self.followed.append,
         )
+        self.tables = tuple(self.view.tables)
+        self.focus = self.tables[0] if self.tables else None
 
     # -- what a table's columns are ------------------------------------
 
-    def block(self, table: int) -> TableBlock:
+    def _sp(self, pixels: float) -> Scaled:
+        return sp_from_px(pixels, self.px_per_inch)
+
+    def _known(self, table: int) -> tuple[tuple[Scaled, ...], tuple[Scaled, ...]]:
         """
-        The table at block number `table`, as converted. `KeyError` if that block is not a table.
+        (natural widths, floors) of a table's columns, asked of the library once.
+
+        Empty while the library has no document. A floor is rounded UP to a
+        scaled point and is never under one: a column stated a fraction of a
+        scaled point under its longest word would be under it.
         """
         if table not in self.tables:
             raise KeyError(f"block {table} is not a table")
-        found = self.source.blocks[table]
-        assert isinstance(found, TableBlock)
+        found = self._limits.get(table)
+        if found is None:
+            geometry = self.view.table_geometry(table)
+            if geometry is None:
+                return ((), ())
+            columns = [self.view.table_column(table, n) for n in range(geometry.column_count)]
+            floors: list[Scaled] = []
+            for column in columns:
+                floor = self._sp(column.floor)
+                if px_from_sp(floor, self.px_per_inch) < column.floor:
+                    floor += 1
+                floors.append(max(1, floor))
+            found = (tuple(self._sp(column.natural) for column in columns), tuple(floors))
+            self._limits[table] = found
+            self._lefts[table] = self._sp(geometry.min[0])
         return found
 
     def floors(self, table: int) -> tuple[Scaled, ...]:
         """
-        `floors_of` this table, measured once.
+        Each column's longest unbreakable stretch, padding included: the library's `floor`.
         """
-        if table not in self._floors:
-            self._floors[table] = floors_of(self.block(table), self.theme, self.measure)
-        return self._floors[table]
+        return self._known(table)[1]
 
     def natural(self, table: int) -> tuple[Scaled, ...]:
         """
-        Each column's widest cell set on one line, padding included, measured once.
+        Each column's widest cell set on one line, padding included: the library's `natural`.
         """
-        if table not in self._natural:
-            self._natural[table] = table_natural_widths(self.block(table), self.theme, self.measure)
-        return self._natural[table]
+        return self._known(table)[0]
 
     def available(self, table: int) -> Scaled:
         """
         The width the table has at the current measure: the measure less the table's indent.
         """
+        self._known(table)
         width = UNITY if self.width is None else self.width
-        return max(width - self.block(table).left_indent, UNITY)
+        return max(width - self._lefts.get(table, 0), UNITY)
 
     def columns(self, table: int) -> tuple[Scaled, ...]:
         """
         The widths this table's columns are set to at the current measure.
 
         The chosen ones, squeezed if the measure has become too narrow for
-        them; otherwise the library's own, asked of `table_columns` once for
-        each measure. Empty before the first `settle`.
+        them; otherwise the library's own, read from the table as laid out,
+        once for each measure. Empty before the first `lay_out`, and for an
+        automatic table while the layout is at another measure than the
+        board's.
         """
-        if self.width is None:
+        if self.width is None or not self.floors(table):
             return ()
         wish = self.chosen.get(table)
         if wish is not None:
             return fitted(wish, self.floors(table), self.available(table))
         kept = self._automatic.get(table)
         if kept is None or kept[0] != self.width:
-            kept = (
-                self.width,
-                table_columns(self.block(table), self.theme, self.width, self.measure),
-            )
+            geometry = None if self._laid != self.width else self.view.table_geometry(table)
+            if geometry is None:
+                return ()
+            edges = [self.view.table_column(table, n) for n in range(geometry.column_count)]
+            widths = [self._sp(edge.max - edge.min) for edge in edges]
+            # A column the library squeezed to its floor is AT its floor: the
+            # two are single-precision pixels, and the floor was rounded up,
+            # so the difference of a few scaled points is rounding and not a
+            # column under its longest word.
+            floors = self.floors(table)
+            widths = [
+                floor if 0 < floor - width <= _ROUNDING_SP else width
+                for width, floor in zip(widths, floors, strict=True)
+            ]
+            kept = (self.width, tuple(widths))
             self._automatic[table] = kept
         return kept[1]
 
@@ -383,32 +436,46 @@ class Board:
 
     def settle(self, width: Scaled) -> None:
         """
-        Tell the board the measure the next layout is at. Call before the view draws.
+        Tell the board the measure the next layout is at. Call before `lay_out`.
 
-        A change of measure with widths chosen sets those tables again, since
-        what fitted before may not now.
+        A change of measure with widths chosen states those tables again,
+        since what fitted before may not now. That is not counted as a drag.
         """
         if width == self.width:
             return
         self.width = width
         if self.chosen:
-            self._apply()
+            self._apply(counted=False)
+
+    def lay_out(self, width_px: float) -> float:
+        """
+        Lay the document out for this frame, `width_px` wide: `TypesetView.layout_for`.
+
+        After it the library has the document, and the columns and the
+        handles are the ones of this measure. Returns the height, an
+        estimate until every block has been in view.
+        """
+        height = self.view.layout_for(width_px)
+        self._laid = self.width
+        return height
 
     def drag(self, table: int, edge: int, x: float) -> bool:
         """
         Drag the right edge of column `edge` of `table` to document x `x`. True if anything moved.
 
         `x` is in the document's scaled points, as `Grip.x` is. Nothing
-        before the first `settle`: there is no measure to drag within.
+        before the first `settle` and `lay_out`.
         """
         if self.width is None or table not in self.tables:
             return False
         before = self.columns(table)
+        if not before:
+            return False
         after = dragged(
             before,
             self.floors(table),
             edge,
-            x - self.block(table).left_indent,
+            x - self._lefts.get(table, 0),
             self.available(table),
         )
         self.focus = table
@@ -421,9 +488,14 @@ class Board:
     def to_floors(self) -> None:
         """
         Set every column of every table to its floor: the most wrapping there can be.
+
+        Nothing for a table the library has not been asked about yet (before
+        the first `lay_out`).
         """
         for table in self.tables:
-            self.chosen[table] = self.floors(table)
+            floors = self.floors(table)
+            if floors:
+                self.chosen[table] = floors
         self._apply()
 
     def reset(self) -> bool:
@@ -433,85 +505,103 @@ class Board:
         if not self.chosen:
             return False
         self.chosen.clear()
+        self._automatic.clear()
         self._apply()
         return True
 
-    def _apply(self) -> None:
+    def _apply(self, counted: bool = True) -> None:
         """
-        Put the chosen widths into the view's document and ask it to lay out again.
+        State the chosen widths in the view: one `set_table_columns` a table that changed.
 
-        Each chosen table is replaced by `with_columns` of the table as
-        converted; every other block is the object it was, which is what lets
-        the view's caches find it.
+        A table that is no longer chosen gets back the columns it was
+        described with. The widths go over in pixels with each column's own
+        alignment kept. `counted` says a drag or a reset caused this, for
+        `observe`; a change of measure did not.
         """
-        blocks = list(self.source.blocks)
-        if self.width is not None:
-            for table in self.chosen:
-                blocks[table] = with_columns(self.block(table), widths=self.columns(table))
-        self.view.document = replace(self.source, blocks=tuple(blocks))
-        self.view.invalidate()
-        self._pending = True
+        if counted and self._drawn and self._pending is None:
+            self._pending = self._counters()
+        for table in self.tables:
+            if table in self.chosen and self.width is not None:
+                widths = [px_from_sp(width, self.px_per_inch) for width in self.columns(table)]
+                self.view.set_table_columns(table, widths)
+                self._stated.add(table)
+            elif table in self._stated:
+                self.view.set_table_columns(table, None)
+                self._stated.discard(table)
+        self._epoch += 1
+
+    def _counters(self) -> tuple[int, int]:
+        """(table rows set, table cells measured) so far, by the library's own count."""
+        doc = self.view.native_document
+        if doc is None:
+            return (0, 0)
+        stats = doc.stats()
+        return (int(stats.TableRowsSet), int(stats.TableCellsMeasured))
 
     # -- where the handles are, and what a relayout cost -----------------
 
     def grips(self) -> tuple[Grip, ...]:
         """
-        Every handle of the view's current layout, top to bottom and left to right.
+        Every handle of the layout as it stands, top to bottom and left to right.
 
-        Empty before the view has laid out, and while its layout is at a
-        measure other than the board's (the frame between a `settle` and the
-        draw that follows it).
+        Empty before the first `lay_out`, and while the layout is at a
+        measure other than the board's. A handle's x is the table's left
+        edge and its columns' widths (`columns`); its top and bottom are the
+        table's as the library laid it out, asked once (a call a table) and
+        kept until the measure, the document's height or the chosen widths
+        change.
         """
-        layout = self.view.layout
-        if layout is None or layout.width != self.width:
+        if self.width is None or self._laid != self.width:
             return ()
+        key = (self.width, self.view.height, self._epoch, self.view.revision)
+        if self._grips is not None and self._grips[0] == key:
+            return self._grips[1]
         out: list[Grip] = []
         for table in self.tables:
-            units = layout.units_of_block(table)
-            if not units:
+            widths = self.columns(table)
+            geometry = self.view.table_geometry(table)
+            if not widths or geometry is None or geometry.row_count == 0:
                 continue
-            x = self.block(table).left_indent
-            for edge, width in enumerate(self.columns(table)):
+            top, bottom = self._sp(geometry.min[1]), self._sp(geometry.max[1])
+            x = self._lefts.get(table, 0)
+            for edge, width in enumerate(widths):
                 x += width
-                out.append(Grip(table, edge, x, units[0].y, units[-1].bottom))
-        return tuple(out)
+                out.append(Grip(table, edge, x, top, bottom))
+        self._grips = (key, tuple(out))
+        return self._grips[1]
 
     def observe(self) -> int | None:
         """
-        Count the units the latest layout shipped again, if a drag or a reset caused it.
+        Count what the latest draw set again, if a drag or a reset caused it.
 
-        Call after the view has drawn. The count is the layout's own
-        (`UnitLayout.stats.built`): the units it composed and shipped. A
-        layout at a new measure is not counted -- every unit is new and none
-        because of a drag -- and neither is one nothing here asked for.
-        Returns the count, or `None` when nothing was counted.
+        Call after the view has drawn. The counts are the library's own
+        (`DocumentStats.TableRowsSet`, `TableCellsMeasured`), taken before the
+        columns were stated and after the draw that followed. A layout at a
+        new measure is not counted, and neither is the opening state.
+        Returns the rows set again, or `None` when nothing was counted.
         """
-        layout = self.view.layout
-        if layout is None or layout is self._seen:
+        self._drawn = True
+        before, self._pending = self._pending, None
+        if before is None:
             return None
-        before, self._seen = self._seen, layout
-        pending, self._pending = self._pending, False
-        if before is None or before.width != layout.width or not pending:
-            return None
-        changed = len(layout.stats.built)
-        self.reshipped = changed
-        self.units = len(layout.placed)
+        rows, cells = self._counters()
+        self.rows_set, self.cells_measured = rows - before[0], cells - before[1]
         self.relayouts += 1
-        return changed
+        return self.rows_set
 
 
-def readouts(board: Board) -> tuple[str, ...]:
+def readouts(board: TypesetBoard) -> tuple[str, ...]:
     """
     The four readout lines, top to bottom. Always four, so the pane below does not move.
 
     Widths in pixels at the board's density. Counts and sizes; no judgement.
     """
     table = board.focus
-    if table is None or board.width is None:
+    widths = () if table is None or board.width is None else board.columns(table)
+    if table is None or not widths:
         about = "no table in this document" if table is None else "not laid out yet"
         return (about, "", _last_drag(board), _links(board))
     density = board.px_per_inch
-    widths = board.columns(table)
     natural = board.natural(table)
     floors = board.floors(table)
     under = sum(1 for width, wide in zip(widths, natural, strict=True) if width < wide)
@@ -531,16 +621,17 @@ def readouts(board: Board) -> tuple[str, ...]:
     return (head, columns, _last_drag(board), _links(board))
 
 
-def _last_drag(board: Board) -> str:
-    if board.reshipped is None:
+def _last_drag(board: TypesetBoard) -> str:
+    if board.rows_set is None:
         return "last drag: none yet"
     return (
-        f"last drag: {board.reshipped} of {board.units} units re-shipped"
+        f"last drag: {board.rows_set} table rows set again, "
+        f"{board.cells_measured} cells measured again (the library's own counts)"
         f"  ·  layouts caused by dragging so far: {board.relayouts}"
     )
 
 
-def _links(board: Board) -> str:
+def _links(board: TypesetBoard) -> str:
     hovered = board.view.hovered_link
     last = board.followed[-1] if board.followed else "none yet"
     return (
@@ -549,28 +640,41 @@ def _links(board: Board) -> str:
     )
 
 
-def report(board: Board, frames: int, stats: DrawStats | None) -> list[str]:
-    """
-    What an unattended run prints: one line of totals and one a table. Counts, not judgements.
-    """
-    selection = board.view.selection
-    lines = [
-        f"frames={frames} tables={len(board.tables)} dragged={len(board.chosen)} "
-        f"reshipped={-1 if board.reshipped is None else board.reshipped} units={board.units} "
-        f"relayouts={board.relayouts} selected={selection.end - selection.start} "
-        f"glyphs={0 if stats is None else stats.glyphs} "
-        f"missing={0 if stats is None else stats.missing}"
-    ]
+def _table_lines(board: TypesetBoard) -> list[str]:
+    lines: list[str] = []
     for table in board.tables:
         widths = board.columns(table)
         floors = board.floors(table)
         lines.append(
             f"table={table} columns={len(widths)} "
             f"width_sp={sum(widths)} "
-            f"under_floor={sum(1 for w, f in zip(widths, floors, strict=True) if w < f)} "
+            f"under_floor={sum(1 for w, f in zip(widths, floors, strict=False) if w < f)} "
             f"state={'dragged' if table in board.chosen else 'automatic'}"
         )
     return lines
+
+
+def typeset_report(board: TypesetBoard, frames: int, whole: bool | None) -> list[str]:
+    """
+    What an unattended run prints: one line of totals and one a table. Counts, not judgements.
+
+    `selected` is the characters a copy of the selection gives. There is no
+    count of glyphs and none of glyphs missing (the library reports neither):
+    `vertices` is what the last draw added to the draw list and `whole`
+    whether the library set everything in view as asked.
+    """
+    view = board.view
+    stats = view.stats
+    lines = [
+        f"frames={frames} renderer=TypesetView tables={len(board.tables)} "
+        f"dragged={len(board.chosen)} "
+        f"rows_set={-1 if board.rows_set is None else board.rows_set} "
+        f"cells_measured={-1 if board.cells_measured is None else board.cells_measured} "
+        f"relayouts={board.relayouts} "
+        f"selected={len(view.selected_text()) if view.selection is not None else 0} "
+        f"vertices={stats.vertices} whole={-1 if whole is None else int(whole)}"
+    ]
+    return lines + _table_lines(board)
 
 
 # ----------------------------------------------------------------------
@@ -580,17 +684,22 @@ def report(board: Board, frames: int, stats: DrawStats | None) -> list[str]:
 
 class TablesPage:
     """
-    The page: a `Board`, the frame that draws it, and the handles over the view.
+    The page: a board, the frame that draws it, and the handles over the view.
+
+    `board` is a `TypesetBoard` while the imtypeset library draws and `None`
+    when it does not; `reason` then says why, and is the one line the page
+    draws. `renderer` is `"TypesetView"` or `"none"`.
     """
 
     def __init__(self, context: PageContext) -> None:
         self.context = context
-        self.board = Board(
-            theme=context.theme,
-            measure=context.measure,
-            metrics=context.metrics,
-            px_per_inch=context.px_per_inch,
-        )
+        self.reason = why_not()
+        self.board: TypesetBoard | None = None
+        if not self.reason:
+            try:
+                self.board = TypesetBoard(theme=context.theme, px_per_inch=context.px_per_inch)
+            except TypesetUnavailable as exc:
+                self.reason = str(exc)
         asked = context.count_for(PAGE.name)
         self.pane_px = (
             DEFAULT_PANE_PX if asked is None else min(max(float(asked), MIN_PANE_PX), MAX_PANE_PX)
@@ -601,21 +710,46 @@ class TablesPage:
         self._grab = 0.0
         self.cursor_drift = 0.0
         """How far the handles left ImGui's cursor from where the view had left it. Zero."""
-        self.stats: DrawStats | None = None
+        self.whole: bool | None = None
+        """What `TypesetView.draw` answered last; `None` before the first and with no board."""
         self.frames = 0
+
+    @property
+    def renderer(self) -> str:
+        """`"TypesetView"` while the library draws this page, `"none"` when nothing does."""
+        return "TypesetView" if self.board is not None else "none"
 
     def report(self) -> list[str]:
         """
-        `report` of this page's board, with the frames it has drawn.
+        `typeset_report` of this page's board with the frames it has drawn, or why there is none.
         """
-        return report(self.board, self.frames, self.stats)
+        if self.board is None:
+            return [f"frames={self.frames} renderer=none reason={self.reason!r}"]
+        return typeset_report(self.board, self.frames, self.whole)
 
     def draw(self) -> None:
         from imgui_bundle import imgui
 
-        board = self.board
         self.frames += 1
-        self._controls(imgui)
+        board = self.board
+        if board is None:
+            say_why_not(self.reason)
+            return
+        try:
+            self._frame(imgui, board)
+        except TypesetUnavailable as exc:
+            # The library was switched off under the view. Whatever of the
+            # controls this frame had submitted stays; the page is the one
+            # line from the next frame on.
+            self.reason = str(exc) or "imtypeset is not ready"
+            self.board = None
+            self.held, self.whole = None, None
+
+    def _frame(self, imgui: Any, board: TypesetBoard) -> None:
+        """
+        The controls, the readouts and the pane. Every call of the view's is in here.
+        """
+        self._controls(imgui, board)
         for line in readouts(board):
             caption(line)
         imgui.separator()
@@ -629,27 +763,37 @@ class TablesPage:
             imgui.ChildFlags_.borders.value,
             imgui.WindowFlags_.always_vertical_scrollbar.value,
         )
-        width_px = max(min(imgui.get_content_region_avail().x, self.pane_px), MIN_WIDTH_PX)
+        try:
+            width_px = max(min(imgui.get_content_region_avail().x, self.pane_px), MIN_WIDTH_PX)
+            self._draw_typeset(imgui, board, width_px)
+        finally:
+            imgui.end_child()
+
+    def _draw_typeset(self, imgui: Any, board: TypesetBoard, width_px: float) -> None:
+        """
+        One frame through `TypesetView`: lay out, follow the held handle, the handles, the draw.
+        """
         board.settle(sp_from_px(width_px, board.px_per_inch))
+        # Where the view is about to draw: its `draw` snaps the cursor to a whole pixel.
+        cursor = imgui.get_cursor_screen_pos()
+        origin = (math.floor(cursor.x + 0.5), math.floor(cursor.y + 0.5))
+        board.lay_out(width_px)
+        again = False
         if self._to_floors:
             self._to_floors = False
             board.to_floors()
-        # This frame's geometry, before the view draws: where it will put the
-        # document, and the layout it will put there.
-        origin = board.view.next_origin()
-        self._follow(imgui, origin)
-        board.view.layout_for(sp_from_px(width_px, board.px_per_inch))
-        self._handles(imgui, origin)
+            again = True
+        if self._follow(imgui, board, origin) or again:
+            # The columns moved: the rows below them are other heights now.
+            board.lay_out(width_px)
+        self._handles(imgui, board, origin)
         board.view.debug = self.context.debug
-        self.stats = board.view.draw(
-            fonts=self.context.fonts, palette=DARK_PALETTE, width_px=width_px
-        )
+        self.whole = board.view.draw(palette=DARK_PALETTE, width_px=width_px)
         board.observe()
-        imgui.end_child()
 
-    def _controls(self, imgui: Any) -> None:
+    def _controls(self, imgui: Any, board: TypesetBoard) -> None:
         if imgui.button("Reset to automatic"):
-            self.board.reset()
+            board.reset()
         imgui.same_line()
         imgui.set_next_item_width(260.0)
         changed, pane = imgui.slider_float(
@@ -660,36 +804,36 @@ class TablesPage:
         imgui.same_line()
         debug_toggle(self.context)
 
-    def _follow(self, imgui: Any, origin: tuple[float, float]) -> None:
+    def _follow(self, imgui: Any, board: TypesetBoard, origin: tuple[float, float]) -> bool:
         """
-        Move the held handle to the pointer, before the view lays out.
+        Move the held handle to the pointer, before the view draws. True if a column moved.
 
-        `origin` is where the view is about to draw (`next_origin`). A handle
+        `origin` is where the view is about to draw. A handle
         whose button is no longer down is let go here; ImGui lets go of the
         item itself.
         """
         if self.held is None:
-            return
+            return False
         if not imgui.is_mouse_down(imgui.MouseButton_.left):
             self.held = None
-            return
+            return False
         table, edge = self.held
         x_px = imgui.get_mouse_pos().x - self._grab - origin[0]
-        if math.isfinite(x_px):
-            self.board.drag(table, edge, sp_from_px(x_px, self.board.px_per_inch))
+        if not math.isfinite(x_px):
+            return False
+        return board.drag(table, edge, sp_from_px(x_px, board.px_per_inch))
 
-    def _handles(self, imgui: Any, origin: tuple[float, float]) -> None:
+    def _handles(self, imgui: Any, board: TypesetBoard, origin: tuple[float, float]) -> None:
         """
         One invisible button a column edge, where the view is about to draw. Call inside its child.
 
         Submitted before the view, so that each is an item by the time the
-        view judges a press (the module docstring). `origin` is
-        `view.next_origin()` and the view has been laid out for this frame.
+        view judges a press (the module docstring). `origin` is where the
+        view is about to draw and the view has been laid out for this frame.
         The cursor is put back afterwards, to where the view starts
         (`cursor_drift` is the check): the buttons are inside the rectangle
         the view is about to claim and add nothing to the child's content.
         """
-        board = self.board
         density = board.px_per_inch
         pointed = board.view.block_under_mouse()
         if pointed in board.tables and self.held is None:

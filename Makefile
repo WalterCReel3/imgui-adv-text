@@ -1,5 +1,5 @@
 .PHONY: help bootstrap venv-info test lint format format-file typecheck check svg run \
-        shot shot-all shot-headless clean
+        shot shot-all shot-headless clean typeset-lib typeset-pair-is-stale
 
 # ---------------------------------------------------------------------------
 # Which interpreter runs everything
@@ -47,6 +47,240 @@ $(VENV_PY):
 SRC := advtext tests $(wildcard scripts) $(wildcard examples)
 
 .DEFAULT_GOAL := help
+
+# ---------------------------------------------------------------------------
+# imtypeset: what draws (branch experimental/imtypeset-adoption)
+#
+# Since 2026-10-11 the imtypeset library is the ONLY thing that sets and draws
+# text in the demo and the examples: advtext's own views and its ImGui draw
+# backend are deleted. advtext/typesetter.py loads the library when two
+# environment variables say where it is. When they do not, every page draws
+# one line saying so and nothing else, and the suite's with-library tests
+# skip: plain `make check` is green without the library and proves less.
+# (Until that date this paragraph read "and exactly as before when they do
+# not": the old views were the fallback.) Nothing here sets the variables
+# unless the caller asks:
+#
+#   make typeset-lib              build the library for ./.venv's wheel, from
+#                                 IMTYPESET_ROOT's working tree
+#   make typeset-lib IMTYPESET_COMMIT=<rev>
+#                                 the same from that commit of IMTYPESET_ROOT,
+#                                 whatever its working tree holds (see below)
+#   make test TYPESET=1           the suite with it (the tests that need it run
+#                                 instead of skipping); likewise check, run,
+#                                 shot, shot-all
+#   IMTYPESET_LIBRARY=/some/lib.so make test     the same with another library
+#
+# With neither, TYPESET_ENV is empty and every recipe below is character for
+# character what it was. With either, a recipe gains two assignments in front
+# of its command and nothing else -- the command's own arguments do not change,
+# which is what lets tests/test_shot_all.py read the shot-all recipe either way.
+#
+# IMTYPESET_PYTHON is where the ctypes package is (advtext/typesetter.py puts it
+# on sys.path itself). It is not passed as PYTHONPATH because a child process
+# that sets its own PYTHONPATH -- tests/conftest.py's `window` does -- would
+# keep the library and lose the package.
+#
+# IMTYPESET_ROOT is a sibling checkout and that is deliberate here in a way the
+# borrowed interpreter above was not: it is read only by `make typeset-lib`,
+# and advtext builds, lints and passes its plain suite without it. What it
+# does not do without the built library is draw (above).
+# `make clean` removes build/, and the library with it.
+IMTYPESET_ROOT    ?= ../imtypeset
+IMTYPESET_BUNDLE  ?= $(CURDIR)/build/imtypeset-bundle
+# Names beside the bundle are made by appending to this (.building and
+# .previous), so it is made absolute and loses a trailing slash here, wherever
+# it was given: `IMTYPESET_BUNDLE=some/dir/` used to stage INSIDE the bundle
+# and fail at the last rename, after the whole build. `override` because a
+# variable from the command line otherwise outranks an assignment in this file.
+override IMTYPESET_BUNDLE := $(abspath $(IMTYPESET_BUNDLE))
+IMTYPESET_BUILT   := $(IMTYPESET_BUNDLE)/libimtypeset_bundle.so
+TYPESET           ?=
+
+ifneq ($(filter-out 0,$(strip $(TYPESET))),)
+  IMTYPESET_LIBRARY ?= $(IMTYPESET_BUILT)
+endif
+ifneq ($(strip $(IMTYPESET_LIBRARY)),)
+  # Asked for and not there is an error, not a suite that quietly skips: the
+  # same shape as the ./.venv guard above. The rule is how make "builds" the
+  # file when it is absent -- by refusing -- and it exists only when asked.
+  NEED_TYPESET := $(abspath $(IMTYPESET_LIBRARY))
+  # The package that goes with the library is the one `make typeset-lib` copied
+  # beside it when it built it (see there), when there is one; the sibling
+  # checkout's live package otherwise, as before. A caller's own
+  # IMTYPESET_PYTHON, on the command line or in the environment, wins.
+  IMTYPESET_SNAPSHOT := $(dir $(NEED_TYPESET))pysnap
+  # `make typeset-lib test TYPESET=1` in one invocation: everything here is
+  # settled when this file is read, which is before typeset-lib has run. Where
+  # there was no snapshot yet, the suite was handed the new library with the
+  # sibling checkout's live package (measured, 2026-10-11). The build always
+  # leaves a snapshot, so when it is among the goals and the library asked for
+  # is the one it builds, the snapshot is the answer without looking.
+  typeset_building := $(and $(filter typeset-lib,$(MAKECMDGOALS)),$(filter $(IMTYPESET_BUILT),$(NEED_TYPESET)))
+  IMTYPESET_PYTHON ?= $(if $(or $(typeset_building),$(wildcard $(IMTYPESET_SNAPSHOT)/imtypeset/__init__.py)),$(IMTYPESET_SNAPSHOT),$(abspath $(IMTYPESET_ROOT))/python)
+  typeset_empty :=
+  TYPESET_ENV := IMTYPESET_LIBRARY=$(NEED_TYPESET) IMTYPESET_PYTHON=$(IMTYPESET_PYTHON)$(typeset_empty) $(typeset_empty)
+
+$(NEED_TYPESET):
+	@echo "No $@. 'make typeset-lib' builds $(IMTYPESET_BUILT) (needs $(IMTYPESET_ROOT))." >&2; exit 2
+
+  # A stale pair, refused. `make typeset-lib` ends by writing the library's
+  # checksum into BUILT-FROM. Something else that replaces the library where it
+  # lies -- the build script run by hand into the same directory, a copy --
+  # leaves the snapshot of the build before beside it, and the snapshot was
+  # then preferred without a word. So: when the package about to be used IS
+  # that snapshot, and BUILT-FROM records a checksum, and the library has
+  # another, the targets that would use the pair stop.
+  #
+  # Every doubt goes the other way, so that a good pair is never refused: no
+  # BUILT-FROM, or one from before the line existed, no `cksum`, no library
+  # (the rule above speaks for that), a caller's own IMTYPESET_PYTHON, or a
+  # library with no snapshot beside it -- none of these is called stale.
+  # `cksum` is POSIX's CRC and byte count: a check against an accident, which
+  # is all this is, and it reads the library in a few milliseconds.
+  typeset_stale :=
+  ifeq ($(typeset_building),)
+  ifeq ($(IMTYPESET_PYTHON),$(IMTYPESET_SNAPSHOT))
+    typeset_stale := $(shell \
+      want=$$(sed -n 's/^library cksum: //p' "$(dir $(NEED_TYPESET))BUILT-FROM" 2>/dev/null | head -n 1); \
+      have=$$(cksum < "$(NEED_TYPESET)" 2>/dev/null); \
+      [ -z "$$want" ] || [ -z "$$have" ] || [ "$$want" = "$$have" ] || echo "$$have, not $$want")
+  endif
+  endif
+  ifneq ($(strip $(typeset_stale)),)
+    NEED_PAIR := typeset-pair-is-stale
+
+typeset-pair-is-stale:
+	@echo "$(NEED_TYPESET) is not the library its BUILT-FROM describes (cksum $(typeset_stale)), so $(IMTYPESET_SNAPSHOT) is the package of another build. 'make typeset-lib' builds a pair that matches; IMTYPESET_PYTHON=... names another package yourself." >&2; exit 2
+  endif
+endif
+
+# One library per interpreter: it is linked against that interpreter's
+# imgui-bundle wheel and refuses any other at import. The script reads
+# IMTYPESET_ROOT's WORKING TREE and writes only under IMTYPESET_BUNDLE; it ends
+# by running the import gate and fails if the gate refuses. Its first argument
+# is a Dear ImGui Bundle checkout and its second the interpreter.
+IMGUI_BUNDLE_CHECKOUT ?= $(abspath $(IMTYPESET_ROOT))/../imgui_bundle
+
+# From a commit rather than from whatever the working tree holds:
+#
+#   make typeset-lib IMTYPESET_COMMIT=12d77ac
+#
+# A working tree other people are changing is not reproducible, and the
+# imtypeset team names the commit to build from in
+# $(IMTYPESET_ROOT)/docs/advtext-swap-status.md ("Build from"). The commit is
+# resolved once, taken out of IMTYPESET_ROOT's object store with `git archive`
+# (which reads there and writes nothing) into the staging directory's src/,
+# and the pair is built from that extract: script, sources and package
+# snapshot alike. BUILT-FROM then names the repository, the full hash, and no
+# uncommitted paths. The extract is installed with the pair, as
+# IMTYPESET_BUNDLE/src: the source of exactly the library beside it (about
+# 100 MB for imtypeset today), replaced or left alone with it like the rest.
+#
+# The script looks for its two neighbours (the Dear ImGui Bundle checkout and
+# a Dear ImGui clone) beside its own checkout, and the extract has neither, so
+# both are named from IMTYPESET_ROOT.
+IMTYPESET_COMMIT      ?=
+IMTYPESET_IMGUI_CLONE ?= $(abspath $(IMTYPESET_ROOT))/../imgui
+
+# The library and the Python package that calls it are a PAIR. The package is
+# ctypes declarations of the library's exports, both come from one working
+# tree that other people change, and a package newer than the library fails at
+# import on the first function the library lacks (2026-10-10: every
+# with-library test, on ImTypeset_GetFontAtlasIndex). So the target leaves
+# three things in IMTYPESET_BUNDLE, not one:
+#
+#   libimtypeset_bundle.so   the library
+#   pysnap/imtypeset/        the package as it was when the library was built
+#                            (what IMTYPESET_PYTHON defaults to, above)
+#   BUILT-FROM               the checkout, its HEAD (or IMTYPESET_COMMIT), how
+#                            many paths were uncommitted, when, and the
+#                            library's checksum (what the stale-pair check
+#                            above reads)
+#
+# BUILT-FROM's git lines are about IMTYPESET_ROOT's OWN repository. A directory
+# that is not the top of one -- an extract lying inside this repository, say --
+# is "not a git checkout", never the repository that happens to enclose it
+# (2026-10-11: such a file named advtext's HEAD as imtypeset's).
+#
+# The package is copied just before the build starts reading sources, which is
+# as close to "the same tree" as a copy of a tree in motion gets; the last step
+# before anything is put in place imports the COPY against the new library, so
+# a pair that does not load is never installed.
+#
+# All of it is made in IMTYPESET_BUNDLE.building and renamed into place at the
+# end, whole. A build that fails at any step leaves IMTYPESET_BUNDLE exactly as
+# it was (and .building behind, to look at; the next run removes it).
+# IMTYPESET_BUNDLE is therefore this target's own directory: anything else in
+# it goes when a build succeeds.
+#
+# The gate's stamp (<library>.gate) names the library by path, so the one
+# written while staging is dropped; the first import from the final place
+# writes its own.
+IMTYPESET_STAGE   := $(IMTYPESET_BUNDLE).building
+IMTYPESET_EXTRACT := $(IMTYPESET_STAGE)/src
+IMTYPESET_SOURCE  := $(if $(strip $(IMTYPESET_COMMIT)),$(IMTYPESET_EXTRACT),$(IMTYPESET_ROOT))
+
+typeset-lib: | $(NEED_VENV)  ## build the imtypeset library and its package snapshot into build/imtypeset-bundle (needed to draw; IMTYPESET_COMMIT=<rev> builds that commit)
+ifeq ($(strip $(IMTYPESET_COMMIT)),)
+	@test -f "$(IMTYPESET_ROOT)/python/host/build_bundle_library.sh" || { \
+	  echo "No imtypeset checkout at $(IMTYPESET_ROOT). Set IMTYPESET_ROOT=..." >&2; exit 2; }
+else
+	@top=$$(git -C "$(IMTYPESET_ROOT)" rev-parse --show-toplevel 2>/dev/null) \
+	  && [ "$$top" = "$$(cd "$(IMTYPESET_ROOT)" && pwd -P)" ] || { \
+	  echo "IMTYPESET_COMMIT=$(IMTYPESET_COMMIT) needs a git checkout of imtypeset, and $(IMTYPESET_ROOT) is not the top of one. Set IMTYPESET_ROOT=..." >&2; exit 2; }
+	@git -C "$(IMTYPESET_ROOT)" rev-parse --verify --quiet --end-of-options "$(IMTYPESET_COMMIT)^{commit}" >/dev/null || { \
+	  echo "IMTYPESET_COMMIT=$(IMTYPESET_COMMIT) names no commit of $(IMTYPESET_ROOT)." >&2; exit 2; }
+endif
+	rm -rf "$(IMTYPESET_STAGE)"
+	mkdir -p "$(IMTYPESET_STAGE)/pysnap/imtypeset"
+ifeq ($(strip $(IMTYPESET_COMMIT)),)
+	@{ echo "imtypeset: $(abspath $(IMTYPESET_ROOT))"; \
+	  if top=$$(git -C "$(IMTYPESET_ROOT)" rev-parse --show-toplevel 2>/dev/null) \
+	     && [ "$$top" = "$$(cd "$(IMTYPESET_ROOT)" && pwd -P)" ] \
+	     && commit=$$(git -C "$(IMTYPESET_ROOT)" rev-parse HEAD 2>/dev/null); then \
+	    echo "commit: $$commit"; \
+	    echo "uncommitted paths: $$(git --no-optional-locks -C "$(IMTYPESET_ROOT)" status --short | wc -l | tr -d ' ')"; \
+	  else \
+	    echo "commit: unknown (not a git checkout)"; \
+	    echo "uncommitted paths: unknown"; \
+	  fi; \
+	  echo "date: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+	  echo "by: make typeset-lib"; } > "$(IMTYPESET_STAGE)/BUILT-FROM"
+else
+	@set -e; \
+	commit=$$(git -C "$(IMTYPESET_ROOT)" rev-parse --verify --quiet --end-of-options "$(IMTYPESET_COMMIT)^{commit}"); \
+	echo "git archive $$commit of $(abspath $(IMTYPESET_ROOT)) -> $(IMTYPESET_EXTRACT)"; \
+	mkdir "$(IMTYPESET_EXTRACT)"; \
+	git -C "$(IMTYPESET_ROOT)" archive --format=tar -o "$(IMTYPESET_EXTRACT).tar" "$$commit"; \
+	tar -xf "$(IMTYPESET_EXTRACT).tar" -C "$(IMTYPESET_EXTRACT)"; \
+	rm -f "$(IMTYPESET_EXTRACT).tar"; \
+	test -f "$(IMTYPESET_EXTRACT)/python/host/build_bundle_library.sh" || { \
+	  echo "Commit $$commit of $(IMTYPESET_ROOT) has no python/host/build_bundle_library.sh." >&2; exit 2; }; \
+	{ echo "imtypeset: $(abspath $(IMTYPESET_ROOT))"; \
+	  echo "commit: $$commit"; \
+	  echo "uncommitted paths: 0 (an archive of a commit)"; \
+	  echo "date: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+	  echo "by: make typeset-lib IMTYPESET_COMMIT=$(IMTYPESET_COMMIT)"; } > "$(IMTYPESET_STAGE)/BUILT-FROM"
+endif
+	cp -R "$(IMTYPESET_SOURCE)/python/imtypeset/." "$(IMTYPESET_STAGE)/pysnap/imtypeset/"
+	find "$(IMTYPESET_STAGE)/pysnap" -name __pycache__ -type d -prune -exec rm -rf {} +
+	$(if $(strip $(IMTYPESET_COMMIT)),IMTYPESET_IMGUI_CLONE="$(IMTYPESET_IMGUI_CLONE)" )IMTYPESET_BUNDLE_OUT=$(IMTYPESET_STAGE) sh $(IMTYPESET_SOURCE)/python/host/build_bundle_library.sh \
+	  "$(IMGUI_BUNDLE_CHECKOUT)" "$(abspath $(PY))"
+	IMTYPESET_LIBRARY="$(IMTYPESET_STAGE)/libimtypeset_bundle.so" "$(abspath $(PY))" -P -B -c \
+	  'import sys; sys.path.insert(0, sys.argv[1]); import imtypeset' "$(IMTYPESET_STAGE)/pysnap"
+	rm -f "$(IMTYPESET_STAGE)/libimtypeset_bundle.so.gate"
+	@echo "library cksum: $$(cksum < "$(IMTYPESET_STAGE)/libimtypeset_bundle.so")" >> "$(IMTYPESET_STAGE)/BUILT-FROM"
+	@rm -rf "$(IMTYPESET_BUNDLE).previous"; \
+	if [ -e "$(IMTYPESET_BUNDLE)" ]; then mv "$(IMTYPESET_BUNDLE)" "$(IMTYPESET_BUNDLE).previous" || exit 1; fi; \
+	if mv "$(IMTYPESET_STAGE)" "$(IMTYPESET_BUNDLE)"; then \
+	  rm -rf "$(IMTYPESET_BUNDLE).previous"; \
+	else \
+	  [ ! -e "$(IMTYPESET_BUNDLE).previous" ] || mv "$(IMTYPESET_BUNDLE).previous" "$(IMTYPESET_BUNDLE)"; \
+	  exit 1; \
+	fi
+	@cat "$(IMTYPESET_BUNDLE)/BUILT-FROM"
+	@echo "installed: $(IMTYPESET_BUNDLE) (the build script's 'use it with' line above names the staging directory)"
 
 # ---------------------------------------------------------------------------
 # Looking at the GUI: `make shot`, and `make shot-headless` when there is no
@@ -158,8 +392,8 @@ bootstrap:         ## create ./.venv and install advtext + dev tools into it
 	fi
 	@$(MAKE) --no-print-directory venv-info
 
-test: | $(NEED_VENV)  ## pytest
-	$(PY) -m pytest -q
+test: | $(NEED_VENV) $(NEED_TYPESET) $(NEED_PAIR)  ## pytest (TYPESET=1: with the imtypeset library)
+	$(TYPESET_ENV)$(PY) -m pytest -q
 
 lint: | $(NEED_VENV)  ## ruff check + black --check
 	$(BIN)ruff check $(SRC)
@@ -185,6 +419,12 @@ check: lint typecheck test   ## everything the CI gate would run
 
 # The demo that works everywhere: no GPU, no display, no ImGui. This is how the
 # litmus tests are shown to have worked rather than merely asserted.
+#
+# Since 2026-10-11 this target is also the one remaining user of advtext's own
+# Python layout core (line breaking, packing, ship-out, the math list): what
+# scripts/render_litmus.py and advtext/backends/svg.py import, 22 modules, is
+# kept for it and for nothing else. Whether it stays in advtext is a question
+# the user has been asked and has not answered (docs/status.md, section 0d).
 svg: | $(NEED_VENV)  ## render the litmus artifacts to artifacts/
 	PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/render_litmus.py --out artifacts
 
@@ -206,8 +446,13 @@ svg: | $(NEED_VENV)  ## render the litmus artifacts to artifacts/
 # installs editable, it is redundant and harmless.
 #
 # Arguments pass through:  make run ARGS="--source demo/sample.md"
-run: | $(NEED_VENV)  ## launch the ImGui demo (needs a display; fails fast without one)
-	PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/run_demo.py $(ARGS)
+#
+# Without TYPESET=1 (or IMTYPESET_LIBRARY) the window opens and every page is
+# one line saying the library is not loaded; the script says so on stderr
+# first. With it, and a library that was nonetheless not drawing when the
+# window closed, the script says why at exit.
+run: | $(NEED_VENV) $(NEED_TYPESET) $(NEED_PAIR)  ## launch the ImGui demo (needs a display; TYPESET=1 for its text)
+	$(TYPESET_ENV)PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/run_demo.py $(ARGS)
 
 # One PNG of the real demo, on the real display. Everything is a flag, because
 # the interesting shots are comparisons -- the same tab at two widths, or the
@@ -219,8 +464,13 @@ run: | $(NEED_VENV)  ## launch the ImGui demo (needs a display; fails fast witho
 # One process per shot rather than a loop inside the script. The grab is
 # `final_app_window_screenshot`, which by name and by contract returns the last
 # frame of the app that has *exited*, so one app lifetime is one photograph.
-shot: | $(NEED_VENV)  ## screenshot one page of the demo (needs a display; ARGS= passes through)
-	PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/shot.py $(ARGS)
+#
+# With TYPESET=1 a shot whose library was not drawing when the window closed
+# exits 3 and writes no PNG (scripts/shot.py, NOT_DRAWN_STATUS), and shot-all
+# stops there. Without it the shot is of the one line each page then draws,
+# which the script says on stderr.
+shot: | $(NEED_VENV) $(NEED_TYPESET) $(NEED_PAIR)  ## screenshot one page of the demo (needs a display; TYPESET=1 for its text; ARGS= passes through)
+	$(TYPESET_ENV)PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/shot.py $(ARGS)
 
 # The loop stays here rather than moving into the script because one photograph
 # needs one app lifetime -- see `shot` above -- so it cannot become a loop inside
@@ -247,17 +497,17 @@ shot: | $(NEED_VENV)  ## screenshot one page of the demo (needs a display; ARGS=
 # subset:  make shot-all SHOT_TABS=document   (or export it; `?=` honours both)
 SHOT_TABS ?=
 
-shot-all: | $(NEED_VENV)  ## screenshot every page (scripts/shot.py --list) to artifacts/demo-<tab>.png
+shot-all: | $(NEED_VENV) $(NEED_TYPESET) $(NEED_PAIR)  ## screenshot every page (scripts/shot.py --list) to artifacts/demo-<tab>.png
 	@tabs="$(SHOT_TABS)"; \
 	if [ -z "$$tabs" ]; then \
-	  tabs=$$(PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/shot.py --list) \
+	  tabs=$$($(TYPESET_ENV)PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/shot.py --list) \
 	    || { echo "shot-all: scripts/shot.py --list failed; nothing was photographed" >&2; exit 2; }; \
 	  [ -n "$$tabs" ] \
 	    || { echo "shot-all: scripts/shot.py --list named no page; nothing was photographed" >&2; exit 2; }; \
 	fi; \
 	for tab in $$tabs; do \
 	  name=$$(printf '%s' "$$tab" | tr ':,' '--'); \
-	  PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/shot.py \
+	  $(TYPESET_ENV)PYTHONPATH=$(CURDIR)$${PYTHONPATH:+:$$PYTHONPATH} $(PY) scripts/shot.py \
 	    --tab "$$tab" --out "artifacts/demo-$$name.png" $(ARGS) || exit $$?; \
 	done
 

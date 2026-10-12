@@ -35,28 +35,36 @@ the five original pages do.
 
 What the factory is handed, `PageContext`:
 
-    context.theme          advtext.style.Theme        the demo's theme
-    context.measure        advtext.pack.CharMeasure   glyph advances, for packing and shipping
-    context.metrics        MetricsResolver            `advtext.style.fontlib_metrics`
+    context.theme          advtext.theme.Theme        the demo's theme
     context.px_per_inch    float                      the pixel density everything converts at
-    context.fonts          FaceFont                   Face -> loaded ImFont, or None
+    context.fonts          FaceFont                   Face -> an ImFont to push, or None
+    context.metrics        MetricsResolver            `face_metrics`; measures a face when called
     context.debug          bool                       the shared debug overlay; mutable
+    context.source         str | None                 the markdown the launch named
+    context.columns_source str | None                 the Columns page's markdown
     context.options_for(PAGE.name) -> tuple[str, ...] the option words the launch named
     context.count_for(PAGE.name)   -> int | None      the integer the launch named
-    context.app            App | None                 the demo application, see below
 
 `context.fonts` reads the atlas at call time, so it is safe to hold: a page built
 before the fonts loaded, or in a test with no atlas at all, gets `None` for every
-face and `advtext.backends.imgui_draw.draw` then draws in whatever is bound.
+face. In the app with the imtypeset library loaded it answers the library's font
+for the role, which is the only copy of the face in the atlas.
 
-`context.app` exists for the five original pages, whose cached material
-(`App.column_layout`, `App.gallery`, `App.specimen`, the `DocumentView`) stayed
-on `App` because `tests/test_app.py` pins it there. **A new page should not need
-it**, and a page that does not touch it can be built from `PageContext.build()`
-in a test with no app and no window.
+**A page sets its text through the typeset layer and nothing else**
+(`advtext.ui.typeset_view` and its siblings). When
+`advtext.typesetter.ready()` is false it draws one wrapped line saying why
+(`advtext.ui.pages.typeset.why_not()`) and builds nothing. The context
+therefore carries no glyph measure and no draw backend; until 2026-10-11 it
+carried `measure`, the old core's `CharMeasure`.
+
+**A page does not reach the shell.** What the launch named is on the context
+(`source`, `columns_source`, `count_for`, `options_for`), so every page can
+be built from `PageContext.build()` in a test with no app and no window.
+Until tranche 5 the context carried the `App` itself, for the pages whose
+material was cached there.
 
 `PageContext.build()` makes a context out of the defaults -- the stock theme,
-real metrics, no fonts -- which is what a headless test of a page wants:
+no fonts, no sources -- which is what a headless test of a page wants:
 
     page = PAGE.factory(PageContext.build())
     # one frame of a bare ImGui context, as tests/test_pages.py does
@@ -93,9 +101,23 @@ down with it. So the scan is tolerant and loud: the demo opens with the rest,
 the broken module is named in the sidebar, and `require` -- which is what the
 test and `scripts/shot.py --list` call -- raises with every reason at once.
 
-The sheet helpers below (`paint_sheet`, `draw_at`, `claim`, `plate`, `caption`)
-are the ones the original pages share. They moved here from `advtext.ui.app` so
-that a new page can set a sheet the same way without importing the app.
+The two helpers below (`caption`, `debug_toggle`) are the chrome the pages
+share.
+
+## What importing this package loads
+
+Every page module imports this package for `PageSpec` and `PageContext`, so
+what it loads every page loads: `advtext.theme` and `advtext.primitives`,
+which is what a `Theme` needs (`tests/test_typeset_closure.py` holds the
+set). Nothing of the reference layout core is loaded here at import, when a
+context is made, or by any function below, with one exception that is named:
+`face_metrics`, when it is called.
+
+Until tranche 5 (2026-10-11) this package also carried the sheet helpers of
+the pages that drew through the old ImGui backend (`paint_sheet`, `draw_at`,
+`claim`, `plate`, `PLATE_HEADS`, `available_width`), `PageContext.measure`,
+and `PageContext.app` with `require_app`. No page called any of them once
+the fallbacks to the old views were removed, and they are deleted.
 """
 
 from __future__ import annotations
@@ -104,42 +126,35 @@ import importlib
 import pkgutil
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Protocol
 
-from advtext.backends.imgui_draw import DrawStats, Palette
-from advtext.nodes import Box
-from advtext.pack import CharMeasure
-from advtext.shipout import Point, ship
-from advtext.style import MetricsResolver, Theme, char_measure, fontlib_metrics
-from advtext.ui.document_view import Page
-from advtext.units import DEFAULT_PX_PER_INCH, Scaled, px_from_sp, sp_from_px
+from advtext.primitives import DEFAULT_PX_PER_INCH
+from advtext.theme import Theme
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from imgui_bundle import imgui
 
-    from advtext.backends.imgui_draw import FaceFont
-    from advtext.ui.app import App
+    from advtext.fontmetrics import FontMetrics
+    from advtext.primitives import Face
+
+    FaceFont = Callable[[Face], "imgui.ImFont | None"]
+    MetricsResolver = Callable[[str], FontMetrics]
 
 __all__ = [
     "DEMO_DIR",
-    "PLATE_HEADS",
     "Discovery",
     "Failure",
     "PageContext",
     "PageLoadError",
     "PageSpec",
     "PageView",
-    "available_width",
     "caption",
-    "claim",
     "debug_toggle",
     "demo_text",
     "discover",
-    "draw_at",
-    "paint_sheet",
-    "plate",
+    "face_metrics",
     "require",
 ]
 
@@ -194,6 +209,27 @@ def _no_font(face: object) -> None:
     return None
 
 
+def face_metrics(key: str) -> FontMetrics:
+    """
+    A face's measurements at a size, read from its font file: the default of `PageContext.metrics`.
+
+    **The one thing a page context still takes from the old core**
+    (`.concerns/lead--tranche-5.md`, decision 5). It is
+    `advtext.style.fontlib_metrics`, asked at the call: nothing is imported
+    until a page measures a face, and a caller who replaces
+    `advtext.style.fontlib_metrics` is still the one asked. Its use is
+    `Theme.at_pixel_height(height, metrics=context.metrics)`, which needs a
+    face's ascent, descent and em to size a theme to a pixel height.
+    imtypeset has no such query yet (`.concerns/lead--for-imtypeset-team.md`,
+    item 5); when it has, this function is where the change goes.
+
+    `key` is a font key as `advtext.theme.font_key` makes it.
+    """
+    from advtext.style import fontlib_metrics
+
+    return fontlib_metrics(key)
+
+
 @dataclass(slots=True)
 class PageContext:
     """
@@ -205,10 +241,17 @@ class PageContext:
     """
 
     theme: Theme
-    measure: CharMeasure
     px_per_inch: float = DEFAULT_PX_PER_INCH
     fonts: FaceFont = _no_font
-    metrics: MetricsResolver = fontlib_metrics
+    """
+    `Face` to the `ImFont` a page may push for it, or `None`. In the app with
+    the library loaded it answers the library's font for the role
+    (`advtext.ui.app._face_font`).
+    """
+    metrics: MetricsResolver = face_metrics
+    """
+    See `face_metrics`: resolved when called, never when a context is made.
+    """
     debug: bool = False
     request_page: str | None = None
     """
@@ -217,31 +260,29 @@ class PageContext:
     """
     request_options: tuple[str, ...] = ()
     request_count: int | None = None
-    app: App | None = None
+    source: str | None = None
+    """
+    The markdown the launch named (`run`'s `source`), or `None` when the
+    context was made without one: a page then reads its own file with
+    `demo_text`.
+    """
+    columns_source: str | None = None
+    """
+    The markdown for the Columns page, or `None` to use `source`.
+    """
 
     @classmethod
     def build(cls, theme: Theme | None = None, **fields: object) -> PageContext:
         """
-        A context from the defaults: the stock theme, real metrics, no fonts.
+        A context from the defaults: the stock theme, no fonts, no sources.
 
         For a test, and for anything else that wants a page without the app.
+        It imports nothing: `metrics` measures a face when it is called.
         """
         return cls(
             theme=theme if theme is not None else Theme.build(),
-            measure=char_measure(fontlib_metrics),
             **fields,  # type: ignore[arg-type]
         )
-
-    def require_app(self) -> App:
-        """
-        The demo application, for the five original pages; a clear error without one.
-        """
-        if self.app is None:
-            raise RuntimeError(
-                "this page draws material cached on advtext.ui.app.App and was built "
-                "from a context with no app; construct it through App.page(name)"
-            )
-        return self.app
 
     def _named(self, name: str) -> bool:
         return self.request_page is not None and self.request_page.lower() == name.lower()
@@ -277,6 +318,16 @@ class PageSpec:
     caption: str = ""
     options: tuple[str, ...] = ()
     shots: tuple[str, ...] = ("",)
+    max_count: int | None = None
+    """
+    The most the launch's integer may be for this page, or `None` for any.
+
+    The integer means what the page reads it as (`PageContext.count_for`): a
+    page that hands it to something with a limit states the limit here, and
+    `advtext.ui.app.parse_tab_request` refuses a larger one before a window
+    opens. Without it the refusal came from inside the page's first `draw`
+    (`--tab columns:4097`, until 2026-10-11).
+    """
 
     def __post_init__(self) -> None:
         if not NAME_PATTERN.match(self.name):
@@ -315,7 +366,9 @@ class PageSpec:
         """
         Whether `word` may follow this page's name after the colon.
         """
-        return word == SHARED_OPTION or is_count(word) or word in self.options
+        if is_count(word):
+            return self.max_count is None or int(word) <= self.max_count
+        return word == SHARED_OPTION or word in self.options
 
     def shot_specs(self) -> tuple[str, ...]:
         """
@@ -465,7 +518,7 @@ def require(package: str = __name__) -> Discovery:
 
 
 # ----------------------------------------------------------------------
-# Drawing helpers, shared by pages so a sheet is set one way
+# Chrome the pages share
 # ----------------------------------------------------------------------
 
 
@@ -485,94 +538,3 @@ def debug_toggle(context: PageContext) -> None:
     from imgui_bundle import imgui
 
     _, context.debug = imgui.checkbox("debug overlay", context.debug)
-
-
-def available_width(context: PageContext) -> Scaled:
-    """
-    The width left in the window at the cursor, in scaled points, never under 80 px.
-    """
-    from imgui_bundle import imgui
-
-    return sp_from_px(max(imgui.get_content_region_avail().x, 80.0), context.px_per_inch)
-
-
-PLATE_HEADS: Final = 3
-"""
-How many body leadings of air a plate gets above and below its content.
-
-A *plate* is the page the Formula and Blocks pages set: one short thing on a sheet
-of its own. `Page.head` is one leading, which is right for a scroll of continuous
-prose -- it keeps the first baseline on the same rhythm as every baseline under it
--- and wrong for a sheet with a single line on it, where a one-line margin reads
-as a mis-cut scrap rather than as a page. Three is the smallest multiple at which
-the sheet stops looking like a strip.
-"""
-
-
-def plate(page: Page) -> Page:
-    """
-    The same sheet, with the head a plate wants rather than the one a scroll wants.
-    """
-    return replace(page, head=page.head * PLATE_HEADS)
-
-
-def paint_sheet(page: Page, px_per_inch: float, *, content_height: Scaled) -> imgui.ImVec2:
-    """
-    Fill the sheet at the cursor and return the text block's top-left corner.
-
-    The one place a `Page` becomes pixels, which is the point of it: hit testing,
-    culling and the draw all take the origin this returns, so a margin cannot be
-    applied to some of them and not the others. That is the failure mode of
-    insetting a draw call on its own, where the text moves and the mouse does not.
-    """
-    from imgui_bundle import imgui
-
-    region = imgui.get_cursor_screen_pos()
-    sheet_x = region.x + px_from_sp(page.offset, px_per_inch)
-    height_px = px_from_sp(page.sheet_height(content_height), px_per_inch)
-    imgui.get_window_draw_list().add_rect_filled(
-        imgui.ImVec2(sheet_x, region.y),
-        imgui.ImVec2(sheet_x + px_from_sp(page.width, px_per_inch), region.y + height_px),
-        Palette().page,
-    )
-    return imgui.ImVec2(
-        sheet_x + px_from_sp(page.margin, px_per_inch),
-        region.y + px_from_sp(page.head, px_per_inch),
-    )
-
-
-def draw_at(context: PageContext, box: Box, origin: imgui.ImVec2, *, debug: bool) -> DrawStats:
-    """
-    Ship one packed box and draw it at a screen position.
-    """
-    from imgui_bundle import imgui
-
-    from advtext.backends.imgui_draw import draw
-
-    return draw(
-        imgui.get_window_draw_list(),
-        ship(box, Point(0, box.height), measure=context.measure),
-        origin,
-        fonts=context.fonts,
-        palette=Palette(),
-        px_per_inch=context.px_per_inch,
-        debug=debug,
-    )
-
-
-def claim(page: Page, content_height: Scaled, px_per_inch: float) -> None:
-    """
-    Advance the cursor past a sheet the draw list wrote without advancing it.
-
-    The draw list writes pixels and does not move the cursor, so without this the
-    next widget is drawn on top of the page. `pptmstr/ui/inbox.py:722,785` had to
-    do the same thing for the same reason.
-    """
-    from imgui_bundle import imgui
-
-    imgui.dummy(
-        imgui.ImVec2(
-            px_from_sp(page.width, px_per_inch),
-            px_from_sp(page.sheet_height(content_height), px_per_inch),
-        )
-    )

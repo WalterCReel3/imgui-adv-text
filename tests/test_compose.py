@@ -4,13 +4,13 @@ Composition: the last pure step before ship-out, and the only part of the UI tha
 `advtext.ui.compose` breaks every paragraph, hangs every list marker and sizes
 every table column. It is roughly the same amount of real layout logic as the
 line breaker consumes, and none of it is ImGui's, so it is testable here and it
-is tested here. `advtext.ui.document_view`'s cache is exercised too: the cache
-key is arithmetic, and only `draw` needs a frame.
+is tested here.
 
-**Nothing in this file opens a window**, and nothing can: no display exists. The
-ImGui code paths -- `advtext.backends.imgui_draw.draw`,
-`DocumentView.draw`, `advtext.ui.app.run` -- are unverified and stay that way.
-What is asserted here is everything that happens before a pixel would be touched.
+**Nothing in this file opens a window.** What is asserted here is everything
+that happens before a pixel would be touched. (Until tranche 5 it also held
+four tests of `advtext.ui.document_view.DocumentView`'s layout cache; that view
+is deleted with the old ImGui draw backend. `advtext.ui.composition` is kept as
+part of the reference core the SVG litmus renderer uses.)
 
 Widths are worked out from a fake font with round numbers, as in
 `tests/test_markdown.py`, so a measure of 1000 holds exactly 100 ten-wide glyphs
@@ -26,7 +26,6 @@ from pathlib import Path
 import pytest
 
 import advtext.ui as ui_module
-from advtext.backends.imgui_draw import DEFAULT_PALETTE, DrawStats, rgba
 from advtext.badness import INF_BAD, badness
 from advtext.fontmetrics import Face, FontMetrics, GlyphBBox
 from advtext.linebreak import LineBreakParams
@@ -46,7 +45,7 @@ from advtext.ui import (
     _theme_key,
     compose,
 )
-from advtext.ui.document_view import DocumentView
+from advtext.ui.palette import DEFAULT_PALETTE, DrawStats, rgba
 from advtext.units import UNITY, GlueOrder, sp_from_px
 
 # Scaled points, not pixels: the theme's indents and sizes are in scaled points
@@ -531,63 +530,7 @@ def test_a_fenced_blocks_indentation_survives_because_its_spaces_are_characters(
     assert letter.x - glyphs_on(cmds, first)[0].x == 4 * SPACE
 
 
-# -- the view's cache ----------------------------------------------------
-
-
-def test_a_view_relayouts_only_when_the_width_changes(theme: Theme) -> None:
-    # Breaking a paragraph is a whole-paragraph optimisation and far too
-    # expensive per frame. The cache is the reason DocumentView exists at all.
-    view = DocumentView(
-        document=build_document("Some prose to lay out.\n", theme, fake_resolve),
-        theme=theme,
-        measure=char_measure(fake_resolve),
-    )
-    first = view.layout_for(MEASURE)
-    assert view.layout_for(MEASURE) is first
-    assert view.layout_for(MEASURE + 1) is not first
-
-
-def test_invalidating_a_view_drops_the_cache(theme: Theme) -> None:
-    view = DocumentView(
-        document=build_document("Some prose.\n", theme, fake_resolve),
-        theme=theme,
-        measure=char_measure(fake_resolve),
-    )
-    first = view.layout_for(MEASURE)
-    view.invalidate()
-    assert view.layout_for(MEASURE) is not first
-
-
-def test_a_selection_survives_a_relayout_as_indices_rather_than_positions(
-    theme: Theme,
-) -> None:
-    # The reading order does not change when the measure does, so the same words
-    # stay selected and only the rectangles move. That is why selection addresses
-    # items by index.
-    view = DocumentView(
-        document=build_document(
-            "Enough prose here to wrap at a narrow measure.\n", theme, fake_resolve
-        ),
-        theme=theme,
-        measure=char_measure(fake_resolve),
-    )
-    narrow = view.layout_for(sp_from_px(180.0))
-    wide = view.layout_for(sp_from_px(900.0))
-    assert narrow.model.length == wide.model.length
-    selection = wide.model.select(2, 12)
-    assert narrow.model.text(selection) == wide.model.text(selection)
-
-
-def test_a_view_with_no_layout_yet_reports_no_selected_text(theme: Theme) -> None:
-    view = DocumentView(
-        document=build_document("x\n", theme, fake_resolve),
-        theme=theme,
-        measure=char_measure(fake_resolve),
-    )
-    assert view.selected_text() == ""
-
-
-# -- the backend's pure parts --------------------------------------------
+# -- the palette's pure parts (`advtext.ui.palette`; they were the draw backend's) --
 
 
 def test_rgba_packs_bytes_the_way_im_col32_does() -> None:

@@ -34,7 +34,6 @@ from typing import Any
 import pytest
 
 from advtext import fontlib
-from advtext.backends.imgui_draw import baked_size_px
 from advtext.fontmetrics import Face
 from advtext.ui.fonts import (
     ALL_FACES,
@@ -234,6 +233,11 @@ def test_the_view_of_what_is_registered_cannot_be_written_through(host_mono: Pat
 # The size helper
 
 
+def _height_px(em_px: float, ascent: float, descent: float, em: float) -> float:
+    """The pixel height Dear ImGui means by a font's size, for a face set at an em of `em_px`."""
+    return em_px * (ascent + descent) / em
+
+
 @pytest.mark.parametrize("face", [Face.PROSE, Face.PROSE_BOLD, Face.CODE, Face.MATH])
 @pytest.mark.parametrize("height_px", [13.0, 16.0, 18.0, 24.0])
 def test_the_size_helper_is_the_inverse_of_the_baked_size_correction(
@@ -242,9 +246,11 @@ def test_the_size_helper_is_the_inverse_of_the_baked_size_correction(
     """
     A host's pixel height, converted to an em and drawn, is asked of ImGui at that height.
 
-    `baked_size_px` is the arithmetic `draw` performs on the way out. Composed
-    with the helper it must be the identity, or text built "at the host's 16"
-    would be drawn at some other size and resampled.
+    Dear ImGui's size for a font is the height of its ascent and descent:
+    `em * (ascent + descent) / em_units` (`_height_px` below; the old ImGui draw
+    backend had it as `baked_size_px`, and is deleted). Composed with the
+    helper it must be the identity, or text built "at the host's 16" would be
+    drawn at some other size and resampled.
 
     Checked twice: exactly, in floats, and then through the rounding to scaled
     points that a real `FontSpec` imposes. The second is the one that matters in
@@ -254,13 +260,13 @@ def test_the_size_helper_is_the_inverse_of_the_baked_size_correction(
     em_px = em_size_for_pixel_height(face, height_px)
 
     exact = fontlib.metrics(face, em_px)
-    assert baked_size_px(em_px, exact.ascent, exact.descent, exact.em) == pytest.approx(
+    assert _height_px(em_px, exact.ascent, exact.descent, exact.em) == pytest.approx(
         height_px, abs=1e-9
     )
 
     size = sp_from_px(em_px)
     ours = fontlib.metrics(face, float(size))
-    asked = baked_size_px(px_from_sp(size), ours.ascent, ours.descent, ours.em)
+    asked = _height_px(px_from_sp(size), ours.ascent, ours.descent, ours.em)
     assert asked == pytest.approx(height_px, abs=1e-3)
     assert float(int(asked + 0.5)) == height_px
 
@@ -725,16 +731,20 @@ def test_an_explicit_atlas_and_size_reach_the_loader(imgui_context: Any) -> None
 # The demo's callback is now a caller of this
 
 
-def test_the_demo_s_font_callback_loads_the_same_six_files_through_load_faces(
+def test_the_demo_s_font_callback_loads_its_one_ui_font_through_load_faces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    `advtext.ui.app.load_fonts` moved its body here and its behaviour did not move.
+    `advtext.ui.app.load_fonts` is a caller of `load_faces`, for one face.
 
-    The same six files, in the order `Face` lists them, at 16 px, by absolute
-    path -- which is what the loop it replaced asked `hello_imgui` for. The one
-    difference is additive: `_FACES` now also answers for `Face.CODE_BOLD`, with
-    the bold prose font, and nothing extra is loaded to do it.
+    One file, the running-text face's, at 16 px, by absolute path. Until
+    tranche 5 (T5-APP) it was six files, every `Face` and mathematics among
+    them, because the demo's pages drew through the old ImGui backend; this
+    test then listed the six. The pages draw through imtypeset now, which
+    brings its own fonts, and the app's own font is only what the sidebar
+    and a page's one line are read in when the library is not loaded. That a
+    role sharing a file shares the font is still held above, on `load_faces`
+    itself (`test_a_role_that_shares_a_file_shares_the_font_...`).
     """
     from imgui_bundle import hello_imgui
 
@@ -743,30 +753,21 @@ def test_the_demo_s_font_callback_loads_the_same_six_files_through_load_faces(
     calls: list[tuple[str, float, bool]] = []
 
     def fake_load_font(path: str, size: float, params: Any) -> Any:
+        assert Path(path).is_absolute()
         calls.append((Path(path).name, size, params.inside_assets))
         return _Font(Path(path))
 
     monkeypatch.setattr(hello_imgui, "load_font", fake_load_font)
-    monkeypatch.setattr(app, "_FACES", {Face.PROSE: "left over from a previous run"})
+    monkeypatch.setattr(app, "_FACES", {Face.MATH: "left over from a previous run"})
 
     app.load_fonts()
 
-    assert [name for name, _size, _inside in calls] == [
-        "Roboto-Regular.ttf",
-        "Roboto-Bold.ttf",
-        "Roboto-RegularItalic.ttf",
-        "Roboto-BoldItalic.ttf",
-        "Inconsolata-Medium.ttf",
-        # The patched copy, whose name carries a digest of the source's path
-        # (`test_two_math_files_of_one_name_are_patched_to_two_files` says why).
-        fontlib.imgui_font_file(Face.MATH).name,
-    ]
-    assert calls[-1][0].startswith("math-") and calls[-1][0].endswith("-latinmodern-math.otf")
-    assert {(size, inside) for _name, size, inside in calls} == {(16.0, False)}
-    assert set(app._FACES) == set(Face)
-    assert all(font is not None for font in app._FACES.values())
-    assert app._face_font(Face.CODE_BOLD) is app._face_font(Face.PROSE_BOLD)
+    assert calls == [("Roboto-Regular.ttf", 16.0, False)]
+    assert calls[0][1] == DEFAULT_LOAD_PX == app.UI_FONT_PX
+    assert set(app._FACES) == {Face.PROSE}
     assert app._face_font(Face.PROSE).path.name == "Roboto-Regular.ttf"
+    # No library in this process: a role the app did not load has no font.
+    assert app._face_font(Face.CODE_BOLD) is None and app._face_font(Face.MATH) is None
 
 
 # ----------------------------------------------------------------------

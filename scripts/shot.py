@@ -65,6 +65,11 @@ that reason. Neither carries one now: the pages are found by scanning
 `advtext/ui/pages/`, and a module there that cannot be loaded makes `--list`
 exit 1 naming it, so `make shot-all` stops instead of photographing what is
 left and reporting nothing missing.
+
+**A library that was asked for and is not drawing is a failed shot** (exit 3,
+`NOT_DRAWN_STATUS`, no PNG, the reason on stderr; since 2026-10-11). With
+`IMTYPESET_LIBRARY` unset the shot of each page's one line is taken as before
+and `NO_LIBRARY` says what it is.
 """
 
 from __future__ import annotations
@@ -74,7 +79,7 @@ import os
 import struct
 import sys
 import zlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +101,66 @@ No DISPLAY is set, so there is nowhere to open a window.
 set. It is not a way to get a window without one: GLFW aborts in about half a
 second with IM_ASSERT( glfwInitSuccess ).
 """
+
+
+NO_LIBRARY = """\
+IMTYPESET_LIBRARY is not set, so no page of the demo will draw its text: every
+page sets its text through the imtypeset library and shows one line without it.
+
+  make typeset-lib          build the pinned library (once)
+  make shot TYPESET=1       the same command, with it
+"""
+
+
+def library_note(environ: Mapping[str, str]) -> str | None:
+    """
+    What to tell someone about to open the demo with no library asked for, or `None`.
+
+    A note and not a refusal: the window still opens, each page says the
+    same thing in one line, and that is a legitimate thing to want to look
+    at. It is here because since 2026-10-11 no page falls back to advtext's
+    own layout, so an unadorned `make shot` shows no text at all, and a
+    batch of one-line pages should not be the first anyone hears of it.
+    Only the variable is read: whether the library then loads is the app's to
+    say, on each page.
+    """
+    return None if environ.get("IMTYPESET_LIBRARY") else NO_LIBRARY
+
+
+NOT_DRAWN = """\
+IMTYPESET_LIBRARY is set ({library}) and imtypeset was not drawing when the
+window closed: {reason}
+
+Every page then draws that sentence in one line in place of its text.
+"""
+
+
+NOT_DRAWN_STATUS = 3
+"""
+The exit status of a shot whose library was asked for and was not drawing.
+
+Not 0, which is a photograph of the page; not 2, which is "no display"; not
+1, which is what a page that raised ends with (`advtext.ui.app.PageError`).
+"""
+
+
+def not_drawn(environ: Mapping[str, str], reason: str) -> str | None:
+    """
+    What to fail with when the library was ASKED FOR and was not drawing at exit, or `None`.
+
+    `reason` is `advtext.ui.app.not_drawing_at_exit()`: the sentence the
+    pages were showing when the window closed, empty when the library drew.
+    With `IMTYPESET_LIBRARY` unset this is `None` whatever the reason: a shot
+    of the one line is then what was asked for, and `library_note` has said
+    so. With it set and a reason, the shot is refused: until 2026-10-11 a
+    library that was refused at import, lost its fonts or failed in the
+    middle of the run still ended in a PNG and exit 0, a photograph of a
+    sentence under a filename that names a page.
+    """
+    library = environ.get("IMTYPESET_LIBRARY")
+    if not library or not reason:
+        return None
+    return NOT_DRAWN.format(library=library, reason=reason)
 
 
 # ----------------------------------------------------------------------
@@ -363,6 +428,10 @@ def main(argv: list[str] | None = None) -> int:
         print(NO_DISPLAY, file=sys.stderr)
         return 2
 
+    note = library_note(os.environ)
+    if note is not None:
+        print(note, file=sys.stderr)
+
     from imgui_bundle import hello_imgui, immapp
 
     from advtext.ui import app as advtext_app
@@ -393,6 +462,11 @@ def main(argv: list[str] | None = None) -> int:
         # immapp.run's own overloaded type, and mypy calls the ignore redundant
         # here even though it is required on the assignment above.
         immapp.run = real_run
+
+    failure = not_drawn(os.environ, advtext_app.not_drawing_at_exit())
+    if failure is not None:
+        print(failure + "No PNG was written.", file=sys.stderr)
+        return NOT_DRAWN_STATUS
 
     captured = _grab(args.out)
     warning = size_warning(

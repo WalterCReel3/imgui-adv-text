@@ -40,6 +40,7 @@ here separates it from a correct one. It was checked by reading the image:
 from __future__ import annotations
 
 import importlib.util
+import os
 import socket
 import struct
 import zlib
@@ -437,3 +438,65 @@ def test_a_real_shot_of_the_real_app_is_a_valid_non_blank_png(window: Window) ->
         f"only {len(colours)} distinct colours in the frame -- the window opened but "
         "little or nothing was composited into it"
     )
+
+
+def test_a_shot_with_no_library_asked_for_is_said_to_be_one(
+    window: Window, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    `library_note`, pure, and then the real script with the variables removed.
+
+    Since tranche 5 a page with no imtypeset library draws one line and no
+    text of its own, so a photograph taken without `IMTYPESET_LIBRARY` is a
+    photograph of that line. The script still takes it (exit 0, a PNG of the
+    size asked for) and says what it is on stderr, with the command that has
+    the text. With the variable set the note is not printed.
+    """
+    assert shot.library_note({}) == shot.NO_LIBRARY
+    assert shot.library_note({"IMTYPESET_LIBRARY": "x.so"}) is None
+    assert "make shot TYPESET=1" in shot.NO_LIBRARY
+
+    out = window.out / "shot-no-library.png"
+    argv = [str(_SCRIPT), "--tab", "document", "--width", "700", "--height", "500"]
+    argv += ["--frames", "4", "--out", str(out)]
+    for name in [name for name in os.environ if name.startswith("IMTYPESET_")]:
+        monkeypatch.delenv(name)
+    done = window.run(argv)
+    assert done.returncode == 0, f"on {window.where}:\n{done.stdout}\n{done.stderr}"
+    assert shot.NO_LIBRARY.strip() in done.stderr
+    assert _decode_png(out.read_bytes())[:2] == (700, 500)
+
+
+def test_a_library_that_was_asked_for_and_is_not_drawing_is_a_failed_shot(
+    window: Window, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    A1 (T5-R #2). `IMTYPESET_LIBRARY` names a library that cannot be loaded.
+
+    Every page then draws its one line, no page raises, and until T5-FINAL the
+    script wrote a PNG of that line and exited 0: `make shot TYPESET=1` with a
+    library that was refused, lost its fonts or failed mid-run gave a batch of
+    photographs of a sentence under filenames that claim pages. Now the script
+    exits `shot.NOT_DRAWN_STATUS`, says why on stderr (the sentence the page
+    drew), and writes no PNG. The pure half is asked first, with no window.
+    """
+    assert shot.not_drawn({}, "anything") is None, "no library asked for is not a failure"
+    assert shot.not_drawn({"IMTYPESET_LIBRARY": ""}, "anything") is None
+    assert shot.not_drawn({"IMTYPESET_LIBRARY": "x.so"}, "") is None, "it was drawing"
+    said = shot.not_drawn({"IMTYPESET_LIBRARY": "x.so"}, "ImportError: refused")
+    assert said is not None and "x.so" in said and "ImportError: refused" in said
+    assert shot.NOT_DRAWN_STATUS not in (0, 2), "0 is a shot and 2 is no display"
+
+    out = window.out / "shot-library-absent.png"
+    absent = window.out / "no-such-library.so"
+    argv = [str(_SCRIPT), "--tab", "document", "--width", "700", "--height", "500"]
+    argv += ["--frames", "4", "--out", str(out)]
+    monkeypatch.setenv("IMTYPESET_LIBRARY", str(absent))
+    done = window.run(argv)
+    assert (
+        done.returncode == shot.NOT_DRAWN_STATUS
+    ), f"on {window.where}: exit {done.returncode}\n{done.stdout}\n{done.stderr}"
+    assert "imtypeset was not drawing" in done.stderr and str(absent) in done.stderr
+    assert shot.NO_LIBRARY.strip() not in done.stderr, "the variable WAS set"
+    assert not out.exists(), "a photograph of the one line was written all the same"
+    assert "wrote" not in done.stdout

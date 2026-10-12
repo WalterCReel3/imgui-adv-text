@@ -36,9 +36,20 @@ With no file it shows `demo/sample.md`, falling back to
 absent. `--tab` takes `advtext.ui.app.parse_tab_request`'s grammar, so
 `--tab columns:3,debug` opens the Columns tab at three columns with the debug
 overlay on. A "tab" is a page of the sidebar since 2026-10-07: fourteen of them,
-found by scanning `advtext/ui/pages/` (`--help` lists the names; there were five
-tabs before that, and three before those), and a page may take option words of its
-own, as in `--tab diff:git,side` or `--tab stream:table,done`.
+found by scanning `advtext/ui/pages/` (`--help` lists the names; fifteen with
+the Blocks page, which showed the old core's boxes and was deleted on
+2026-10-11; five tabs before 2026-10-07, and three before those), and a page
+may take option words of its own, as in `--tab diff:git,side` or
+`--tab stream:table,done`.
+
+**The pages draw through the imtypeset library and say so in one line when it
+is not loaded.** `make run TYPESET=1` (after `make typeset-lib`) is the demo
+with its text; without `IMTYPESET_LIBRARY` this script prints `NO_LIBRARY` to
+stderr and opens the window all the same. With the variable set and a library
+that was nonetheless not drawing when the window closed (refused at import,
+no fonts, a failure mid-run), it prints `NOT_DRAWN` with the reason at exit
+(since 2026-10-11) and still exits 0; `scripts/shot.py` fails on the same
+condition.
 """
 
 from __future__ import annotations
@@ -46,6 +57,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 # Run from anywhere without an install. `make bootstrap` does an editable
@@ -54,6 +66,52 @@ from pathlib import Path
 # is a bare ModuleNotFoundError long after the argument parsing has succeeded.
 if __package__ in (None, ""):  # pragma: no cover - import shim for direct execution
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+NO_LIBRARY = """\
+IMTYPESET_LIBRARY is not set, so no page of the demo will draw its text: every
+page sets its text through the imtypeset library and shows one line without it.
+
+  make typeset-lib          build the pinned library (once)
+  make run TYPESET=1        the same command, with it
+"""
+
+
+def library_note(environ: Mapping[str, str]) -> str | None:
+    """
+    What to tell someone about to open the demo with no library asked for, or `None`.
+
+    A note and not a refusal: the window still opens, each page says the
+    same thing in one line, and that is a legitimate thing to want to look
+    at. It is here because since 2026-10-11 no page falls back to advtext's
+    own layout, so an unadorned `make run` shows no text at all, and a
+    window of one-line pages should not be the first anyone hears of it.
+    Only the variable is read: whether the library then loads is the app's to
+    say, on each page.
+    """
+    return None if environ.get("IMTYPESET_LIBRARY") else NO_LIBRARY
+
+
+NOT_DRAWN = """\
+IMTYPESET_LIBRARY is set ({library}) and imtypeset was not drawing when the
+window closed: {reason}
+
+Every page then draws that sentence in one line in place of its text.
+"""
+
+
+def not_drawn(environ: Mapping[str, str], reason: str) -> str | None:
+    """
+    What to say at exit when the library was ASKED FOR and was not drawing, or `None`.
+
+    `reason` is `advtext.ui.app.not_drawing_at_exit()`. `scripts/shot.py` has
+    the same function and fails on it; this script only says it, because its
+    window was opened to be looked at and was.
+    """
+    library = environ.get("IMTYPESET_LIBRARY")
+    if not library or not reason:
+        return None
+    return NOT_DRAWN.format(library=library, reason=reason)
+
 
 BLOCKED = """\
 No DISPLAY is set, so there is nowhere to open a window.
@@ -159,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     text = source.read_text(encoding="utf-8") if source else None
+    note = library_note(os.environ)
+    if note is not None:
+        print(note, file=sys.stderr)
     try:
         run(text, tab=args.tab)
     except RuntimeError as error:
@@ -173,6 +234,11 @@ def main(argv: list[str] | None = None) -> int:
             raise
         print(_no_window(os.environ.get("DISPLAY")), file=sys.stderr)
         return 2
+    from advtext.ui import app
+
+    said = not_drawn(os.environ, app.not_drawing_at_exit())
+    if said is not None:
+        print(said, file=sys.stderr)
     return 0
 
 

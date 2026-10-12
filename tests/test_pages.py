@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from conftest import Window
 
 TINY = "# t\n\nOne short paragraph.\n"
-ORIGINAL = ("Document", "Columns", "Specimen", "Formula", "Blocks")
+ORIGINAL = ("Document", "Columns", "Specimen", "Formula")
 
 
 class _Recorder:
@@ -83,14 +83,19 @@ def test_every_module_in_the_real_package_is_a_page() -> None:
     assert found.failures == ()
 
 
-def test_the_five_original_pages_come_first_in_their_old_order() -> None:
+def test_the_original_pages_come_first_in_their_old_order() -> None:
     """
-    Document, Columns, Specimen, Formula, Blocks: the tab bar's order, and still
-    the head of the list however many pages are added after them, because the
+    Document, Columns, Specimen, Formula: the tab bar's order, and still the
+    head of the list however many pages are added after them, because the
     page that opens when nothing is asked for is the first one.
+
+    There were five. Blocks showed the old core's `hpack` and `vpack` at
+    three widths and was deleted with tranche 5 (`.concerns/lead--tranche-5.md`,
+    decision 3): boxes are imtypeset's, and it exposes none.
     """
     names = [page.name for page in pages.discover().pages]
-    assert tuple(names[:5]) == ORIGINAL
+    assert tuple(names[:4]) == ORIGINAL
+    assert pages.discover().find("blocks") is None
 
 
 SIDEBAR = (
@@ -98,7 +103,6 @@ SIDEBAR = (
     ("Typesetting", "Columns", "Columns", 20),
     ("Typesetting", "Specimen", "Specimen", 30),
     ("Typesetting", "Formula", "Formula", 40),
-    ("Typesetting", "Blocks", "Blocks", 50),
     ("Typesetting", "Math", "Math in text", 60),
     ("Embedding", "Themes", "Themes", 110),
     ("Embedding", "Tables", "Tables", 120),
@@ -108,6 +112,7 @@ SIDEBAR = (
     ("Streaming", "Chat", "Chat", 220),
     ("Diff", "Diff", "Diff", 310),
     ("Performance", "Stress", "Stress", 410),
+    ("Experimental", "Typeset", "Typeset", 510),
 )
 """
 The whole sidebar: group, name, label and order of every page, top to bottom.
@@ -128,7 +133,14 @@ def test_the_sidebar_is_exactly_the_agreed_list() -> None:
     assert len(set(orders)) == len(orders), "two pages share an order"
     # A group is one run of rows: its heading is drawn once.
     headings = [row.text for row in sidebar_rows(pages.discover()) if row.kind == "heading"]
-    assert headings == ["Typesetting", "Embedding", "Streaming", "Diff", "Performance"]
+    assert headings == [
+        "Typesetting",
+        "Embedding",
+        "Streaming",
+        "Diff",
+        "Performance",
+        "Experimental",
+    ]
 
 
 def test_page_names_are_unique_without_regard_to_case() -> None:
@@ -290,15 +302,42 @@ def test_a_context_from_the_defaults_needs_no_app_and_no_window() -> None:
     `PageContext.build()` is what a page's own test builds its page from.
     """
     context = PageContext.build()
-    assert context.app is None
     assert context.debug is False
+    assert context.source is None and context.columns_source is None
     from advtext.fontmetrics import Face
 
     assert context.fonts(Face.PROSE) is None
-    assert context.measure is not None and context.theme is not None
-    with pytest.raises(RuntimeError, match="no app"):
-        context.require_app()
+    assert context.theme is not None
+    assert context.metrics is pages.face_metrics
     assert PageContext.build(debug=True, px_per_inch=120.0).px_per_inch == 120.0
+    assert PageContext.build(source="# s\n").source == "# s\n"
+    # What the context carried for the old views is gone, as a field and as a keyword.
+    for gone in ("measure", "app", "require_app"):
+        assert not hasattr(context, gone), f"PageContext.{gone} is back"
+    with pytest.raises(TypeError):
+        PageContext.build(measure=None)
+    for helper in ("draw_at", "paint_sheet", "plate", "claim", "available_width"):
+        assert not hasattr(pages, helper), f"advtext.ui.pages.{helper} is back"
+
+
+def test_the_contexts_one_measurement_is_the_font_files_own() -> None:
+    """
+    `PageContext.metrics` is what `Theme.at_pixel_height` is handed, and it
+    answers what `advtext.style.fontlib_metrics` answers: asked for the body
+    face at a size, it gives that face's em, ascent and descent.
+    """
+    from advtext.fontmetrics import Face
+    from advtext.style import fontlib_metrics
+    from advtext.theme import Theme, font_key
+    from advtext.units import sp_from_px
+
+    key = font_key(Face.PROSE, sp_from_px(16.0))
+    mine, theirs = pages.face_metrics(key), fontlib_metrics(key)
+    assert (mine.em, mine.ascent, mine.descent) == (theirs.em, theirs.ascent, theirs.descent)
+    assert mine.em > 0 and mine.ascent > 0
+    context = PageContext.build()
+    sized = Theme.at_pixel_height(18.0, metrics=context.metrics)
+    assert sized == Theme.at_pixel_height(18.0)
 
 
 def test_a_page_reads_only_the_options_addressed_to_it() -> None:
@@ -419,8 +458,10 @@ def _frame(
         # No title bar, as hello_imgui's full-screen window has none, so the
         # body starts at the window's padding.
         imgui.begin("##advtext-pages-test", None, imgui.WindowFlags_.no_title_bar.value)
-        app.gui()
-        imgui.end()
+        try:
+            app.gui()
+        finally:
+            imgui.end()
     finally:
         imgui.render()
     return int(imgui.get_draw_data().total_vtx_count)
@@ -585,40 +626,174 @@ def test_an_app_with_no_pages_says_so_instead_of_crashing() -> None:
     assert _frame(app) > 0
 
 
-@pytest.mark.parametrize("name", ORIGINAL)
-def test_each_original_page_draws_frames_through_the_shell(name: str) -> None:
+def _said(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """
-    The five pages that used to be tabs, each shown for three frames.
+    Every string a page hands `imgui.text_wrapped` from here on, in order.
 
-    `fonts` is the app's own lookup, which answers `None` for every face here
-    because no atlas was loaded; the draw goes through all the same. The page
-    object comes from its module, and showing it adds vertices to a frame that
-    without it holds only the sidebar.
+    `advtext.ui.pages.typeset.say_why_not` draws its line with that call.
     """
+    imgui = pytest.importorskip("imgui_bundle").imgui
+    said: list[str] = []
+    real = imgui.text_wrapped
+
+    def recording(text: str) -> None:
+        said.append(text)
+        real(text)
+
+    monkeypatch.setattr(imgui, "text_wrapped", recording)
+    return said
+
+
+@pytest.mark.parametrize("name", [row[1] for row in SIDEBAR])
+def test_each_page_without_the_library_says_why_not_in_one_line_through_the_shell(
+    name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Every page, shown for three frames in a process where imtypeset is not loaded.
+
+    The pytest process never loads the library, with `TYPESET=1` or without
+    (the tests that need it open a window in a child), so this is the same
+    statement on both gates: the page object comes from its own module, it
+    raises nothing, and each frame it draws exactly one wrapped line, which
+    begins `NOT_DRAWING` and carries `why_not()`'s reason. It draws that and
+    no old view: `advtext.ui.bare_view`, `document_view`, `stream_view`,
+    `diff_view` and the old draw backend are not loaded by showing it
+    (`tests/test_typeset_closure.py` has the same statement per module, in a
+    fresh interpreter, for import time).
+
+    This replaces `test_each_original_page_draws_frames_through_the_shell`,
+    which showed the five original pages and asked only that vertices were
+    added -- true then of text set by the old core, and true now of one line.
+    """
+    from advtext import typesetter
+    from advtext.ui.pages.typeset import NOT_DRAWING, not_drawing, why_not
+
+    assert not typesetter.ready(), "the library is loaded in the pytest process"
+    said = _said(monkeypatch)
     app = App(source=TINY, columns_source=TINY, open_tab=name.lower())
     empty = _fake_app(Discovery(()))
     baseline = _frame(empty)
-    counts = [_frame(app) for _ in range(3)]
+    said.clear()
+    counts = []
+    for _ in range(3):
+        before = len(said)
+        counts.append(_frame(app))
+        assert said[before:] == [not_drawing(why_not())], f"{name} said {said[before:]}"
+    assert said[0].startswith(NOT_DRAWING) and len(said[0]) > len(NOT_DRAWING)
+    assert app.page_errors == {}, app.page_errors
     assert app.current == name
     page = app._views[name]
-    assert type(page).__module__ == f"advtext.ui.pages.{name.lower()}"
+    assert type(page).__module__.startswith("advtext.ui.pages.")
     assert list(app._views) == [name]
     assert counts[-1] > baseline, f"{name} drew nothing: {counts} against {baseline}"
 
 
+OLD_VIEWS = (
+    "advtext.ui.bare_view",
+    "advtext.ui.document_view",
+    "advtext.ui.stream_view",
+    "advtext.ui.diff_view",
+    "advtext.ui.specimen",
+    "advtext.ui.formulas",
+    "advtext.ui.composition",
+    "advtext.backends.imgui_draw",
+    "advtext.shipout",
+    "advtext.linebreak",
+    "advtext.columns",
+    "advtext.blocklayout",
+)
+"""
+The old views, the old draw backend, and the parts of the old core only they
+reach. What a page without the library must not load by being shown.
+"""
+
+SHOWN = """
+import json
+import sys
+
+from imgui_bundle import imgui
+
+from advtext.ui import app as advtext_app
+
+OLD = {old!r}
+names = list(advtext_app.page_names())
+report = {{"after_import": sorted(m for m in sys.modules if m in OLD), "pages": {{}}}}
+imgui.create_context()
+io = imgui.get_io()
+io.display_size = imgui.ImVec2(1300.0, 800.0)
+io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+app = advtext_app.App(source="# t\\n\\nOne short paragraph.\\n")
+report["after_app"] = sorted(m for m in sys.modules if m in OLD)
+for name in names:
+    app.select(name)
+    for _ in range(3):
+        io.delta_time = 1.0 / 60.0
+        imgui.new_frame()
+        imgui.set_next_window_size(imgui.ImVec2(1300.0, 800.0))
+        imgui.begin("##shown", None, imgui.WindowFlags_.no_title_bar.value)
+        app.gui()
+        imgui.end()
+        imgui.render()
+    report["pages"][name] = sorted(m for m in sys.modules if m in OLD)
+report["errors"] = sorted(app.page_errors)
+print(json.dumps(report))
+"""
+
+
+def test_showing_every_page_without_the_library_loads_no_old_view() -> None:
+    """
+    A fresh interpreter with no library: import the app, build it, show every
+    page for three headless frames. None of `OLD_VIEWS` is in `sys.modules`
+    at any point, and no page raised.
+
+    In a child because `sys.modules` of the pytest process holds whatever
+    earlier tests imported. The library's two variables are removed from the
+    child's environment, so the statement is the plain gate's on both gates.
+    """
+    import json
+    import os
+    import subprocess
+
+    environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("IMTYPESET_")
+    }
+    done = subprocess.run(
+        [sys.executable, "-c", SHOWN.format(old=OLD_VIEWS)],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parent.parent,
+        env=environment,
+        timeout=300,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    report = json.loads(done.stdout.strip().splitlines()[-1])
+    assert report["errors"] == []
+    assert report["after_import"] == [] and report["after_app"] == []
+    assert set(report["pages"]) == {row[1] for row in SIDEBAR}
+    loaded = {name: found for name, found in report["pages"].items() if found}
+    assert loaded == {}, f"showing a page loaded an old view: {loaded}"
+
+
 def test_the_debug_overlay_is_one_flag_shared_by_every_page() -> None:
     """
-    `--tab columns:debug` turns the overlay on, and the Document page shows it
-    too: the checkbox on each page writes `PageContext.debug`, and the Document
-    page copies that into its view before drawing.
+    `--tab columns:debug` turns the overlay on for every page: the flag is
+    `PageContext.debug`, one object, and each page is built from that context.
+
+    This used to end by reading the flag back off the app's `DocumentView`
+    after a frame of the Document page. The app holds no view now; what a
+    page does with the flag is its own test's subject.
     """
-    app = App(source=TINY, columns_source=TINY, open_tab="columns:debug")
+    found = Discovery((_spec("Columns", 10), _spec("Document", 20)))
+    app = _fake_app(found, open_tab="columns:debug")
+    app.context.debug = parse_tab_request("columns:debug", found).debug
     assert app.context.debug is True
     _frame(app)
-    app.view.debug = False
     app.select("Document")
     _frame(app)
-    assert app.view.debug is True
+    seen = [app._views[name].context for name in ("Columns", "Document")]  # type: ignore[attr-defined]
+    assert seen[0] is seen[1] is app.context and seen[1].debug is True
+    assert App(source=TINY, open_tab="document:debug").context.debug is True
 
 
 # ----------------------------------------------------------------------
@@ -783,58 +958,102 @@ def contrast(one: int, other: int) -> float:
     return (high + 0.05) / (low + 0.05)
 
 
-def _surface_behind(imgui: Any, x: float, y: float) -> int | None:
+def frame_inks(imgui: Any) -> list[tuple[int, int | None, int]]:
     """
-    The colour of the last opaque rectangle drawn under a point, in this window or one above it.
+    Every distinct `(ink, surface behind it, glyphs)` of the frame that was just rendered.
 
-    Read from ImGui's own vertex buffers at the moment text is about to be
-    drawn: four consecutive vertices of one opaque colour on two x and two y
-    is a filled rectangle -- a window's background, a sheet a page painted, a
-    ground a pane pushed -- and the latest one containing the point is what
-    the text will sit on. Windows are walked outward, child to parent.
+    Read from Dear ImGui's draw data, so it sees text whoever drew it: ImGui's
+    own widgets, and the imtypeset library writing into the same draw lists.
+    Four consecutive vertices of one colour on two x and two y are a quad. One
+    whose corners share a texture coordinate is a filled rectangle (the atlas's
+    white pixel); one whose corners span two u and two v is a glyph. A glyph's
+    surface is the last opaque rectangle, in draw order, that contains the
+    glyph's centre; both are cut to the clip rectangle of the draw command
+    they belong to, so a rectangle scrolled out of a pane is not a surface and
+    a glyph outside its pane is not judged.
+
+    Not seen: a glyph in a translucent ink, anything that is not an
+    axis-aligned quad (rounded fills, lines), and what a glyph's own shape
+    covers. It is the colours asked for, not pixels.
+
+    Self-contained (it imports nothing and reads no global) because the tour
+    below writes its source into the script it runs in a window.
     """
-    window = imgui.internal.get_current_window()
-    while window is not None:
-        buffer = window.draw_list.vtx_buffer
-        for first in range(buffer.size() - 4, -1, -1):
-            quad = [buffer[first + corner] for corner in range(4)]
-            colour = int(quad[0].col)
-            if (colour >> 24) != 0xFF or any(int(vertex.col) != colour for vertex in quad):
+    fills: list[tuple[float, float, float, float, int]] = []
+    pairs: dict[tuple[int, int | None], int] = {}
+    for draw_list in imgui.get_draw_data().cmd_lists:
+        vertices = draw_list.vtx_buffer
+        indices = draw_list.idx_buffer
+        spans = []
+        for command in draw_list.cmd_buffer:
+            if not command.elem_count:
                 continue
-            xs = sorted({vertex.pos.x for vertex in quad})
-            ys = sorted({vertex.pos.y for vertex in quad})
-            if len(xs) == 2 and len(ys) == 2 and xs[0] <= x < xs[1] and ys[0] <= y < ys[1]:
-                return colour
-        window = window.parent_window
-    return None
+            used = [
+                int(indices[at])
+                for at in range(command.idx_offset, command.idx_offset + command.elem_count)
+            ]
+            clip = command.clip_rect
+            spans.append(
+                (
+                    command.vtx_offset + min(used),
+                    command.vtx_offset + max(used),
+                    (clip.x, clip.y, clip.z, clip.w),
+                )
+            )
+        for low, high, (left, top, right, bottom) in spans:
+            first = low
+            while first + 3 <= high:
+                quad = [vertices[first + corner] for corner in range(4)]
+                colour = int(quad[0].col)
+                xs = sorted({vertex.pos.x for vertex in quad})
+                ys = sorted({vertex.pos.y for vertex in quad})
+                if len(xs) != 2 or len(ys) != 2 or any(int(v.col) != colour for v in quad[1:]):
+                    first += 1
+                    continue
+                first += 4
+                if (colour >> 24) != 0xFF:
+                    continue
+                us = {vertex.uv.x for vertex in quad}
+                vs = {vertex.uv.y for vertex in quad}
+                if len(us) == 1 and len(vs) == 1:
+                    cut = (max(xs[0], left), max(ys[0], top), min(xs[1], right), min(ys[1], bottom))
+                    if cut[0] < cut[2] and cut[1] < cut[3]:
+                        fills.append((*cut, colour))
+                elif len(us) == 2 and len(vs) == 2:
+                    x, y = (xs[0] + xs[1]) / 2.0, (ys[0] + ys[1]) / 2.0
+                    if not (left <= x < right and top <= y < bottom):
+                        continue
+                    surface = None
+                    for x0, y0, x1, y1, fill in reversed(fills):
+                        if x0 <= x < x1 and y0 <= y < y1:
+                            surface = fill
+                            break
+                    pairs[(colour, surface)] = pairs.get((colour, surface), 0) + 1
+    return [(ink, surface, count) for (ink, surface), count in pairs.items()]
 
 
-def _inks_and_surfaces(name: str, monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, int | None]]:
+def _judge(name: str, found: list[tuple[int, int | None, int]]) -> None:
     """
-    Every `(ink, surface behind it)` the page handed the backend in its fourth frame.
+    Every ink of a frame against `MINIMUM_CONTRAST`, with the page's name in the message.
+    """
+    assert found, f"{name} drew no text in a frame"
+    for ink, surface, count in found:
+        assert surface is not None, f"{name} drew {count} glyph(s) over no opaque surface"
+        ratio = contrast(ink, surface)
+        assert ratio >= MINIMUM_CONTRAST, (
+            f"{name}: {count} glyph(s) in ink {_channels(ink)} on {_channels(surface)} "
+            f"are a contrast of {ratio:.2f}"
+        )
 
-    In a context of its own with the app's real style (`apply_style`): the
-    surround a pane sits on is a style colour, and the default style's is
-    another. Every route to the backend ends in `draw_runs`, which is wrapped
-    where each caller looks it up.
+
+def _inks_headless(name: str) -> list[tuple[int, int | None, int]]:
+    """
+    `frame_inks` of the page's fourth frame, in a context of its own with the app's real style.
+
+    `apply_style` because the surround a pane sits on is a style colour, and
+    the default style's is another.
     """
     imgui = pytest.importorskip("imgui_bundle").imgui
-    import advtext.backends.imgui_draw as backend
-    import advtext.ui.bare_view as bare_view
-    import advtext.ui.diff_view as diff_view
-
-    seen: list[tuple[int, int | None]] = []
-    real = backend.draw_runs
-
-    def watching(draw_list: Any, runs: Any, origin: Any, **rest: Any) -> Any:
-        runs = list(runs)
-        surface = _surface_behind(imgui, origin.x + 4.0, origin.y + 4.0)
-        seen.extend((ink, surface) for _, ink in runs)
-        return real(draw_list, runs, origin, **rest)
-
-    for module in (backend, bare_view, diff_view):
-        monkeypatch.setattr(module, "draw_runs", watching)
-
     before = imgui.get_current_context()
     own = imgui.create_context()
     imgui.set_current_context(own)
@@ -842,38 +1061,93 @@ def _inks_and_surfaces(name: str, monkeypatch: pytest.MonkeyPatch) -> list[tuple
         app_module.apply_style()
         app = App(open_tab=name.lower())
         for _ in range(4):
-            seen.clear()
             _frame(app)
+        found = frame_inks(imgui)
         assert app.page_errors == {}, app.page_errors
     finally:
         imgui.destroy_context(own)
         if before is not None:
             imgui.set_current_context(before)
-    return list(seen)
+    return found
 
 
 @pytest.mark.parametrize("name", [row[1] for row in SIDEBAR])
-def test_every_page_draws_ink_that_contrasts_with_what_is_behind_it(
-    name: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_every_page_draws_ink_that_contrasts_with_what_is_behind_it(name: str) -> None:
     """
-    One headless frame of each discovered page: every run of text it hands the
-    backend is in an ink at least `MINIMUM_CONTRAST` from the opaque surface
-    under the text's origin.
+    One headless frame of each discovered page with the app's style: every
+    glyph in it is in an ink at least `MINIMUM_CONTRAST` from the opaque
+    surface under the glyph's centre.
 
-    **What it does not see.** Colour spans (syntax inks, links, find marks)
-    and a diff's row inks and row fills are passed beside the runs and are
-    not judged here; nor is anything ImGui draws itself. And it is the colour
-    asked for, not a pixel: no glyph is rasterised in these frames.
+    **What this frame holds.** The pytest process has no imtypeset, so the
+    page's body is its one line saying so, drawn by Dear ImGui in the style's
+    text colour, beside the sidebar. That line and the chrome are what is
+    judged here, on both gates. The page's own text is judged by
+    `test_every_page_in_a_real_window_draws_ink_that_contrasts`, from the
+    same reading of a frame of the real app with the library.
+
+    **How this differs from the test it replaces.** That one wrapped the old
+    draw backend's `draw_runs` and judged the base ink of each run it was
+    handed. No page hands that backend anything now. This reads the frame's
+    vertices instead, which sees every glyph in its final colour (syntax
+    inks, links and marks included, which the old test did not see) and
+    does not see what the old one did not either: how a pixel came out.
     """
-    pairs = _inks_and_surfaces(name, monkeypatch)
-    assert pairs, f"{name} handed the backend no text in a frame"
-    for ink, surface in pairs:
-        assert surface is not None, f"{name} drew text over no opaque surface"
-        ratio = contrast(ink, surface)
-        assert (
-            ratio >= MINIMUM_CONTRAST
-        ), f"{name}: ink {_channels(ink)} on {_channels(surface)} is a contrast of {ratio:.2f}"
+    _judge(name, _inks_headless(name))
+
+
+def test_the_reading_of_a_frame_tells_ink_from_surface_and_respects_clipping() -> None:
+    """
+    `frame_inks` on a frame made for it: the pairs it must find, and the two it must not.
+
+    A light sheet with dark text on it and light text on the ground beside
+    it; then, in a pane, a sheet painted under a clip rectangle that shows
+    only its left end, light text over the part that is clipped away, and
+    red text past the pane's right edge. With the clip rectangles ignored the
+    light text is credited with a sheet that is not on screen under it and
+    the red text is judged though nobody can see it: either adds a pair, and
+    `.concerns/T5-APP-scripts/ablate_reading.py` is that run, red.
+    """
+    imgui = pytest.importorskip("imgui_bundle").imgui
+    before = imgui.get_current_context()
+    own = imgui.create_context()
+    imgui.set_current_context(own)
+    dark, light, ground = 0xFF101010, 0xFFF0F0F0, 0xFF202020
+    try:
+        io = imgui.get_io()
+        io.display_size = imgui.ImVec2(600.0, 400.0)
+        io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+        for _ in range(2):
+            io.delta_time = 1.0 / 60.0
+            imgui.new_frame()
+            imgui.push_style_color(imgui.Col_.window_bg, imgui.color_convert_u32_to_float4(ground))
+            imgui.push_style_color(imgui.Col_.child_bg, imgui.ImVec4(0.0, 0.0, 0.0, 0.0))
+            imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
+            imgui.set_next_window_size(imgui.ImVec2(600.0, 400.0))
+            imgui.begin("##reading", None, imgui.WindowFlags_.no_title_bar.value)
+            draw_list = imgui.get_window_draw_list()
+            draw_list.add_rect_filled(imgui.ImVec2(20.0, 20.0), imgui.ImVec2(300.0, 60.0), light)
+            draw_list.add_text(imgui.ImVec2(30.0, 30.0), dark, "on the sheet")
+            draw_list.add_text(imgui.ImVec2(30.0, 80.0), light, "on the ground")
+            imgui.set_cursor_screen_pos(imgui.ImVec2(20.0, 120.0))
+            imgui.begin_child("##pane", imgui.ImVec2(300.0, 40.0))
+            inner = imgui.get_window_draw_list()
+            # A sheet of which only x < 100 is shown: past that it is no surface.
+            inner.push_clip_rect(imgui.ImVec2(20.0, 120.0), imgui.ImVec2(100.0, 160.0), True)
+            inner.add_rect_filled(imgui.ImVec2(20.0, 120.0), imgui.ImVec2(320.0, 160.0), light)
+            inner.pop_clip_rect()
+            inner.add_text(imgui.ImVec2(200.0, 130.0), light, "in the pane")
+            # Text past the pane's right edge: emitted, clipped away, not judged.
+            inner.add_text(imgui.ImVec2(400.0, 130.0), 0xFF0000FF, "out of the pane")
+            imgui.end_child()
+            imgui.end()
+            imgui.pop_style_color(2)
+            imgui.render()
+        found = {(ink, surface) for ink, surface, _ in frame_inks(imgui)}
+    finally:
+        imgui.destroy_context(own)
+        if before is not None:
+            imgui.set_current_context(before)
+    assert found == {(dark, light), (light, ground)}
 
 
 def test_the_contrast_measure_is_the_standard_one() -> None:
@@ -889,57 +1163,247 @@ def test_the_contrast_measure_is_the_standard_one() -> None:
 # ----------------------------------------------------------------------
 
 TOUR = """
+from __future__ import annotations
+
+import json
 import sys
 
-from imgui_bundle import hello_imgui, imgui
+from imgui_bundle import hello_imgui, imgui, immapp
 
+from advtext import typesetter
 from advtext.ui import app as advtext_app
+from advtext.ui.pages.typeset import NOT_DRAWING
 
-FRAMES_EACH = 4
+{frame_inks}
+
+# Each page is shown five frames. The fourth is the one that is judged. On
+# the fifth the library's draw calls are answered and draw nothing, so that
+# frame is everything on the page that is NOT the library's text: the
+# sidebar, the controls, the captions.
+FRAMES_EACH = 5
+JUDGED, GROUND = 3, 4
 names = list(advtext_app.page_names())
-state = {"frame": 0, "shown": []}
+state = {{"frame": 0, "showing": None}}
+report = {{"toured": [], "inks": {{}}, "ground": {{}}, "silenced": {{}}, "said": {{}},
+          "ready": {{}}, "finished": []}}
 real_gui = advtext_app.App.gui
+real_run = immapp.run
+real_wrapped = imgui.text_wrapped
+
+
+def wrapped(text):
+    if text.startswith(NOT_DRAWING) and state["showing"] is not None:
+        report["said"].setdefault(state["showing"], text)
+    real_wrapped(text)
+
+
+class Silent:
+    # In front of the package's ctypes library: a draw call answers "done" and draws nothing.
+    def __init__(self, real, hushed):
+        self._real, self._hushed = real, hushed
+
+    def __getattr__(self, name):
+        if name.startswith("ImTypeset_Draw") or name == "ImTypeset_ShowDemoSection":
+            self._hushed.append(name)
+            return lambda *args: 1
+        return getattr(self._real, name)
 
 
 def touring_gui(self):
     index = state["frame"] // FRAMES_EACH
     if index >= len(names):
+        state["showing"] = None
         hello_imgui.get_runner_params().app_shall_exit = True
         return real_gui(self)
     name = names[index]
     if self.current != name:
         self.select(name)
-    real_gui(self)
-    if name not in state["shown"]:
-        state["shown"].append(name)
+    state["showing"] = name
+    if state["frame"] % FRAMES_EACH == 0:
+        # A page that plays a replay against the clock (Stream) is fed all of
+        # it at once: four frames at its own rate were EIGHT glyphs of its own
+        # text (measured 2026-10-11), which is no reading of the page.
+        session = getattr(self.page(name), "session", None)
+        if session is not None:
+            session.finish()
+            report["finished"].append(name)
+    ground = state["frame"] % FRAMES_EACH == GROUND and typesetter.ready()
+    if not ground:
+        real_gui(self)
+    else:
+        # `_lib` is a private name of a package this tree does not own, in
+        # each of its modules that draws. If it moves, nothing is hushed and
+        # the test says so; it does not pass.
+        hushed = []
+        modules = [m for n, m in sys.modules.items()
+                   if (n == "imtypeset" or n.startswith("imtypeset.")) and hasattr(m, "_lib")]
+        real = [m._lib for m in modules]
+        for module in modules:
+            module._lib = Silent(module._lib, hushed)
+        try:
+            real_gui(self)
+        finally:
+            for module, was in zip(modules, real):
+                module._lib = was
+        report["silenced"][name] = sorted(set(hushed))
+    if name not in report["toured"]:
+        report["toured"].append(name)
+
+
+def after_swap():
+    # The frame is rendered and the next has not begun: its draw data stands.
+    name = state["showing"]
+    if name is None:
+        return
+    if state["frame"] % FRAMES_EACH == JUDGED:
+        report["inks"][name] = frame_inks(imgui)
+        report["ready"][name] = typesetter.ready()
+    elif state["frame"] % FRAMES_EACH == GROUND:
+        report["ground"][name] = frame_inks(imgui)
     state["frame"] += 1
 
 
+def run_with_reader(params, *rest):
+    params.callbacks.after_swap = after_swap
+    params.fps_idling.enable_idling = False
+    report["fonts_callback"] = params.callbacks.load_additional_fonts.__name__
+    watched = params.callbacks.before_exit
+
+    def before_exit():
+        report["fonts"] = [font.get_debug_name() for font in imgui.get_io().fonts.fonts]
+        report["own_faces"] = sorted(face.name for face in advtext_app._FACES)
+        report["reason"] = typesetter.reason()
+        report["trouble"] = typesetter.trouble()
+        watched()
+
+    params.callbacks.before_exit = before_exit
+    return real_run(params, *rest)
+
+
+imgui.text_wrapped = wrapped
+immapp.run = run_with_reader
 advtext_app.App.gui = touring_gui
 advtext_app.run()
-print("faces loaded:", sum(1 for font in advtext_app._FACES.values() if font is not None))
-print("toured:", ",".join(state["shown"]))
+print(json.dumps(report))
 """
 
 
-def test_every_discovered_page_runs_in_a_real_window(window: Window) -> None:
+@pytest.fixture(scope="module")
+def tour(window: Window) -> dict[str, Any]:
     """
     The real `run` -- real fonts, real `immapp.run`, a real GL context -- with
     `App.gui` wrapped so that each discovered page is selected in turn and
-    shown for four frames before the app is asked to exit.
+    shown for five frames before the app is asked to exit. The fourth is read
+    as it is; on the fifth the library's draw calls are answered without
+    drawing and the frame is read again (`ground`: the page less the
+    library's text). Once for the module; what comes back is what the child
+    printed.
 
-    What this establishes is that every page's factory and `draw` survive real
-    frames with the real atlas: a page that raises ends the run non-zero with
-    its traceback, which is the assertion's message. It says nothing about how
-    any page looks.
+    The child's environment is this process's: with `make test TYPESET=1` it
+    has the library and the pages draw through it, without it they do not.
+    The tests below say which they require.
     """
+    import inspect
+    import json
+
     script = window.out / "tour_pages.py"
-    script.write_text(textwrap.dedent(TOUR), encoding="utf-8")
-    done = window.run([str(script)])
+    source = textwrap.dedent(TOUR).format(frame_inks=inspect.getsource(frame_inks))
+    script.write_text(source, encoding="utf-8")
+    done = window.run([str(script)], timeout=600.0)
     assert done.returncode == 0, f"on {window.where}:\n{done.stdout}\n{done.stderr}"
-    expected = ",".join(app_module.page_names())
-    assert f"toured: {expected}" in done.stdout, done.stdout
-    assert "faces loaded: 0" not in done.stdout, "no face reached the atlas"
+    report: dict[str, Any] = json.loads(done.stdout.strip().splitlines()[-1])
+    return report
+
+
+def _library_asked_for() -> bool:
+    import os
+
+    from advtext import typesetter
+
+    return bool(os.environ.get(typesetter.LIBRARY_VARIABLE))
+
+
+def test_every_discovered_page_runs_in_a_real_window(tour: dict[str, Any]) -> None:
+    """
+    Every page's factory and `draw` survive real frames with the real atlas:
+    a page that raises ends the run non-zero with its traceback, which is the
+    fixture's assertion message. It says nothing about how any page looks.
+
+    **And each page drew what the environment implies.** With the library
+    asked for (`make test TYPESET=1`) it is ready on every page's last frame
+    and NO page said `NOT_DRAWING`: each drew through the typeset layer, in
+    an atlas that holds the library's fonts and none of the app's. Without
+    it, EVERY page said `NOT_DRAWING` with the same reason, and the atlas
+    holds the one UI font. Until tranche 5 a page without the library drew
+    the old view instead, and this test could not tell which had drawn.
+    """
+    from advtext.fontmetrics import Face
+
+    names = list(app_module.page_names())
+    assert tour["toured"] == names
+    assert set(tour["inks"]) == set(names) == set(tour["ground"])
+    assert tour["finished"] == ["Stream"], "which pages the tour fed whole changed"
+    assert tour["fonts_callback"] == "_load_fonts_for_run"
+    if _library_asked_for():
+        assert tour["said"] == {}, f"with the library, a page is not drawing: {tour['said']}"
+        assert tour["ready"] == dict.fromkeys(names, True), (tour["reason"], tour["trouble"])
+        assert tour["reason"] == "" and tour["trouble"] == ""
+        assert tour["own_faces"] == []
+        assert len(tour["fonts"]) == len(Face)
+    else:
+        assert set(tour["said"]) == set(names)
+        assert len(set(tour["said"].values())) == 1, tour["said"]
+        assert "IMTYPESET_LIBRARY is not set" in tour["said"][names[0]]
+        assert tour["ready"] == dict.fromkeys(names, False)
+        assert tour["own_faces"] == [app_module.UI_FACE]
+        assert len(tour["fonts"]) == 1
+
+
+OWN_TEXT_GLYPHS = 200
+"""
+The least glyphs of a page's OWN text (set by the library) the judged frame
+must hold: three lines of prose or so. A floor and not a measurement: on
+2026-10-11, on an Xvfb, the least any page had was about three times this
+(`.concerns/T5-FINAL--builder--result.md` has the fourteen counts, and
+`.concerns/T5-FINAL-scripts/tour_counts.py` prints them).
+"""
+
+
+@pytest.mark.parametrize("name", [row[1] for row in SIDEBAR])
+def test_every_page_in_a_real_window_draws_ink_that_contrasts(
+    name: str, tour: dict[str, Any]
+) -> None:
+    """
+    The contrast statement, on the fourth frame of each page of the real app.
+
+    With the library this is the page's own text as imtypeset drew it, every
+    glyph in its final ink against the surface under it: the sheet, a code
+    ground, a table's header, a diff row's fill. Without it, the one line
+    and the chrome, as in the headless test above but with a real atlas.
+    `frame_inks` says what a reading of a frame cannot see.
+    """
+    found = [(ink, surface, count) for ink, surface, count in tour["inks"][name]]
+    _judge(name, found)
+    if _library_asked_for():
+        glyphs = sum(count for _, _, count in found)
+        line_only = len("imtypeset is not drawing: IMTYPESET_LIBRARY is not set")
+        chrome = sum(len(row[2]) for row in SIDEBAR) + 64
+        assert glyphs > chrome + line_only, f"{name} drew {glyphs} glyphs: no more than the chrome"
+        # B4 (T5-R #4). The bound above is met by a page's captions and
+        # controls alone: it does not show that any glyph of the LIBRARY's
+        # was among those judged. The fifth frame is the same page with the
+        # library's draw calls answered and nothing drawn; what the judged
+        # frame has more than that is the page's own text, and there must
+        # be some. A page whose text was all in a translucent ink, or was
+        # drawn and not read as glyphs, has none and fails here.
+        silenced = tour["silenced"].get(name)
+        assert silenced, f"{name}: no draw call of the library's was made on the fifth frame"
+        ground = sum(count for _, _, count in tour["ground"][name])
+        own = glyphs - ground
+        assert own >= OWN_TEXT_GLYPHS, (
+            f"{name}: {glyphs} glyphs judged, {ground} of them with the library drawing "
+            f"nothing: {own} of the page's own text were judged, under {OWN_TEXT_GLYPHS}"
+        )
 
 
 # ----------------------------------------------------------------------

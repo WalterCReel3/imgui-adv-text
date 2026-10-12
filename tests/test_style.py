@@ -37,7 +37,6 @@ from typing import Any
 import pytest
 
 from advtext import fontlib
-from advtext.backends.imgui_draw import baked_size_px
 from advtext.fontmetrics import Face
 from advtext.markdown import build_document
 from advtext.nodes import CharNode, GlueSpec
@@ -110,6 +109,27 @@ def _leading_as_it_was(size: Scaled, ratio: float) -> InterlineSkip:
     )
 
 
+_TRIPLE_AS_IT_WAS: dict[BlockStyle, InterlineSkip] = {}
+"""The triple each style of the transcription was given, by the style it is now."""
+
+
+def _style_as_it_was(*, interline: InterlineSkip, **rest: Any) -> BlockStyle:
+    """
+    The old constructor call, `BlockStyle(font=..., interline=<triple>, ...)`.
+
+    A style held the §679 triple until 2026-10-11 (T5-B2). It holds the
+    triple's baseline distance now, as `leading`, so that building a theme
+    needs no class of the layout core, and answers the triple from it
+    (`BlockStyle.interline`). The transcription below still writes what the
+    old code wrote; this gives the style the one number and keeps the triple
+    it was given, so that the test can hold the new property to the old
+    field, all three lengths.
+    """
+    style = BlockStyle(leading=interline.baselineskip.width, **rest)
+    assert _TRIPLE_AS_IT_WAS.setdefault(style, interline) == interline
+    return style
+
+
 def _build_as_it_was(
     base_px: float = 16.0,
     px_per_inch: float = DEFAULT_PX_PER_INCH,
@@ -129,7 +149,7 @@ def _build_as_it_was(
     h1 = sp_from_px(base_px * r * r * r, px_per_inch)
 
     def heading(size: Scaled, above: float, below: float) -> BlockStyle:
-        return BlockStyle(
+        return _style_as_it_was(
             font=FontSpec(Face.PROSE_BOLD, size),
             interline=_leading_as_it_was(size, 1.15),
             align=Align.LEFT,
@@ -143,32 +163,32 @@ def _build_as_it_was(
         BlockKind.HEADING_1: heading(h1, 1.0, 0.4),
         BlockKind.HEADING_2: heading(h2, 0.9, 0.35),
         BlockKind.HEADING_3: heading(h3, 0.8, 0.3),
-        BlockKind.PARAGRAPH: BlockStyle(
+        BlockKind.PARAGRAPH: _style_as_it_was(
             font=prose,
             interline=body_leading,
             align=Align.JUSTIFY,
             space_below=round(body * 0.55),
         ),
-        BlockKind.BULLET_ITEM: BlockStyle(
+        BlockKind.BULLET_ITEM: _style_as_it_was(
             font=prose,
             interline=body_leading,
             align=Align.JUSTIFY,
             space_below=round(body * 0.2),
         ),
-        BlockKind.ORDERED_ITEM: BlockStyle(
+        BlockKind.ORDERED_ITEM: _style_as_it_was(
             font=prose,
             interline=body_leading,
             align=Align.JUSTIFY,
             space_below=round(body * 0.2),
         ),
-        BlockKind.QUOTE: BlockStyle(
+        BlockKind.QUOTE: _style_as_it_was(
             font=prose,
             interline=body_leading,
             align=Align.JUSTIFY,
             space_above=round(body * 0.5),
             space_below=round(body * 0.5),
         ),
-        BlockKind.CODE: BlockStyle(
+        BlockKind.CODE: _style_as_it_was(
             font=FontSpec(Face.CODE, body),
             interline=_leading_as_it_was(body, 1.25),
             align=Align.LEFT,
@@ -176,14 +196,14 @@ def _build_as_it_was(
             space_below=round(body * 0.6),
             left_indent=round(body * 1.0),
         ),
-        BlockKind.RULE: BlockStyle(
+        BlockKind.RULE: _style_as_it_was(
             font=prose,
             interline=body_leading,
             align=Align.LEFT,
             space_above=body,
             space_below=body,
         ),
-        BlockKind.TABLE: BlockStyle(
+        BlockKind.TABLE: _style_as_it_was(
             font=prose,
             interline=body_leading,
             align=Align.LEFT,
@@ -260,6 +280,14 @@ def test_the_default_theme_is_field_for_field_the_theme_it_was(
     was = _build_as_it_was(base_px, px_per_inch, spacing)
     assert len(was.blocks) == 10
     assert {kind: built.blocks[kind] for kind in was.blocks} == was.blocks
+    # The triple §679 consults is no longer a field (the comparison above is
+    # over `leading`, its baseline distance): what a style answers for it is
+    # what the old code stored, each of the three lengths and their stretch.
+    for kind, style in was.blocks.items():
+        triple = _TRIPLE_AS_IT_WAS[style]
+        assert built.blocks[kind].interline == triple, kind
+        assert built.blocks[kind].leading == triple.baselineskip.width
+        assert "interline" not in {field.name for field in fields(BlockStyle)}
     assert replace(built, blocks=was.blocks) == was
     assert built.faces is DEFAULT_FACES
 
@@ -585,10 +613,13 @@ def test_a_theme_at_a_host_s_pixel_height_is_drawn_at_that_height(
     """
     The body of `Theme.at_pixel_height(h)` is asked of ImGui at `h`, not at its em.
 
-    `baked_size_px` is the arithmetic `advtext.backends.imgui_draw.draw` applies
-    to a font key on the way out. Applied to the body's key it must give back
-    the height the host named, to within the rounding to scaled points, and
-    ImGui's own `floor(size + 0.5)` must then select exactly that size.
+    Dear ImGui's size for a font is the height of its ascent and descent, not
+    its em: `em * (ascent + descent) / em_units`. (The old ImGui draw backend
+    had that as `baked_size_px` and applied it to every font key on the way
+    out; it is deleted, and the arithmetic is written out below.) Applied to
+    the body's key it must give back the height the host named, to within the
+    rounding to scaled points, and ImGui's own `floor(size + 0.5)` must then
+    select exactly that size.
 
     The em itself is checked against `advtext.fontlib.em_size_for_pixel_height`,
     so the theme and the standalone helper cannot come to disagree.
@@ -600,7 +631,7 @@ def test_a_theme_at_a_host_s_pixel_height_is_drawn_at_that_height(
     assert body.size == sp_from_px(fontlib.em_size_for_pixel_height(faces.regular, height_px))
 
     ours = fontlib_metrics(body.key)
-    asked = baked_size_px(px_from_sp(body.size), ours.ascent, ours.descent, ours.em)
+    asked = px_from_sp(body.size) * (ours.ascent + ours.descent) / ours.em
     assert asked == pytest.approx(height_px, abs=1e-3)
     assert float(int(asked + 0.5)) == height_px
 
@@ -686,6 +717,30 @@ def test_at_pixel_height_reads_the_resolver_it_is_given() -> None:
     body = theme.style(BlockKind.PARAGRAPH).font.size
     assert body == sp_from_px(16.0)
     assert theme.list_indent == round(body * (1.7 + MARKER_GAP_EM))
+    assert len(asked) == 1 and parse_font_key(asked[0]).face is Face.PROSE
+
+
+def test_at_pixel_height_with_no_resolver_asks_the_one_this_module_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    `Theme` lives in `advtext.theme` now and the default resolver stayed here.
+
+    When both were in this module the default was a global of it, read at the
+    call, so replacing `advtext.style.fontlib_metrics` replaced what a theme
+    was measured with. The method reads it from this module at the call still;
+    binding it at import over there would have silently ended that.
+    """
+    from advtext import style
+
+    asked: list[str] = []
+
+    def resolve(key: str) -> Any:
+        asked.append(key)
+        return fontlib_metrics(key)
+
+    monkeypatch.setattr(style, "fontlib_metrics", resolve)
+    assert Theme.at_pixel_height(16.0) == Theme.at_pixel_height(16.0, metrics=fontlib_metrics)
     assert len(asked) == 1 and parse_font_key(asked[0]).face is Face.PROSE
 
 

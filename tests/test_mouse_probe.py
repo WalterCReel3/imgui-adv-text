@@ -3,38 +3,50 @@ Tests for `scripts/mouse_probe.py`: the aiming arithmetic, the gesture script, a
 
 Three levels of fidelity, and each test says which it is at.
 
-**Pure.** `cell_point`, `find_line`, `alone_in_its_band`, `first_words_end`,
+**Pure.** `SeenTypeset`'s arithmetic over a stand-in view, `first_words_end`,
 `report` and `xvfb_command` take data and return data. No ImGui.
 
-**A real ImGui context with no backend.** `run_without_a_window` plays the whole
+**A real ImGui context with no backend.** `--no-window` plays the whole
 eight-gesture script through `App.gui()` in frames of a bare
-`imgui.create_context()` -- the idiom `tests/test_imgui_draw.py` established and
-`tests/test_document_view.py::_page_frame` already uses for one press and one
-drag. The event queue, hover resolution, the tab bar, the scrolling child and
-the click counter are ImGui's own. The clipboard is ImGui's in-memory one, the
-time step is a constant, and no font of ours is in the atlas. This runs
-everywhere the suite does.
+`imgui.create_context()`. The event queue, hover resolution, the sidebar, the
+scrolling child and the click counter are ImGui's own. The clipboard is
+ImGui's in-memory one and the time step is a constant.
 
 **A real window.** `test_the_probe_passes_in_a_real_window_on_an_xvfb` runs the
 script with `--xvfb` in a subprocess: the real app, through the real
 `immapp.run`, GLFW and an OpenGL context, on an Xvfb started in a user
-namespace. It was green where it was written, on 2026-10-06, in a sandbox whose
-own `DISPLAY=:1` is unreachable. The events still enter at ImGui's input queue
-rather than at the X server -- nothing here can move an X pointer -- and the
-script's docstring says what that leaves unexercised.
+namespace. The events still enter at ImGui's input queue rather than at the X
+server -- nothing here can move an X pointer -- and the script's docstring
+says what that leaves unexercised.
 
-**On the one skip.** `docs/status.md` values a suite with none, so the gate is a
-capability probe and not a guess: the window test skips only when `unshare -rm`
-cannot make a namespace or `Xvfb` is not installed, which is a statement about
-the machine. Where both exist a probe that cannot open its window is red.
+**The view probed is `TypesetView`, and every run of the gestures is in a child
+process.** The Document page draws through the imtypeset library or draws one
+line saying why not; the library is never loaded into the pytest process; so
+the gestures are played in children, which have the library when the suite
+runs with it (`make test TYPESET=1` sets `IMTYPESET_LIBRARY`) and skip, with
+the reason, when it does not. What the plain run holds instead is the other
+half of the contract: with no library the probe plays nothing, says the
+page's own sentence, and exits 2.
 
-**These tests can fail, and two of them exist to show it.** An instrument that
-reports eighteen passes out of eighteen is worth nothing until it has been seen
-to report a failure, and this project has had five families of vacuous tests.
-`test_a_view_that_hit_tests_from_the_wrong_origin_fails_the_probe` shifts the
-view's own idea of where the pointer is by one margin -- the half-applied-origin
-defect `tests/test_document_view.py` describes -- and
-`test_a_view_that_never_copies_fails_on_the_sentinel` removes the copy. Both
+**What left this file with tranche 5 (2026-10-11).** Until then the probe had a
+second gesture script for advtext's own `DocumentView`, which the Document
+page fell back to without the library, and this file ran that script in the
+pytest process: five pure tests of its aiming over `advtext.selection`
+(`line_text`, `find_line`, `alone_in_its_band`, `cell_point`, `Seen.on_screen`)
+and five runs of it through `App.gui()`. The fallback is removed and so is
+that half of the probe; its five pure tests went with it, and the five runs
+are restated below against `TypesetView`, in children.
+
+**On the skips.** The window tests skip only when `unshare -rm` cannot make a
+namespace or `Xvfb` is not installed, which is a statement about the machine;
+the with-library tests skip when the library was not asked for.
+
+**These tests can fail, and three of them exist to show it.** An instrument
+that reports eighteen passes out of eighteen is worth nothing until it has been
+seen to report a failure. `test_a_view_that_hit_tests_from_the_wrong_origin_
+fails_the_probe` (bare context, and again in a real window) shifts the view's
+own idea of where the pointer is by one line, and
+`test_a_view_that_never_copies_fails_on_the_sentinel` removes the copy. Each
 must turn the report red, in the checks one would expect.
 
 Loaded by path rather than imported, for the reason `tests/test_shot.py` gives:
@@ -44,27 +56,21 @@ Loaded by path rather than imported, for the reason `tests/test_shot.py` gives:
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import socket
 import subprocess
 import sys
-from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
 
-from advtext.markdown import build_document
-from advtext.selection import SelectionModel
-from advtext.shipout import Point, ship
-from advtext.style import Theme, char_measure, fontlib_metrics
-from advtext.ui import compose
-from advtext.units import px_from_sp, sp_from_px
-
 _ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts" / "mouse_probe.py"
 _SAMPLE = _ROOT / "demo" / "sample.md"
+_LIBRARY = "IMTYPESET_LIBRARY"
 
 
 def _load() -> ModuleType:
@@ -91,128 +97,108 @@ def probe() -> ModuleType:
     return _load()
 
 
-def _model(source: str, width_px: float = 467.0) -> SelectionModel:
-    """
-    A selection model over real markdown, built the way `DocumentView.layout_for` does.
-    """
-    theme = Theme.build()
-    measure = char_measure(fontlib_metrics)
-    box = compose(
-        build_document(source, theme, fontlib_metrics), theme, sp_from_px(width_px), measure
-    )
-    return SelectionModel.from_commands(tuple(ship(box, Point(0, box.height), measure=measure)))
-
-
-class _View:
-    """Just enough of a `DocumentView` for `Seen`'s arithmetic."""
-
-    px_per_inch = 96.0
-
-
-PROSE = (
-    "Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima "
-    "mike november oscar papa quebec romeo sierra tango uniform victor whisky "
-    "xray yankee zulu.\n"
-)
-
-TABLE = "Lead paragraph here.\n\n| one | two |\n|---|---|\n| left cell | right cell |\n"
-
-
 # -- pure ----------------------------------------------------------------
 
 
-def test_line_text_is_the_lines_characters_with_one_space_a_glue(
-    probe: ModuleType, bundled_fonts: Any
+class _Line:
+    """A line as `TypesetView.set_lines` gives one: a range of a block's text and a band."""
+
+    def __init__(self, block: int, start: int, end: int, top: float, bottom: float) -> None:
+        self.block, self.start, self.end, self.top, self.bottom = block, start, end, top, bottom
+
+
+class _View:
+    """Just enough of a `TypesetView` for `SeenTypeset`'s arithmetic."""
+
+    texts = ["Alpha bravo charlie delta", "A table", "Echo"]
+    tables = {1: object()}
+    hosts: dict[int, object] = {}
+    separator = "\n\n"
+
+    def __init__(self) -> None:
+        self.rects: dict[tuple[int, int, int], list[tuple[float, float, float, float]]] = {}
+
+    def set_lines(self) -> list[_Line]:
+        return [
+            _Line(0, 0, 12, 0.0, 20.0),
+            _Line(0, 12, 25, 20.0, 40.0),
+            _Line(1, 0, 7, 50.0, 70.0),
+            _Line(2, 0, 4, 80.0, 100.0),
+        ]
+
+    def span_rects(
+        self, block: int, start: int, end: int
+    ) -> list[tuple[float, float, float, float]]:
+        return self.rects.get((block, start, end), [])
+
+
+def test_the_lines_aimed_at_leave_out_tables_and_read_their_text_from_the_description(
+    probe: ModuleType,
 ) -> None:
     """
-    The probe's own rendering of a line agrees with the source it was set from.
-
-    It is the basis of every expected string, so it is pinned against the
-    markdown rather than against `SelectionModel.text`, which is what the probe
-    exists to check.
+    A line's text is its range of the block's DESCRIBED text, which is what the
+    probe expects a copy to hold; a table's block is not aimed at.
     """
-    model = _model(PROSE)
-    joined = " ".join(probe.line_text(line).strip() for line in model.fragments)
-    assert joined == PROSE.strip()
-    assert len(model.fragments) >= 3, "the fixture must wrap"
+    seen = probe.SeenTypeset(view=_View())
+    lines = seen.lines()
+    assert [line.block for line in lines] == [0, 0, 2]
+    assert [seen.text(line) for line in lines] == ["Alpha bravo ", "charlie delta", "Echo"]
+    with pytest.raises(probe.ProbeError, match="no TypesetView has drawn"):
+        probe.SeenTypeset().lines()
 
 
-def test_find_line_finds_by_content_and_is_loud_when_the_line_is_absent(
-    probe: ModuleType, bundled_fonts: Any
-) -> None:
+def test_a_point_is_the_origin_plus_the_characters_own_rectangle(probe: ModuleType) -> None:
     """
-    A target is located by what it says, and a missing one names what is there.
-    """
-    model = _model("First paragraph.\n\nSecond paragraph here.\n")
-    assert probe.line_text(model.fragments[probe.find_line(model, "Second")]).startswith("Second")
-    with pytest.raises(probe.ProbeError, match="First paragraph"):
-        probe.find_line(model, "Third")
-
-
-def test_two_lines_side_by_side_are_not_alone_in_their_band_and_a_stacked_one_is(
-    probe: ModuleType, bundled_fonts: Any
-) -> None:
-    """
-    The probe refuses to aim where "the line at this y" has two answers.
-
-    A table row was the case this was written for and it is **not** one: a row
-    ships as a single line today (`'left cell right cell '`, checked below), so
-    the side-by-side case is built by hand, from a real line set a second time
-    further right.
-    """
-    table = _model(TABLE)
-    assert [probe.line_text(line).strip() for line in table.fragments if line.items] == [
-        "Lead paragraph here.",
-        "one two",
-        "left cell right cell",
-    ]
-    assert all(probe.alone_in_its_band(table, at) for at in range(len(table.fragments)))
-
-    prose = _model(PROSE)
-    first, second = prose.fragments[0], prose.fragments[1]
-    beside = replace(second, line=replace(second.line, x=second.line.x + sp_from_px(600.0)))
-    model = SelectionModel(fragments=(first, second, beside), length=prose.length)
-    assert probe.alone_in_its_band(model, 0) is True
-    assert probe.alone_in_its_band(model, 1) is False
-    assert probe.alone_in_its_band(model, 2) is False
-
-
-def test_cell_point_is_the_origin_plus_the_cells_own_coordinates(
-    probe: ModuleType, bundled_fonts: Any
-) -> None:
-    """
-    A quarter of the way into a cell is left of its midpoint, three quarters right.
+    A quarter of the way into a character is left of its midpoint, three quarters right.
 
     And the whole thing moves with the origin, by exactly the origin: that is
-    the property a scroll relies on.
+    the property a scroll relies on. A character with no rectangle of its
+    own, or one of no width, is a loud failure and not a guess.
     """
-    model = _model(PROSE)
-    line = model.fragments[1]
-    seen = probe.Seen(view=_View(), origin=(300.0, 120.0))
-    left = 300.0 + px_from_sp(line.edges[2])
-    right = 300.0 + px_from_sp(line.edges[3])
-    quarter = probe.cell_point(seen, line, 2, 0.25)
-    three = probe.cell_point(seen, line, 2, 0.75)
-    assert left < quarter.x < (left + right) / 2 < three.x < right
-    assert 120.0 + px_from_sp(line.top) < quarter.y < 120.0 + px_from_sp(line.bottom)
+    view = _View()
+    second = view.set_lines()[1]
+    view.rects[(0, 14, 15)] = [(30.0, 20.0, 38.0, 40.0)]
+    seen = probe.SeenTypeset(view=view, origin=(300.0, 120.0))
+    quarter, three = seen.point(second, 2, 0.25), seen.point(second, 2, 0.75)
+    assert (quarter.x, three.x) == (300.0 + 32.0, 300.0 + 36.0)
+    assert quarter.y == three.y == 120.0 + 30.0
+    moved = probe.SeenTypeset(view=view, origin=(300.0, 120.0 - 500.0))
+    assert moved.point(second, 2, 0.25).y == quarter.y - 500.0
 
-    moved = probe.Seen(view=_View(), origin=(300.0, 120.0 - 500.0))
-    assert probe.cell_point(moved, line, 2, 0.25).y == pytest.approx(quarter.y - 500.0)
+    with pytest.raises(probe.ProbeError, match="has no one rectangle"):
+        seen.point(second, 3, 0.5)
+    view.rects[(0, 15, 16)] = [(40.0, 20.0, 40.0, 40.0)]
+    with pytest.raises(probe.ProbeError, match="has no one rectangle"):
+        seen.point(second, 3, 0.5)
+    view.rects[(0, 16, 17)] = [(40.0, 20.0, 44.0, 40.0), (0.0, 40.0, 4.0, 60.0)]
+    with pytest.raises(probe.ProbeError, match="has no one rectangle"):
+        seen.point(second, 4, 0.5)
 
 
-def test_on_screen_wants_the_whole_band_inside_the_window(
-    probe: ModuleType, bundled_fonts: Any
-) -> None:
+def test_on_screen_wants_the_whole_band_inside_the_window(probe: ModuleType) -> None:
     """
     A line cut by the window's edge is not a target.
     """
-    model = _model(PROSE)
-    first, last = model.fragments[0], model.fragments[-1]
-    seen = probe.Seen(view=_View(), origin=(0.0, 100.0), window_top=100.0, window_height=40.0)
+    first, *_, last = _View().set_lines()
+    seen = probe.SeenTypeset(
+        view=_View(), origin=(0.0, 100.0), window_top=100.0, window_height=40.0
+    )
     assert seen.on_screen(first) is False  # its top is inside the 4 px inset
     seen.window_top = 90.0
     assert seen.on_screen(first) is True
     assert seen.on_screen(last) is False
+
+
+def test_a_copied_line_loses_the_space_it_was_broken_at_and_an_unbroken_one_nothing(
+    probe: ModuleType,
+) -> None:
+    """
+    The copy rule the probe expects, stated by the other team and restated here as data.
+    """
+    seen = probe.SeenTypeset(view=_View())
+    broken, last, _ = seen.lines()
+    assert seen.text(broken) == "Alpha bravo " and seen.line_copy(broken) == "Alpha bravo"
+    assert seen.line_copy(last) == "charlie delta"
 
 
 def test_first_words_end_counts_characters_through_the_nth_word(probe: ModuleType) -> None:
@@ -336,112 +322,236 @@ def test_post_goes_through_imguis_event_queue_and_the_next_frame_sees_it(
         imgui.render()
 
 
-# -- the whole script, in a real context with no backend ------------------
+# -- the whole script, in a real context with no backend, in a child -------
 
 
-def test_every_gesture_passes_against_the_demo_document_with_no_window(
-    probe: ModuleType, bundled_fonts: Any
+_CHILD = """
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("_mouse_probe_child", sys.argv[1])
+probe = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = probe
+spec.loader.exec_module(probe)
+SAMPLE = open(sys.argv[2], encoding="utf-8").read()
+"""
+
+
+def _child(body: str, *, library: bool) -> subprocess.CompletedProcess[str]:
+    """
+    Run `_CHILD` and then `body` in a fresh interpreter, with or without the library's variables.
+
+    The script is loaded there as `probe` and `demo/sample.md` read as `SAMPLE`.
+    """
+    environment = {**os.environ, "PYTHONPATH": str(_ROOT)}
+    if not library:
+        environment = {k: v for k, v in environment.items() if not k.startswith("IMTYPESET_")}
+    return subprocess.run(
+        [sys.executable, "-c", _CHILD + body, str(_SCRIPT), str(_SAMPLE)],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+        cwd=_ROOT,
+        env=environment,
+    )
+
+
+def _needs_the_library() -> None:
+    if not os.environ.get(_LIBRARY):
+        pytest.skip(
+            f"{_LIBRARY} is not set: run `make test TYPESET=1` (after `make typeset-lib`) "
+            "for the tests that need the imtypeset library"
+        )
+
+
+def test_without_the_library_the_probe_plays_nothing_says_why_and_exits_2() -> None:
+    """
+    The plain gate's statement, and it is run on both gates with the variables removed.
+
+    No gesture is played at a page that draws one line: zero checks, the
+    page's own sentence, the way to get a library, and the exit status that
+    means "could not run", not the one that means a check failed.
+    """
+    done = _child('raise SystemExit(probe.main(["--no-window"]))', library=False)
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert "renderer none" in done.stdout and "0 of 0 checks passed" in done.stdout
+    assert "the probe stopped early: NotDrawing" in done.stdout
+    assert "imtypeset is not drawing: IMTYPESET_LIBRARY is not set" in done.stdout
+    assert "make typeset-lib" in done.stderr
+    assert "FAIL" not in done.stdout
+
+
+def test_a_library_that_was_asked_for_and_does_not_draw_is_a_failure_and_not_an_absence(
+    tmp_path: Path,
 ) -> None:
     """
-    Fidelity: a real ImGui context, `App.gui()`, no backend, `demo/sample.md`.
+    Exit 1, not 2: the variable names a library that is not there, so the
+    page draws its line with that reason and the probe has failed.
+    """
+    environment = {
+        **{k: v for k, v in os.environ.items() if not k.startswith("IMTYPESET_")},
+        "PYTHONPATH": str(_ROOT),
+        _LIBRARY: str(tmp_path / "absent.so"),
+    }
+    done = subprocess.run(
+        [sys.executable, str(_SCRIPT), "--no-window"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+        cwd=_ROOT,
+        env=environment,
+    )
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "the probe stopped early: NotDrawing" in done.stdout
+    assert "IMTYPESET_LIBRARY is not set" not in done.stdout
+
+
+def test_every_gesture_passes_against_the_demo_document_with_no_window() -> None:
+    """
+    Fidelity: a real ImGui context, `App.gui()`, no backend, `demo/sample.md`, the library.
 
     All eight gestures, by number, so a script that returned early after the
     third would not pass on the strength of the first three; and the events
-    posted include a wheel and a key, so the scroll and the copy were played and
-    not skipped.
+    posted include a wheel and a key, so the scroll and the copy were played
+    and not skipped.
     """
-    outcome = probe.run_without_a_window(_SAMPLE.read_text(encoding="utf-8"))
-    assert outcome.error is None
-    assert outcome.passed, probe.report(outcome.checks)
-    numbers = {check.name.split()[0] for check in outcome.checks}
-    assert numbers == {"1", "2", "3", "4", "5", "6", "7", "8"}
-    assert len(outcome.checks) == 18
+    _needs_the_library()
+    done = _child(
+        """
+outcome = probe.run_without_a_window(SAMPLE)
+print(probe.report(outcome.checks))
+assert outcome.error is None, outcome.error
+assert outcome.passed
+numbers = {check.name.split()[0] for check in outcome.checks}
+assert numbers == {"1", "2", "3", "4", "5", "6", "7", "8"}, numbers
+assert len(outcome.checks) == 18
+assert outcome.renderer == "TypesetView"
+print("CHILD OK")
+""",
+        library=True,
+    )
+    assert done.returncode == 0 and "CHILD OK" in done.stdout, done.stdout + done.stderr
 
 
-def test_the_script_can_be_run_twice_in_one_context(probe: ModuleType, bundled_fonts: Any) -> None:
+def test_the_script_can_be_run_twice_in_one_process() -> None:
     """
-    A second run does not inherit the first one's scroll position or its clicks.
+    A second run inherits nothing of the first: not its scroll, its clicks or its library context.
 
-    Both were real: the child window's scroll is ImGui state keyed by window id,
-    and a press near the last run's final click inside the double-click time
-    would be counted as its second click.
+    Each run makes and destroys its own Dear ImGui context and unloads the
+    library before the context goes, so the second run's `load_fonts` meets
+    no context left from the first.
     """
-    source = _SAMPLE.read_text(encoding="utf-8")
-    assert probe.run_without_a_window(source).passed
-    again = probe.run_without_a_window(source)
-    assert again.passed, probe.report(again.checks)
+    _needs_the_library()
+    done = _child(
+        """
+from imgui_bundle import imgui
+assert probe.run_without_a_window(SAMPLE).passed
+assert imgui.get_current_context() is None
+again = probe.run_without_a_window(SAMPLE)
+print(probe.report(again.checks))
+assert again.passed and len(again.checks) == 18
+print("CHILD OK")
+""",
+        library=True,
+    )
+    assert done.returncode == 0 and "CHILD OK" in done.stdout, done.stdout + done.stderr
 
 
-def test_a_view_that_hit_tests_from_the_wrong_origin_fails_the_probe(
-    probe: ModuleType, bundled_fonts: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+_LOW = """
+from imgui_bundle import imgui
+from advtext.ui.typeset_view import TypesetView
+
+LOW = 22.0
+real_mouse = TypesetView._handle_mouse
+
+def low_mouse(self, doc, origin, size):
+    # The text is where it was; the view believes its corner is a line higher.
+    return real_mouse(self, doc, imgui.ImVec2(origin.x, origin.y - LOW), size)
+
+TypesetView._handle_mouse = low_mouse
+"""
+
+_LOW_FAILS = (
+    "1 drag over two words, left to right: range",
+    "1 drag over two words, left to right: text",
+    "4 double click: text",
+    "5 triple click: text",
+)
+
+
+def test_a_view_that_hit_tests_from_the_wrong_origin_fails_the_probe() -> None:
     """
     The instrument detects the defect it was built for.
 
-    `DocumentView._document_point` is made to report the pointer one line lower
-    than it is, which is what a head applied to the glyphs and not to the mouse
-    does. The text is drawn where it was; every click lands a line down. The
-    probe must say so on the very first gesture, and it must still finish.
+    `TypesetView._handle_mouse` is handed an origin one line higher than the
+    one the text was drawn from, which is what a head applied to the glyphs
+    and not to the mouse does. The text is drawn where it was; every click
+    lands a line down. The probe must say so on the very first gesture, and
+    it must still finish.
     """
-    from advtext.ui.document_view import DocumentView
-
-    real = DocumentView._document_point
-
-    def one_line_low(self: Any, origin: Any) -> Point:
-        point = real(self, origin)
-        return Point(point.x, point.y + sp_from_px(22.0))
-
-    monkeypatch.setattr(DocumentView, "_document_point", one_line_low)
-    outcome = probe.run_without_a_window(_SAMPLE.read_text(encoding="utf-8"))
-    assert not outcome.passed
-    failed = {check.name for check in outcome.checks if not check.ok}
-    assert "1 drag over two words, left to right: range" in failed
-    assert "1 drag over two words, left to right: text" in failed
-    assert "4 double click: text" in failed
-    assert "5 triple click: text" in failed
+    _needs_the_library()
+    done = _child(_LOW + 'raise SystemExit(probe.main(["--no-window"]))', library=True)
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "renderer TypesetView\n" in done.stdout, done.stdout
+    for name in _LOW_FAILS:
+        assert f"FAIL  {name}" in done.stdout, done.stdout
+    assert "of 18 checks passed" in done.stdout
 
 
-def test_a_view_that_never_copies_fails_on_the_sentinel(
-    probe: ModuleType, bundled_fonts: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_view_that_never_copies_fails_on_the_sentinel() -> None:
     """
     A copy that did not happen cannot pass on what the clipboard already held.
 
-    Gesture 5 selects a line and gesture 6 copies it; in a second run in one
-    process the clipboard would still hold a selection from the first, which is
-    why it is seeded with a sentinel before each copy. With `_handle_copy`
-    removed the sentinel is what comes back, and only the two copy checks fail.
+    Gesture 5 selects a line and gesture 6 copies it; the clipboard is seeded
+    with a sentinel before each copy. With the view's key handling removed
+    the sentinel is what comes back, and only the two copy checks fail.
     """
-    from advtext.ui.document_view import DocumentView
+    _needs_the_library()
+    done = _child(
+        """
+from advtext.ui.typeset_view import TypesetView
+TypesetView._handle_keys = lambda self: None
+outcome = probe.run_without_a_window(SAMPLE)
+failed = {check.name: check.actual for check in outcome.checks if not check.ok}
+print(failed)
+assert set(failed) == {
+    "6 ctrl+C: the clipboard holds the line",
+    "8 ctrl+C: the clipboard holds all of it, the undrawn part included",
+}, failed
+assert set(failed.values()) == {probe.SENTINEL}
+assert len(outcome.checks) == 18
+print("CHILD OK")
+""",
+        library=True,
+    )
+    assert done.returncode == 0 and "CHILD OK" in done.stdout, done.stdout + done.stderr
 
-    monkeypatch.setattr(DocumentView, "_handle_copy", lambda self, layout: None)
-    outcome = probe.run_without_a_window(_SAMPLE.read_text(encoding="utf-8"))
-    failed = {check.name: check.actual for check in outcome.checks if not check.ok}
-    assert set(failed) == {
-        "6 ctrl+C: the clipboard holds the line",
-        "8 ctrl+C: the clipboard holds all of it, the undrawn part included",
-    }
-    assert set(failed.values()) == {probe.SENTINEL}
 
-
-def test_a_document_without_the_opening_line_stops_early_and_does_not_pass(
-    probe: ModuleType, bundled_fonts: Any
-) -> None:
+def test_a_document_without_the_opening_line_stops_early_and_does_not_pass() -> None:
     """
     A missing target is an error with no checks, and that is not a pass.
 
-    And the watcher is taken off the class again: `DocumentView._handle_mouse`
+    And the watcher is taken off the class again: `TypesetView._handle_mouse`
     is the real method after a run that ended in an error.
     """
-    from advtext.ui.document_view import DocumentView
-
-    before = DocumentView._handle_mouse
-    outcome = probe.run_without_a_window(PROSE)
-    assert isinstance(outcome.error, probe.ProbeError)
-    assert "no line starts with" in str(outcome.error)
-    assert outcome.checks == ()
-    assert not outcome.passed
-    assert DocumentView._handle_mouse is before
+    _needs_the_library()
+    done = _child(
+        """
+from advtext.ui.typeset_view import TypesetView
+before = TypesetView._handle_mouse
+PROSE = "Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima.\\n"
+outcome = probe.run_without_a_window(PROSE)
+assert isinstance(outcome.error, probe.ProbeError), outcome.error
+assert not isinstance(outcome.error, probe.NotDrawing), outcome.error
+assert "no line starts with" in str(outcome.error), outcome.error
+assert outcome.checks == () and not outcome.passed
+assert outcome.renderer == "TypesetView"
+assert TypesetView._handle_mouse is before
+print("CHILD OK")
+""",
+        library=True,
+    )
+    assert done.returncode == 0 and "CHILD OK" in done.stdout, done.stdout + done.stderr
 
 
 # -- the real window -----------------------------------------------------
@@ -462,7 +572,14 @@ def _can_make_a_namespace() -> bool:
     return done.returncode == 0
 
 
-def test_the_probe_passes_in_a_real_window_on_an_xvfb(tmp_path: Path) -> None:
+def _needs_an_xvfb() -> None:
+    if shutil.which("Xvfb") is None:
+        pytest.skip("Xvfb is not installed, so there is no server to open the window on")
+    if not _can_make_a_namespace():
+        pytest.skip("`unshare -rm` cannot make a user namespace here, which --xvfb needs")
+
+
+def test_the_probe_passes_in_a_real_window_on_an_xvfb() -> None:
     """
     Fidelity: the real app in a real GLFW window with an OpenGL context, on Xvfb.
 
@@ -470,14 +587,12 @@ def test_the_probe_passes_in_a_real_window_on_an_xvfb(tmp_path: Path) -> None:
     because the server lives in a namespace this process is not in. The
     assertion is on the script's own report and exit status. About four seconds.
 
-    The shot is written under the repository rather than `tmp_path`: the
-    namespace mounts a tmpfs over `/tmp`, so a path there would be written into
-    the tmpfs and vanish with it.
+    With the library: eighteen of eighteen, at a `TypesetView`. Without it the
+    same command is the real app drawing its one line in a real window, and
+    the probe must say so and exit 2; a green "0 of 0" there, or a pass at a
+    view that is not on screen, is what this refuses.
     """
-    if shutil.which("Xvfb") is None:
-        pytest.skip("Xvfb is not installed, so there is no server to open the window on")
-    if not _can_make_a_namespace():
-        pytest.skip("`unshare -rm` cannot make a user namespace here, which --xvfb needs")
+    _needs_an_xvfb()
 
     done = subprocess.run(
         [sys.executable, str(_SCRIPT), "--xvfb"],
@@ -487,7 +602,43 @@ def test_the_probe_passes_in_a_real_window_on_an_xvfb(tmp_path: Path) -> None:
         check=False,
         cwd=_ROOT,
     )
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "mouse probe, window:" in done.stdout
-    assert "18 of 18 checks passed" in done.stdout
+    assert "mouse probe, window:" in done.stdout, done.stdout + done.stderr
     assert "FAIL" not in done.stdout
+    if os.environ.get(_LIBRARY):
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert "renderer TypesetView\n" in done.stdout, done.stdout
+        assert "18 of 18 checks passed" in done.stdout
+    else:
+        assert done.returncode == 2, done.stdout + done.stderr
+        assert "renderer none\n" in done.stdout, done.stdout
+        assert "0 of 0 checks passed" in done.stdout
+        assert "imtypeset is not drawing: IMTYPESET_LIBRARY is not set" in done.stdout
+
+
+def test_a_view_that_hit_tests_from_the_wrong_origin_fails_the_probe_in_a_real_window(
+    probe: ModuleType,
+) -> None:
+    """
+    The window probe detects the defect it was built for.
+
+    `test_a_view_that_hit_tests_from_the_wrong_origin_fails_the_probe`, in the
+    real app. The run must still finish and still name the view.
+    """
+    _needs_the_library()
+    _needs_an_xvfb()
+
+    code = _CHILD + _LOW + "raise SystemExit(probe.main([]))"
+    done = subprocess.run(
+        probe.xvfb_command([sys.executable, "-c", code, str(_SCRIPT), str(_SAMPLE)]),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        cwd=_ROOT,
+        env={**os.environ, "PYTHONPATH": str(_ROOT)},
+    )
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "renderer TypesetView\n" in done.stdout, done.stdout
+    for name in _LOW_FAILS:
+        assert f"FAIL  {name}" in done.stdout, done.stdout
+    assert "of 18 checks passed" in done.stdout

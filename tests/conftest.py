@@ -1,5 +1,5 @@
 """
-Shared fixtures. There are two, and each earns its place.
+Shared fixtures. There are two, and a guard, and each earns its place.
 
 **`bundled_fonts`.** Every metrics test needs the directory imgui-bundle ships
 its fonts in. That path is long, environment-derived, and wrong to write down:
@@ -43,6 +43,24 @@ goes red in GLFW exactly as before.
 Not here, deliberately: an in-process ImGui *window* fixture. Nothing in this
 suite opens a window in the test process -- see `docs/decisions.md`; the
 `window` fixture runs a subprocess.
+
+**The frame guard (`_no_frame_left_open`, autouse).** Some tests do run Dear
+ImGui frames in the pytest process, with no window: a context made by a
+module's own fixture, `new_frame`, a `begin`, the code under test, `end`,
+`render`. The context is process-wide. A test that raises between `begin` and
+`end` leaves it mid-frame, and then EVERY later test that starts a frame fails
+in `new_frame` ("Forgot to call Render() or EndFrame() at the end of the
+previous frame?"), in files that have nothing to do with the one that broke.
+Three builders met that cascade in phase A of tranche 5 (one stale test, 134
+reds: `.concerns/T5-FB-C--builder--result.md`). After each test the guard
+looks; if a frame is open it closes it with Dear ImGui's own error recovery
+(every window, ID and style the test left pushed is popped, then `end_frame`)
+and warns, naming the test. This project turns warnings into errors
+(`filterwarnings = ["error"]`), so the warning is an ERROR at the teardown of
+the test that left the frame open, beside its own failure if it had one: the
+blame lands on that test and on no other. A test that imports no Dear ImGui
+costs one dictionary lookup. `tests/test_conftest_guard.py` runs the cascade
+with and without it.
 """
 
 from __future__ import annotations
@@ -55,6 +73,8 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
+import warnings
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,8 +89,13 @@ XVFB_DISPLAY = 94
 The TCP display the `window` fixture's Xvfb listens on (port 6094).
 
 The servers started by different test files share a network namespace, so each
-has its own number: 99 is the probe's, 97 `tests/test_examples.py`'s, 96
-`tests/test_example_gallery.py`'s, 95 and 93 `tests/test_example_stream.py`'s.
+has its own number: 99 is the probe's, 95 and 93 `tests/test_example_stream.py`'s.
+(97 and 96 were `tests/test_examples.py`'s and `tests/test_example_gallery.py`'s for the
+two old-API examples, deleted in tranche 5.) **Every window run on this machine that
+goes through this fixture shares the one number**: two test runs at the same moment
+collide on the port and one of them fails with "Xvfb is not running" (measured
+2026-10-11: a second windowed process started during a whole-suite run turned two
+unrelated window tests red, and they passed alone).
 """
 
 
@@ -88,6 +113,54 @@ def bundled_fonts() -> Path:
     if not fonts.is_dir():
         pytest.skip(f"imgui-bundle is installed but ships no font directory at {fonts}")
     return fonts
+
+
+def close_open_imgui_frame() -> bool:
+    """
+    End the Dear ImGui frame the current context was left in, if it was. True if there was one.
+
+    Nothing is imported to find out: a process that has not imported
+    `imgui_bundle` has no frame open. With a context that is mid-frame
+    (`WithinFrameScope`), Dear ImGui's own recovery unwinds what was left
+    pushed since `NewFrame` (windows, child windows, IDs, style colours and
+    variables, fonts, groups: `ErrorRecoveryTryToRecoverState` with the state
+    the context stored at `NewFrame`) and the frame is then ended. The
+    recovery reports each thing it pops as an error, which this wheel turns
+    into a Python exception; that is switched off for the call and put back.
+    """
+    if "imgui_bundle" not in sys.modules:
+        return False
+    from imgui_bundle import imgui
+
+    if imgui.get_current_context() is None:
+        return False
+    context = imgui.get_current_context()
+    if not context.within_frame_scope:
+        return False
+    io = imgui.get_io()
+    asserts = io.config_error_recovery_enable_assert
+    io.config_error_recovery_enable_assert = False
+    try:
+        imgui.internal.error_recovery_try_to_recover_state(context.stack_sizes_in_new_frame)
+        imgui.end_frame()
+    finally:
+        io.config_error_recovery_enable_assert = asserts
+    return True
+
+
+@pytest.fixture(autouse=True)
+def _no_frame_left_open(request: pytest.FixtureRequest) -> Iterator[None]:
+    """
+    After every test: a Dear ImGui frame it left open is closed, and said. See the module docstring.
+    """
+    yield
+    if close_open_imgui_frame():
+        warnings.warn(
+            f"{request.node.nodeid} left a Dear ImGui frame open (it raised between begin and "
+            "end, or never ended its frame); tests/conftest.py closed it so that the tests "
+            "after it can run frames",
+            stacklevel=1,
+        )
 
 
 def display_is_reachable(display: str, *, timeout: float = 0.5) -> bool:
@@ -137,6 +210,32 @@ def _namespaces_work() -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
     return done.returncode == 0
+
+
+def _wait_for_free_display(number: int, *, timeout: float = 15.0) -> bool:
+    """
+    Wait until nothing accepts a connection on the TCP display `number`. True if it is free.
+
+    Every Xvfb this fixture starts listens on the same port, and one is still
+    there for a moment after the run that started it has returned (it is
+    killed with its namespace, not waited for). A run begun in that moment
+    died with "server already running" and its test went red, in whichever
+    file was next: three window tests in one whole-suite run on 2026-10-11,
+    and one that calls `run` three times in a row failed two times in three
+    ALONE. So the port is asked first. After `timeout` the run goes ahead
+    anyway and fails as it did, saying so itself: another session's server on
+    the same number is not this fixture's to wait out.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with socket.create_connection(("127.0.0.1", 6000 + number), timeout=0.5):
+                pass
+        except OSError:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.1)
 
 
 @dataclass(frozen=True)
@@ -194,6 +293,7 @@ class Window:
             runpy.run_path(sys.argv[0], run_name="__main__")
             """)
         command = probe.xvfb_command([sys.executable, "-c", inner], display=XVFB_DISPLAY)
+        _wait_for_free_display(XVFB_DISPLAY)
         return subprocess.run(
             command,
             capture_output=True,

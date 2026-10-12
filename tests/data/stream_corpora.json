@@ -1,0 +1,306 @@
+{
+ "about": "The sources tests/test_stream.py held advtext.stream.StreamDocument to, kept for tests/test_typeset_markdown.py, which holds MarkdownStream to the same ones. Sources only: no answer of the old stream is here. LONG is (head, unit); LEAVING is (head, unit, after). Written by .concerns/T5-B1-scripts/freeze_descriptions.py.",
+ "ADVERSARIAL": {
+  "number-sign": "para\n#tag and more\n\nnext\n",
+  "fence-opener": "para\n```a`b\nstill the paragraph\n\nnext\n",
+  "html-opener": "para\n<path d> continues\n\nnext\n",
+  "delimiter-row": "para\n| a |\n|--x\n\nnext\n",
+  "item-then-fence": "intro\n\n1. step one\n\n   ```sh\n   make check\n   ```\n\n   and a paragraph in the step\n\n2. step two\n\nafter the list\n",
+  "setext": "a paragraph\n\nbecomes a heading\n===\n\nand this one too\n---\n\nend\n",
+  "lazy-continuation": "> quoted\nlazily continued\n> and again\n\n- item\ncontinued\n\npara\n",
+  "table": "before\n\n| a | b |\n|---|--:|\n| 1 | 2 |\n| 3 | 4 |\nnot a row\n\nafter\n",
+  "table-interrupts": "para\n| a | b |\n|---|---|\n| 1 | 2 |\n\nafter\n",
+  "loose-list": "- a\n- b\n\n- c\n\n  c continued\n\n      code in c\n\ntext\n\n    indented code\n",
+  "nested": "> - one\n>   - two\n>\n> > deeper\n\n1. a\n   - b\n     1. c\n\n---\n\nend\n",
+  "open-fence": "text\n\n```\nnever closed\n\n# not a heading\n",
+  "html-block": "one\n\n<div>\nraw\n</div>\n\ntwo\n\n<!-- c -->\n\nthree\n",
+  "emphasis-late": "a **bold run that\nspans lines** and `code\nspan` and [a link](http://x.y)\n\nz\n",
+  "blank-runs": "\n\n\nfirst\n\n\n\nsecond\n\n\n",
+  "no-final-newline": "# title\n\nlast line has no newline",
+  "hard-breaks": "one\\\ntwo  \nthree\n\nfour\n",
+  "headings": "# a\n## b\n### c\n#### d\n##### e\n###### f\n####### g\n#\n\n#\n",
+  "rules": "a\n\n***\n- x\n---\ny\n___\n",
+  "empty-last-item": "- a\n-\n\npara\n\nend\n",
+  "item-starting-with-fence": "1. ```\n   code\n   ```\n\npara\n\nend\n",
+  "nested-fences": "````md\n```py\ninner\n```\nstill outer\n````\n\nafter\n",
+  "longer-closer": "```\na\n`````\nb\n\n~~~~\nc\n~~~\nstill c\n~~~~~~   \nd\n",
+  "not-closers": "```\n    ```\n``\n``` x\n~~~\n\\```\n```\nend\n",
+  "fence-then-text": "```\ncode\n```\ntext with no blank line before it\n```\nmore\n```\n",
+  "indented-fence": "  ```py\n  two\n one\n\tthree\n    four\n\n   \n  ```\n\nafter\n",
+  "fence-blank-tail": "text\n\n```\ncode\n\n\n   \n",
+  "fence-after-blanks": "\n\n```\nat the very start\nmore\n```\nend\n",
+  "two-fences": "```\na\nb\n```\n```\nc\nd\n```\n~~~\ne\n",
+  "empty-fences": "```\n```\n\n~~~\n\n~~~\nafter\n\n```\n",
+  "fence-or-table": "~~~a|b\n-|-\n1|2\n\n~~~a|b\nx\n-|-\n~~~\nafter\n",
+  "fence-in-quote": "> ```\n> quoted code\n> more\n> ```\n> text\n\nafter\n",
+  "wide-table-row": "| a | b |\n|---|---|\n| 1 | 2 | 3 | 4 |\n| 5 |\n\nafter\n",
+  "html-across-blanks": "one\n\n<!-- a\n\ncomment over\n\nblank lines -->\n\ntwo\n\n<pre>\nraw\n\n  kept\n</pre>\n\nthree\n",
+  "html-unclosed": "one\n\ntwo\n\n<!-- never\n\nclosed\n\n# not a heading\n",
+  "tabs": "\tindented code by a tab\n\n-\ttab after the marker\n\n\t- not a list\n\n>\tquoted\n\n```\n\tin\ta fence\n```\na\tb\n",
+  "adjacent-lists": "- a\n- b\n* c\n* d\n+ e\n1. f\n2) g\n3) h\n\nend\n",
+  "past-item-nine": "8. a\n\n   in eight\n\n9. b\n\n   in nine\n\n10. c\n\n   not in ten\n\n11. d\n\n    in eleven\n\n12. e\n\nend\n",
+  "list-of-items": "- a\n- b b\n- c\n\n- d\n  more d\n- e\n\nafter\n",
+  "numbered-all-ones": "7. a\n1. b\n1. c\n\n   in c\n1. d\n\nend\n",
+  "steps-with-fences": "1. one\n\n   ```sh\n   make\n\n   check\n   ```\n\n   text\n\n2. two\n\n   ```\n   open to the end of the item\n3. three\n\nend\n",
+  "wide-then-indented-siblings": "-    wide\n  - sibling\n   - third\n     in third\n  in none\n\nend\n",
+  "absorbed-indent": " -      1.     x\n    2.     y\n       ````\n       z\n       ````\n   =\n\nend\n",
+  "quote-of-paragraphs": "> a\n>\n> b\nlazy\n>\n> c\n\n> new quote\n",
+  "quote-with-list-and-fence": "> intro\n>\n> - a\n> - b\n>\n> ~~~\n> \n>\n> x\n> ~~~\n> tail\n\nend\n",
+  "item-left-by-outdent": "1. a\n\n   ```\n   x\n   y\n2. b\n\n   ```\n   z\nout\n",
+  "nested-lists": "- - a\n  - b\n    1. c\n    2. d\n\n       e\n  - f\n- g\n\n1. h\n",
+  "fence-first-in-items": "1. ```\n   x\n   y\n   ```\n   after\n2. ```\n   z\n\n   w\n3. v\n",
+  "tabbed-items": "-\ta\n\n\tb\n-\tc\n\n\td\n\nend\n",
+  "html-in-item": "- a\n\n  <div>\n  raw\n\n  b\n- c\n<!--\n- d\n",
+  "quoted-table": "> intro\n>\n> | a | b |\n> |---|---|\n> | 1 | 2 |\n>\n> after\n\nend\n"
+ },
+ "DOCUMENTS": {
+  "number-sign": "para\n#tag and more\n\nnext\n",
+  "fence-opener": "para\n```a`b\nstill the paragraph\n\nnext\n",
+  "html-opener": "para\n<path d> continues\n\nnext\n",
+  "delimiter-row": "para\n| a |\n|--x\n\nnext\n",
+  "item-then-fence": "intro\n\n1. step one\n\n   ```sh\n   make check\n   ```\n\n   and a paragraph in the step\n\n2. step two\n\nafter the list\n",
+  "setext": "a paragraph\n\nbecomes a heading\n===\n\nand this one too\n---\n\nend\n",
+  "lazy-continuation": "> quoted\nlazily continued\n> and again\n\n- item\ncontinued\n\npara\n",
+  "table": "before\n\n| a | b |\n|---|--:|\n| 1 | 2 |\n| 3 | 4 |\nnot a row\n\nafter\n",
+  "table-interrupts": "para\n| a | b |\n|---|---|\n| 1 | 2 |\n\nafter\n",
+  "loose-list": "- a\n- b\n\n- c\n\n  c continued\n\n      code in c\n\ntext\n\n    indented code\n",
+  "nested": "> - one\n>   - two\n>\n> > deeper\n\n1. a\n   - b\n     1. c\n\n---\n\nend\n",
+  "open-fence": "text\n\n```\nnever closed\n\n# not a heading\n",
+  "html-block": "one\n\n<div>\nraw\n</div>\n\ntwo\n\n<!-- c -->\n\nthree\n",
+  "emphasis-late": "a **bold run that\nspans lines** and `code\nspan` and [a link](http://x.y)\n\nz\n",
+  "blank-runs": "\n\n\nfirst\n\n\n\nsecond\n\n\n",
+  "no-final-newline": "# title\n\nlast line has no newline",
+  "hard-breaks": "one\\\ntwo  \nthree\n\nfour\n",
+  "headings": "# a\n## b\n### c\n#### d\n##### e\n###### f\n####### g\n#\n\n#\n",
+  "rules": "a\n\n***\n- x\n---\ny\n___\n",
+  "empty-last-item": "- a\n-\n\npara\n\nend\n",
+  "item-starting-with-fence": "1. ```\n   code\n   ```\n\npara\n\nend\n",
+  "nested-fences": "````md\n```py\ninner\n```\nstill outer\n````\n\nafter\n",
+  "longer-closer": "```\na\n`````\nb\n\n~~~~\nc\n~~~\nstill c\n~~~~~~   \nd\n",
+  "not-closers": "```\n    ```\n``\n``` x\n~~~\n\\```\n```\nend\n",
+  "fence-then-text": "```\ncode\n```\ntext with no blank line before it\n```\nmore\n```\n",
+  "indented-fence": "  ```py\n  two\n one\n\tthree\n    four\n\n   \n  ```\n\nafter\n",
+  "fence-blank-tail": "text\n\n```\ncode\n\n\n   \n",
+  "fence-after-blanks": "\n\n```\nat the very start\nmore\n```\nend\n",
+  "two-fences": "```\na\nb\n```\n```\nc\nd\n```\n~~~\ne\n",
+  "empty-fences": "```\n```\n\n~~~\n\n~~~\nafter\n\n```\n",
+  "fence-or-table": "~~~a|b\n-|-\n1|2\n\n~~~a|b\nx\n-|-\n~~~\nafter\n",
+  "fence-in-quote": "> ```\n> quoted code\n> more\n> ```\n> text\n\nafter\n",
+  "wide-table-row": "| a | b |\n|---|---|\n| 1 | 2 | 3 | 4 |\n| 5 |\n\nafter\n",
+  "html-across-blanks": "one\n\n<!-- a\n\ncomment over\n\nblank lines -->\n\ntwo\n\n<pre>\nraw\n\n  kept\n</pre>\n\nthree\n",
+  "html-unclosed": "one\n\ntwo\n\n<!-- never\n\nclosed\n\n# not a heading\n",
+  "tabs": "\tindented code by a tab\n\n-\ttab after the marker\n\n\t- not a list\n\n>\tquoted\n\n```\n\tin\ta fence\n```\na\tb\n",
+  "adjacent-lists": "- a\n- b\n* c\n* d\n+ e\n1. f\n2) g\n3) h\n\nend\n",
+  "past-item-nine": "8. a\n\n   in eight\n\n9. b\n\n   in nine\n\n10. c\n\n   not in ten\n\n11. d\n\n    in eleven\n\n12. e\n\nend\n",
+  "list-of-items": "- a\n- b b\n- c\n\n- d\n  more d\n- e\n\nafter\n",
+  "numbered-all-ones": "7. a\n1. b\n1. c\n\n   in c\n1. d\n\nend\n",
+  "steps-with-fences": "1. one\n\n   ```sh\n   make\n\n   check\n   ```\n\n   text\n\n2. two\n\n   ```\n   open to the end of the item\n3. three\n\nend\n",
+  "wide-then-indented-siblings": "-    wide\n  - sibling\n   - third\n     in third\n  in none\n\nend\n",
+  "absorbed-indent": " -      1.     x\n    2.     y\n       ````\n       z\n       ````\n   =\n\nend\n",
+  "quote-of-paragraphs": "> a\n>\n> b\nlazy\n>\n> c\n\n> new quote\n",
+  "quote-with-list-and-fence": "> intro\n>\n> - a\n> - b\n>\n> ~~~\n> \n>\n> x\n> ~~~\n> tail\n\nend\n",
+  "item-left-by-outdent": "1. a\n\n   ```\n   x\n   y\n2. b\n\n   ```\n   z\nout\n",
+  "nested-lists": "- - a\n  - b\n    1. c\n    2. d\n\n       e\n  - f\n- g\n\n1. h\n",
+  "fence-first-in-items": "1. ```\n   x\n   y\n   ```\n   after\n2. ```\n   z\n\n   w\n3. v\n",
+  "tabbed-items": "-\ta\n\n\tb\n-\tc\n\n\td\n\nend\n",
+  "html-in-item": "- a\n\n  <div>\n  raw\n\n  b\n- c\n<!--\n- d\n",
+  "quoted-table": "> intro\n>\n> | a | b |\n> |---|---|\n> | 1 | 2 |\n>\n> after\n\nend\n",
+  "demo/stream.md": "# Replaying an answer\n\nThis document is written the way a model writes: a heading, a few paragraphs,\na numbered procedure with code inside its steps, a table, and a closing remark.\nIt is meant to be fed to the renderer **a few characters at a time**, so every\nblock in it is, for a while, the block still being written.\n\nThe first paragraph has to be long enough to break onto several lines at any\nwidth a pane is likely to have, because the thing to watch is whether a line\nthat has already been set stays where it is while the words after it arrive.\nIt also carries *emphasis that opens long before it closes, so that for a\ndozen tokens the asterisk is only an asterisk*, and a `code span` that does the\nsame on a smaller scale.\n\n## A procedure, with code inside the steps\n\n1. Create the environment and install the package into it.\n\n   ```sh\n   python -m venv .venv\n   .venv/bin/pip install -e .\n   ```\n\n2. Run the checks. The fence above is indented under its item, which is what\n   makes this the construct a blank-line scanner gets wrong: read from its own\n   first line it is not a fence inside a step but a code block on its own.\n\n   A second paragraph inside the same step has the same property. Cut loose\n   from the `2.` above it, it would be an ordinary paragraph at the margin.\n\n3. Read the output:\n\n   ```\n   12 passed in 0.31s\n   ```\n\nBetween the steps nothing may be committed early, and after the last one the\nwhole list is one settled block.\n\n## Things that change their mind\n\nA line can look like one thing and become another. This one mentions #tags and\nends before a line that starts with a number sign:\n#not-a-heading, because no space follows the sign.\n\nSome lines turn into a table only when the row of dashes arrives:\n\n| setting        | breaks chosen | moves a settled line |\n|----------------|:-------------:|---------------------:|\n| justified      | all together  | sometimes            |\n| ragged         | line by line  | never, for new words |\n\n> A quotation is one block however many paragraphs it has.\n>\n> So its first paragraph is not settled until the quotation is over.\n\n- A short list\n- of three items\n- the last of which contains a path that cannot be broken:\n  `/home/user/projects/imgui-adv-text/advtext/backends/imgui_draw.py`\n\nA heading with an underline\n---------------------------\n\nThe heading above was a paragraph until its second line arrived.\\\nThis line follows a hard break.\n\n```python\ndef greet(name: str) -> str:\n    return f\"hello, {name}\"\n```\n\n***\n\nThat is the whole of it.\n",
+  "demo/sample.md": "# Boxes, Glue and Penalties\n\nThis document is the first litmus test. Everything you can see below was\npositioned by code in this repository: every glyph, every space between words,\nevery gap between lines. Nothing was handed to a text widget and nothing was\nmeasured by one.\n\n## Why do layout from scratch\n\nDear ImGui draws text very well and will not tell you where it put it. That is\na reasonable trade for a debug interface and a poor one for a document, because\nthe moment you want to select a phrase with the mouse you need to know which\nglyph is under the pointer, and the widget that drew it has already forgotten.\nOnce the layout is ours, hit testing stops being a missing feature and becomes\narithmetic over numbers we already computed.\n\nThe model is Knuth's. A document is a list of **boxes**, **glue**, **kerns** and\n**penalties**. A box has a fixed size, glue has a natural size plus a\nstretchability and a shrinkability, a kern is rigid space, and a penalty is the\ncost of breaking a line at that point. The function `hpack` measures a list and\nrecords how far its glue had to stretch; the line breaker then chooses the set\nof breakpoints with the fewest *demerits* over the whole paragraph rather than\nfilling each line greedily and hoping.\n\n### What the difference looks like\n\nA greedy filler commits to line one before it has seen line four. Total-fit\nbreaking will loosen an early line by a hair to rescue a later one, and the\nsuite pins that behaviour by enumerating every possible breaking of a short\nparagraph and checking that the chosen one has the lowest score. See\n[the line breaker](advtext/linebreak.py) for the demerits formula, which is\n§859 of `tex.web` transcribed rather than paraphrased.\n\n> Badness says how hard one line had to work. Demerits squares it, adds the\n> square of any penalty at the break, and charges extra when two adjacent lines\n> are set very differently — which is why a tight line never sits next to a\n> loose one in well set text.\n\n---\n\n## The pieces, and who owns what\n\n| Module | Owns | Imports a font? |\n| --- | --- | --- |\n| `units` | Scaled points, glue orders | no |\n| `nodes` | Boxes, glue, kerns, penalties | no |\n| `pack` | `hpack`, `vpack`, interline glue | no |\n| `linebreak` | Total-fit breaking | no |\n| `shipout` | Absolute glyph positions | no |\n| `fontlib` | Advances, kerns, the MATH table | yes |\n\nThe layout core knows nothing about fonts. It consumes a small measuring\ninterface and produces a tree of boxes, and a separate step flattens that tree\ninto a flat list of draw commands with absolute coordinates. Two unrelated\nbackends consume those commands, which is the property that proves the geometry\nreally was separated from the drawing.\n\n1. The SVG backend emits real glyph outlines and needs no GPU at all.\n2. The ImDrawList backend issues immediate-mode calls and needs a window.\n3. Neither one imports the other, and neither knows what a penalty is.\n\n### Twelve steps, in order\n\nEverything between the source file and the screen, with nothing left out and\nnothing done twice. The tenth, eleventh and twelfth markers are here on\npurpose: a list's gutter is sized so that a two-digit number still clears its\nown text, and a demo that stopped at nine would never show it.\n\n1. `markdown` turns the source into blocks and keeps its hands off the page.\n2. Each run of text becomes characters, pair kerns and interword glue.\n3. `style` resolves a face and a size into one font key per run.\n4. `fontlib` reads the advance and the `GPOS` kern of every pair.\n5. `linebreak` offers a breakpoint at each position the rules allow.\n6. `badness` scores how hard every trial line would have to work.\n7. The total-fit pass keeps the cheapest whole set of breaks.\n8. `pack` sets the glue in the chosen lines and rounds once, at the end.\n9. Interline glue puts consecutive baselines a constant distance apart.\n10. `vpack` stacks lines and blocks into one tall vertical box.\n11. `shipout` walks that box and emits absolute glyph coordinates.\n12. A backend draws them, and knows nothing whatever about steps 1 to 11.\n\nSome of it is deliberately missing, and each omission has a reason written\ndown next to it:\n\n- **Hyphenation**, because the full implementation is about a thousand lines\n  and contains the worst interaction in all of TeX, which is reconstructing\n  ligatures across a break.\n- **Page breaking**, because this is one continuous column and there is no\n  page cost function to minimise.\n- **Bidirectional text and complex shaping**, because one direction is enough\n  to make the argument and two is a different project.\n\nHere is the whole of the interface the layout core is allowed to see:\n\n```python\nclass FontMetrics(Protocol):\n    def advance(self, codepoint: int) -> float: ...\n    def bbox(self, codepoint: int) -> GlyphBBox: ...\n    def kern(self, codepoint: int, following: int) -> float: ...\n```\n\n## Rounding, once\n\nTeX carries every length as an integer number of *scaled points*, one\nsixty-five-thousand-five-hundred-and-thirty-sixth of a point, and rounds\n***exactly once*** — at ship-out, on a final absolute coordinate. The glue\nrenderer keeps a\nrunning total of the stretch it has handed out, multiplies the whole total by\nthe box's ratio, rounds *that*, and takes a difference against the previous\nrounded total. Round each space independently instead and the error walks along\nthe line, so the last word misses the right margin by a point or two. It looks\nlike a bug in the breaker, and it is a bug in the arithmetic.\n"
+ },
+ "REVIEW_5": {
+  "star-second-child": "* a\n\n  b\n\n  c\n* d\n\n  e\n\nend\n",
+  "plus-star": "+ a\n  * b\n\n    c\n  * d\n+ e\n\n  f\n\nend\n",
+  "star-dash-star": "* a\n  - b\n    * c\n\n      d\n    * e\n  - f\n* g\n\nend\n",
+  "hr-like-in-star": "* a\n* * *\n* b\n\n  ---\n  c\n  - - -\n* d\n***\n- e\n\n  ***\n  f\n\nend\n",
+  "paren-ordered": "1) a\n2) b\n\n   c\n3) d\n1. new list\n2. x\n\nend\n",
+  "marker-change": "- a\n- b\n\n  b2\n* c\n* d\n\n  d2\n+ e\n\nend\n",
+  "nine-to-ten": "8. a\n9. b\n   in nine\n10. c\n   lazy in ten\n\n   out of ten\n11. d\n\n    in eleven\n\nend\n",
+  "lazy-earlier": "- a\n- b\nlazy b\n- c\n  - d\nlazy d\n    lazy d2\n- e\n\nend\n",
+  "outdent-pulls": "- a\n\n  - b\n\n    c\n\n   d\n\n  e\n\n f\n\nend\n",
+  "three-deep-open": "- a\n  - b\n    - c\n\n      c2\n\n      ```\n      code\n      more\n",
+  "quote-list-fence": "> - a\n>\n>   ```py\n>   x = 1\n>\n>   y = 2\n>   ```\n>   after\n> - b\n>   ~~~\n>   open\n> - c\n\nend\n",
+  "closer-longer": "1. a\n\n   ```\n   x\n   `````\n   after\n2. b\n\nend\n",
+  "closer-shorter": "1. a\n\n   ````\n   x\n   ```\n   y\n   ````\n   after\n2. b\n\nend\n",
+  "closer-indent3": "1. a\n\n   ```\n   x\n      ```\n   after\n2. b\n\nend\n",
+  "closer-indent4": "1. a\n\n   ```\n   x\n       ```\n   y\n   ```\n2. b\n\nend\n",
+  "closer-outdented": "1. a\n\n   ```\n   x\n```\nswallowed\n2. not an item\n",
+  "closer-info-spaces": "1. a\n\n   ~~~\n   x\n   ~~~ no\n   y\n   ~~~   \n   z\n2. b\n",
+  "tabs-1": "- a\n\n\tb\n\n\t\tcode?\n- c\n\t- d\n\n\t  e\n\nend\n",
+  "tabs-2": "1.\ta\n\n\tb\n2.\tc\n\nend\n",
+  "tabs-3": ">\t- a\n>\t  b\n>\n>\t- c\n\nend\n",
+  "item-indented-code": "-     code1\n\n      code2\n\n  para\n-     x\n- \n      y\n\nend\n",
+  "ordered-indented-code": "1.      code\n\n   text\n2.      more\n\nend\n",
+  "setext-in-item": "- a\n\n  title\n  ===\n\n  sub\n  ---\n\n  para\n===\n- b\n  ---\n- c\n\nend\n",
+  "table-in-item": "- intro\n\n  | a | b |\n  |---|---|\n  | 1 | 2 |\n  | 3 | 4 |\n\n  after\n- x | y\n  --|--\n  1 | 2\n- p|q\n-|-\n\nend\n",
+  "lazy-table-split": "- para\na|b\n  -|-\n  1|2\n\nend\n",
+  "list-or-table": "1. x\n2. a|b\n:-|-\nc|d\n\nend\n",
+  "hard-breaks": "- a  \n  b\\\n  c  \n\n  d\\\n- e  \n\n  f\\\n\nend\n",
+  "crlf": "- a\r\n- b\r\n\r\n  b2\r\n  ```\r\n  x\r\n  ```\r\n- c\r\n\r\nend\r\n",
+  "lone-cr": "> a\r>\r> b\r\rend\r",
+  "blank-then-loose": "- a\n- b\n\n\n- c\n\n\n  c2\n- d\n\nend\n",
+  "quoted-tables": "> x\n>\n> | a | b |\n> |---|---|\n> | 1 | 2 |\n>\n> | c | d |\n> |---|---|\n>\n\nend\n",
+  "quoted-table-in-item": "- > a|b\n  > -|-\n  >\n  > 1|2\n- z\n\nend\n",
+  "html": "> a\n>\n> <div>\n> x\n>\n> y\n\n- a\n\n  <!--\n  c\n- still comment?\n  -->\n- b\n\nend\n",
+  "empty-items": "-\n  a\n-\n\n  b\n- \n- c\n\n  d\n-   \n  e\n\nend\n",
+  "heading-quote-in-item": "- # h\n\n  ## h2\n  text\n  > q\n  > r\n\n  > s\nlazy\n- t\n\nend\n",
+  "odd-numbers": "0. a\n\n   b\n007. c\n\n     d\n123456789. e\n\n           f\n\nend\n",
+  "tight-quotes": ">a\n>\n>b\n>> c\n>>\n>> d\n> > e\n>\n>f\n\nend\n",
+  "sibling-indents": "   - a\n\n     a2\n  - b\n\n    b2\n - c\n\n   c2\n- d\n\n  d2\n    - e?\n\nend\n",
+  "wide-pad-nested": "-  a\n\n    1.  x\n\n        y\n   2. z\n\n      w\n\nend\n",
+  "fence-opens-nested-item": "- a\n  - ```\n    x\n    y\n    ```\n    z\n  - ~~~\n    open\n- b\n\nend\n",
+  "fences-back-to-back": "1. a\n   ```\n   x\n   ```\n   ```\n   y\n   z\n   ```\n   ~~~\n   ~~~\n   t\n2. b\n\nend\n",
+  "fence-blank-lines": "- a\n\n  ```\n  x\n\n\n  y\n\n  ```\n\n\n  b\n\nend\n",
+  "quote-fence-lazy": "> a\n>\n> ```\n> x\nlazy\n> y\n\nend\n",
+  "list-in-quote-in-list": "- a\n\n  > - b\n  >\n  >   c\n  > - d\n  >   ```\n  >   x\n  >   ```\n  >   e\n\n  f\n- g\n\nend\n",
+  "numbering": "3. a\n\n   - x\n   - y\n\n   b\n5. c\n   1. p\n   1. q\n\n      r\n9. d\n\nend\n"
+ },
+ "TABLES": {
+  "plain": "| name | value | note |\n|:--|--:|---|\n| item 1 | 7.01 | a few words about row 1 |\n| item 2 | 14.02 | a few words about row 2 |\n\nafter\n",
+  "no-blank-then-heading": "| a | b |\n|---|---|\n| 1 | 2 |\n# heading\ntext\n",
+  "no-blank-then-fence": "| a | b |\n|---|---|\n| 1 | 2 |\n```\ncode | here\n```\nend\n",
+  "no-blank-then-list": "| a | b |\n|---|---|\n| 1 | 2 |\n- item | x\n- two\n\nend\n",
+  "no-blank-then-quote": "| a | b |\n|---|---|\n| 1 | 2 |\n> quoted | x\n\nend\n",
+  "no-blank-then-rule": "| a | b |\n|---|---|\n| 1 | 2 |\n---\n| 3 | 4 |\n\nend\n",
+  "no-blank-then-html": "| a | b |\n|---|---|\n| 1 | 2 |\n<div>\nx | y\n</div>\n\nend\n",
+  "indented-four": "| a | b |\n|---|---|\n| 1 | 2 |\n    | 3 | 4 |\n| 5 | 6 |\n\nend\n",
+  "indented-three": "| a | b |\n|---|---|\n| 1 | 2 |\n   | 3 | 4 |\n| 5 | 6 |\n\nend\n",
+  "text-rows": "a | b\n-- | --\nplain text is a row\n1 | 2 | 3 | 4\n|\n| |\n\nend\n",
+  "ragged": "| a | b | c |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 | 4 | 5 |\n||\n\nend\n",
+  "escapes": "| a | b |\n|---|---|\n| x \\| y | `c | d` |\n| **bold** | [l](u) |\n\nend\n",
+  "markup-closing": "| a | b |\n|---|---|\n| **bold and *nested* text** | `code` and ~~x~~ |\n",
+  "row-like-delimiter": "| a | b |\n|---|---|\n|---|---|\n| :-: | - |\n\nend\n",
+  "two-tables": "| a |\n|---|\n| 1 |\n\n| b |\n|---|\n| 2 |\n| 3 |\n\nend\n",
+  "back-to-back": "| a | b |\n|---|---|\n| 1 | 2 |\n| c | d |\n|---|---|\n| 3 | 4 |\n",
+  "header-only": "| a | b |\n|---|---|\n\nafter\n",
+  "header-only-at-end": "| a | b |\n|---|---|",
+  "not-a-table-after-all": "| a | b |\n|---|---|x\n| 1 | 2 |\n\nend\n",
+  "delimiter-too-short": "| a | b |\n|---|\n| 1 | 2 |\n\nend\n",
+  "single-column": "| a |\n|:-:|\n| 1 |\n| 2 |\nlazy?\n\nend\n",
+  "no-edge-pipes": "a|b\n-|-\n1|2\n3|4\n\nend\n",
+  "list-not-delimiter": "a | b\n- | -\nplain text\n1 | 2\n\nend\n",
+  "whitespace-lines": "| a | b |\n|---|---|\n| 1 | 2 |\n   \n| 3 | 4 |\n\t\nend\n",
+  "tabs": "| a | b |\n|---|---|\n|\t1\t|\t2\t|\n\t| 3 | 4 |\n\nend\n",
+  "ends-without-newline": "intro\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4",
+  "fence-then-table": "```\nx\ny\n```\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```\nz\nw\n```\n",
+  "table-then-table-like": "| a | b |\n|---|---|\n| 1 | 2 |\n\n| not | a table\nreally\n",
+  "setext-after": "| a | b |\n|---|---|\n| 1 | 2 |\n===\n---\n\nend\n",
+  "long-cells": "| k | v |\n|---|---|\n| one | word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word |\n| two | x |\n\nend\n",
+  "in-a-list-is-not-followed": "- intro\n\n  | a | b |\n  |---|---|\n  | 1 | 2 |\n  | 3 | 4 |\n\nend\n",
+  "in-a-quote-is-not-followed": "> | a | b |\n> |---|---|\n> | 1 | 2 |\n> | 3 | 4 |\n\nend\n"
+ },
+ "LONG": {
+  "list": [
+   "",
+   "- item number {n} with several words in it\n"
+  ],
+  "numbered-steps": [
+   "",
+   "{n}. **Step {n}** does a thing\n\n     and a paragraph in the step\n\n     ```sh\n     make step-{n}\n     ```\n\n"
+  ],
+  "quote": [
+   "",
+   "> quoted line number {n} with several words\n>\n"
+  ],
+  "list-in-quote": [
+   "> intro\n>\n",
+   "> - quoted item {n} with words\n"
+  ],
+  "fence-in-item": [
+   "1. step\n\n   ```python\n   first = line\n",
+   "   value = compute(argument, another_argument)\n"
+  ]
+ },
+ "LEAVING": {
+  "next-item": [
+   "1. step\n\n   ```\n   alpha\n",
+   "   beta\n",
+   "2. next step"
+  ],
+  "paragraph-at-the-margin": [
+   "1. step\n\n   ```\n   alpha\n",
+   "   beta\n",
+   "para graph"
+  ],
+  "one-space": [
+   "1. step\n\n   ```\n   alpha\n",
+   "   beta\n",
+   " one space in"
+  ],
+  "after-blank-lines": [
+   "1. step\n\n   ```\n   alpha\n",
+   "   beta\n\n\n",
+   "2. next"
+  ],
+  "heading": [
+   "- step\n\n  ~~~py\n  alpha\n",
+   "  beta\n",
+   "# heading"
+  ],
+  "rule-or-item": [
+   "- step\n\n  ```\n  alpha\n",
+   "  beta\n",
+   "- - -"
+  ],
+  "fence-at-the-margin": [
+   "1. step\n\n   ```\n   alpha\n",
+   "   beta\n",
+   "```py"
+  ],
+  "table-row": [
+   "1. step\n\n   ```\n   alpha\n",
+   "   beta\n",
+   "a|b"
+  ],
+  "quote": [
+   "1. step\n\n   ```\n   alpha\n",
+   "   beta\n",
+   "> quoted"
+  ],
+  "nested-to-outer-item": [
+   "- a\n  - b\n\n    ```\n    alpha\n",
+   "    beta\n",
+   "  - c d"
+  ],
+  "nested-to-outer-text": [
+   "- a\n  - b\n\n    ```\n    alpha\n",
+   "    beta\n",
+   "  text of a"
+  ],
+  "nested-to-margin": [
+   "- a\n  - b\n\n    ```\n    alpha\n",
+   "    beta\n",
+   "1. other list"
+  ],
+  "quoted-leaves-quote": [
+   "> intro\n>\n> ```\n> alpha\n",
+   "> beta\n",
+   "lazy or not"
+  ],
+  "quoted-item-next": [
+   "> - a\n>\n>   ```\n>   alpha\n",
+   ">   beta\n",
+   "> - b c"
+  ],
+  "quoted-item-leaves-item": [
+   "> - a\n>\n>   ```\n>   alpha\n",
+   ">   beta\n",
+   "> text"
+  ],
+  "quoted-item-leaves-quote": [
+   "> - a\n>\n>   ```\n>   alpha\n",
+   ">   beta\n",
+   "- top"
+  ],
+  "wide-number": [
+   "10. step\n\n    ```\n    alpha\n",
+   "    beta\n",
+   "11. next"
+  ],
+  "after-kept-children": [
+   "1. one\n2. two\n\n   para\n\n   ```\n   alpha\n",
+   "   beta\n",
+   "3. x"
+  ]
+ }
+}

@@ -21,6 +21,7 @@ there: the guard refuses before any recipe starts.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -36,13 +37,29 @@ _PYPROJECT = _ROOT / "pyproject.toml"
 needs_make = pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
 
 
-def _make(*args: str) -> subprocess.CompletedProcess[str]:
+# What an outer `make test TYPESET=1` leaves in the environment of the suite it
+# runs. A sub-make started here would inherit the opt-in through any of them,
+# and these tests are about what the Makefile does when told, not when it
+# overhears.
+_INHERITED = (
+    "MAKEFLAGS",
+    "MFLAGS",
+    "MAKELEVEL",
+    "TYPESET",
+    "IMTYPESET_LIBRARY",
+    "IMTYPESET_PYTHON",
+)
+
+
+def _make(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    clean = {name: value for name, value in os.environ.items() if name not in _INHERITED}
     return subprocess.run(
         ["make", "-C", str(_ROOT), "--no-print-directory", *args],
         capture_output=True,
         text=True,
         timeout=60,
         check=False,
+        env={**clean, **(env or {})},
     )
 
 
@@ -64,7 +81,19 @@ def test_no_build_file_reaches_into_the_sibling_project(path: Path) -> None:
 
 @needs_make
 @pytest.mark.parametrize(
-    "target", ["test", "lint", "format", "typecheck", "svg", "run", "shot", "shot-all", "check"]
+    "target",
+    [
+        "test",
+        "lint",
+        "format",
+        "typecheck",
+        "svg",
+        "run",
+        "shot",
+        "shot-all",
+        "check",
+        "typeset-lib",
+    ],
 )
 def test_without_a_venv_a_target_stops_and_points_at_bootstrap(target: str, tmp_path: Path) -> None:
     """
@@ -104,6 +133,653 @@ def test_venv_info_reports_the_absence_rather_than_another_interpreter(tmp_path:
     assert result.returncode == 0, result.stderr
     assert "make bootstrap" in result.stdout
     assert "pptmstr" not in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# imtypeset is opt-in (experimental): `TYPESET=1`, or IMTYPESET_LIBRARY given
+# ---------------------------------------------------------------------------
+
+_OPT_IN_TARGETS = ["test", "run", "shot", "shot-all"]
+
+
+def _recipe(target: str, *args: str, env: dict[str, str] | None = None) -> str:
+    """
+    What `make <target>` would run, with `echo` as the interpreter and nothing run.
+    """
+    result = _make("-n", target, "PY=echo", "SHOT_TABS=document", *args, env=env)
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def _a_library(tmp_path: Path) -> Path:
+    library = tmp_path / "bundle" / "libimtypeset_bundle.so"
+    library.parent.mkdir()
+    library.write_bytes(b"not a library; the recipe is only printed")
+    return library
+
+
+@needs_make
+@pytest.mark.parametrize("target", _OPT_IN_TARGETS)
+def test_without_the_opt_in_no_recipe_mentions_imtypeset(target: str) -> None:
+    """
+    The default is advtext as it was: neither variable reaches any command.
+    `TYPESET=0` is the default said aloud.
+    """
+    plain = _recipe(target)
+    assert "IMTYPESET" not in plain, plain
+    assert _recipe(target, "TYPESET=0") == plain
+    assert _recipe(target, "TYPESET=") == plain
+
+
+@needs_make
+def test_the_default_test_recipe_is_what_it_was() -> None:
+    assert _recipe("test").strip() == "echo -m pytest -q"
+
+
+@needs_make
+@pytest.mark.parametrize("target", _OPT_IN_TARGETS)
+def test_typeset_1_puts_both_variables_in_front_and_changes_nothing_else(
+    target: str, tmp_path: Path
+) -> None:
+    """
+    Two assignments before the command, and the command as it was -- which is
+    why `tests/test_shot_all.py` can read the shot-all recipe in either run.
+    `IMTYPESET_PYTHON` and not `PYTHONPATH`: `advtext/typesetter.py` says why.
+    """
+    library = _a_library(tmp_path)
+    opted = _recipe(target, "TYPESET=1", f"IMTYPESET_BUNDLE={library.parent}", "IMTYPESET_ROOT=/it")
+    prefix = f"IMTYPESET_LIBRARY={library} IMTYPESET_PYTHON=/it/python "
+    assert prefix in opted, opted
+    assert opted.replace(prefix, "") == _recipe(target)
+
+
+@needs_make
+def test_a_library_named_in_the_environment_is_the_opt_in_too(tmp_path: Path) -> None:
+    library = _a_library(tmp_path)
+    opted = _recipe("test", "IMTYPESET_ROOT=/it", env={"IMTYPESET_LIBRARY": str(library)})
+    assert opted.strip() == (
+        f"IMTYPESET_LIBRARY={library} IMTYPESET_PYTHON=/it/python echo -m pytest -q"
+    )
+
+
+@needs_make
+@pytest.mark.parametrize("target", _OPT_IN_TARGETS)
+def test_asking_for_a_library_that_is_not_built_stops_and_says_how_to_build_it(
+    target: str, tmp_path: Path
+) -> None:
+    """
+    Not a suite that runs and quietly skips everything that was asked for.
+    """
+    result = _make(target, "PY=echo", "TYPESET=1", f"IMTYPESET_BUNDLE={tmp_path / 'absent'}")
+    assert result.returncode != 0, f"`make {target} TYPESET=1` ran with no library"
+    assert "make typeset-lib" in result.stderr, result.stderr
+    assert not (tmp_path / "absent").exists()
+
+
+@needs_make
+def test_typeset_lib_builds_from_the_named_checkout_for_this_interpreter(tmp_path: Path) -> None:
+    """
+    Read, not run: the build takes half a minute and a compiler. What is held
+    is where it reads from, where it writes, and which interpreter it is for.
+    """
+    checkout = tmp_path / "imtypeset"
+    script = checkout / "python" / "host" / "build_bundle_library.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("exit 0\n", encoding="utf-8")
+    out = tmp_path / "out"
+    result = _make(
+        "-n",
+        "typeset-lib",
+        "PY=/some/python",
+        f"IMTYPESET_ROOT={checkout}",
+        f"IMTYPESET_BUNDLE={out}",
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"IMTYPESET_BUNDLE_OUT={out}.building sh {script}" in result.stdout
+    assert '"/some/python"' in result.stdout
+    assert not out.exists() and not Path(f"{out}.building").exists(), "-n wrote something"
+    missing = _make("typeset-lib", "PY=echo", f"IMTYPESET_ROOT={tmp_path / 'nowhere'}")
+    assert missing.returncode != 0 and "IMTYPESET_ROOT" in missing.stderr
+
+
+# ---------------------------------------------------------------------------
+# The library and the package that calls it travel together
+#
+# 2026-10-10: the sibling checkout's package began calling a function the
+# library built that afternoon did not export, and every with-library test
+# failed at import. `make typeset-lib` now leaves a copy of the package beside
+# the library, and the opt-in prefers that copy.
+# ---------------------------------------------------------------------------
+
+
+def _a_snapshot(library: Path) -> Path:
+    snapshot = library.parent / "pysnap"
+    (snapshot / "imtypeset").mkdir(parents=True)
+    (snapshot / "imtypeset" / "__init__.py").write_text("", encoding="utf-8")
+    return snapshot
+
+
+@needs_make
+@pytest.mark.parametrize("target", _OPT_IN_TARGETS)
+def test_typeset_1_prefers_the_package_snapshot_beside_the_library(
+    target: str, tmp_path: Path
+) -> None:
+    library = _a_library(tmp_path)
+    snapshot = _a_snapshot(library)
+    opted = _recipe(target, "TYPESET=1", f"IMTYPESET_BUNDLE={library.parent}", "IMTYPESET_ROOT=/it")
+    prefix = f"IMTYPESET_LIBRARY={library} IMTYPESET_PYTHON={snapshot} "
+    assert prefix in opted, opted
+    assert "/it/python" not in opted
+    assert opted.replace(prefix, "") == _recipe(target)
+
+
+@needs_make
+def test_the_snapshot_is_the_one_beside_the_library_that_was_named(tmp_path: Path) -> None:
+    """
+    Beside IMTYPESET_LIBRARY, wherever that is -- not beside the default
+    bundle, which may hold a different build. And an empty `pysnap` (no
+    package in it) is not a snapshot.
+    """
+    library = _a_library(tmp_path)
+    snapshot = _a_snapshot(library)
+    elsewhere = tmp_path / "other"
+    (elsewhere / "pysnap").mkdir(parents=True)
+    other = elsewhere / "libimtypeset_bundle.so"
+    other.write_bytes(b"")
+    named = _recipe("test", "IMTYPESET_ROOT=/it", env={"IMTYPESET_LIBRARY": str(library)})
+    assert named.strip() == (
+        f"IMTYPESET_LIBRARY={library} IMTYPESET_PYTHON={snapshot} echo -m pytest -q"
+    )
+    bare = _recipe(
+        "test",
+        "IMTYPESET_ROOT=/it",
+        f"IMTYPESET_BUNDLE={library.parent}",
+        env={"IMTYPESET_LIBRARY": str(other)},
+    )
+    assert (
+        bare.strip() == f"IMTYPESET_LIBRARY={other} IMTYPESET_PYTHON=/it/python echo -m pytest -q"
+    )
+
+
+@needs_make
+@pytest.mark.parametrize("how", ["command line", "environment"])
+def test_a_caller_s_own_package_directory_wins_over_both_defaults(how: str, tmp_path: Path) -> None:
+    library = _a_library(tmp_path)
+    args = ["TYPESET=1", f"IMTYPESET_BUNDLE={library.parent}", "IMTYPESET_ROOT=/it"]
+    mine = {"IMTYPESET_PYTHON": "/mine/python"}
+    expected = f"IMTYPESET_LIBRARY={library} IMTYPESET_PYTHON=/mine/python echo -m pytest -q"
+    for with_snapshot in (False, True):
+        if with_snapshot:
+            _a_snapshot(library)
+        if how == "command line":
+            opted = _recipe("test", *args, "IMTYPESET_PYTHON=/mine/python")
+        else:
+            opted = _recipe("test", *args, env=mine)
+        assert opted.strip() == expected, (with_snapshot, opted)
+
+
+_BUILD_OK = """\
+set -eu
+mkdir -p "$IMTYPESET_BUNDLE_OUT/obj"
+echo "$2" > "$IMTYPESET_BUNDLE_OUT/obj/python"
+echo new > "$IMTYPESET_BUNDLE_OUT/libimtypeset_bundle.so"
+echo stamp > "$IMTYPESET_BUNDLE_OUT/libimtypeset_bundle.so.gate"
+"""
+
+
+def _a_checkout(tmp_path: Path, build: str, package: str = "LOADED = True\n") -> Path:
+    """
+    A stand-in for the sibling checkout: a build script that takes a moment
+    instead of a compiler, and a package with a `__pycache__` in it.
+    """
+    checkout = tmp_path / "imtypeset"
+    script = checkout / "python" / "host" / "build_bundle_library.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text(build, encoding="utf-8")
+    package_dir = checkout / "python" / "imtypeset"
+    (package_dir / "__pycache__").mkdir(parents=True)
+    (package_dir / "__pycache__" / "__init__.cpython-311.pyc").write_bytes(b"stale")
+    (package_dir / "__init__.py").write_text(package, encoding="utf-8")
+    (package_dir / "_capi.py").write_text("# declarations\n", encoding="utf-8")
+    return checkout
+
+
+def _an_installed_pair(tmp_path: Path) -> Path:
+    bundle = tmp_path / "bundle"
+    (bundle / "pysnap" / "imtypeset").mkdir(parents=True)
+    (bundle / "pysnap" / "imtypeset" / "__init__.py").write_text("# old\n", encoding="utf-8")
+    (bundle / "libimtypeset_bundle.so").write_text("old\n", encoding="utf-8")
+    (bundle / "BUILT-FROM").write_text("old\n", encoding="utf-8")
+    return bundle
+
+
+def _tree(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _build(checkout: Path, bundle: Path | str, *more: str) -> subprocess.CompletedProcess[str]:
+    import sys
+
+    return _make(
+        "typeset-lib",
+        f"PY={sys.executable}",
+        f"IMTYPESET_ROOT={checkout}",
+        f"IMTYPESET_BUNDLE={bundle}",
+        *more,
+    )
+
+
+@needs_make
+def test_typeset_lib_leaves_the_library_its_package_and_where_they_came_from(
+    tmp_path: Path,
+) -> None:
+    """
+    Run, with a stand-in build script: the recipe around the build is what is
+    held here, and it is the part this tree owns.
+    """
+    import sys
+
+    checkout = _a_checkout(tmp_path, _BUILD_OK)
+    bundle = _an_installed_pair(tmp_path)
+    (bundle / "left-over").write_text("from the build before\n", encoding="utf-8")
+    result = _build(checkout, bundle)
+    assert result.returncode == 0, result.stderr
+    assert (bundle / "libimtypeset_bundle.so").read_text(encoding="utf-8") == "new\n"
+    snapshot = bundle / "pysnap" / "imtypeset"
+    assert (snapshot / "__init__.py").read_text(encoding="utf-8") == "LOADED = True\n"
+    assert sorted(path.name for path in snapshot.iterdir()) == ["__init__.py", "_capi.py"]
+    assert not list(bundle.rglob("__pycache__")), "the snapshot carries bytecode"
+    # Whole, not merged: nothing of the build before survives a successful one.
+    assert not (bundle / "left-over").exists()
+    # The stamp named the staging path; the first import writes the real one.
+    assert not (bundle / "libimtypeset_bundle.so.gate").exists()
+    assert (bundle / "obj" / "python").read_text(encoding="utf-8").strip() == sys.executable
+    built_from = (bundle / "BUILT-FROM").read_text(encoding="utf-8")
+    assert f"imtypeset: {checkout}\n" in built_from
+    assert re.search(r"^commit: \S", built_from, re.MULTILINE), built_from
+    assert re.search(r"^uncommitted paths: \S", built_from, re.MULTILINE), built_from
+    assert re.search(r"^date: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", built_from, re.MULTILINE)
+    assert built_from in result.stdout, "the target does not say what it built from"
+    assert not Path(f"{bundle}.building").exists()
+    assert not Path(f"{bundle}.previous").exists()
+    # And the opt-in now finds the copy rather than the checkout.
+    opted = _recipe("test", "TYPESET=1", f"IMTYPESET_BUNDLE={bundle}", f"IMTYPESET_ROOT={checkout}")
+    assert f"IMTYPESET_PYTHON={bundle / 'pysnap'} " in opted, opted
+
+
+@needs_make
+def test_typeset_lib_builds_where_there_was_no_bundle(tmp_path: Path) -> None:
+    checkout = _a_checkout(tmp_path, _BUILD_OK)
+    bundle = tmp_path / "build" / "bundle"
+    result = _build(checkout, bundle)
+    assert result.returncode == 0, result.stderr
+    assert (bundle / "libimtypeset_bundle.so").exists()
+    assert (bundle / "pysnap" / "imtypeset" / "__init__.py").exists()
+
+
+@needs_make
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_built_from_names_the_commit_and_counts_what_was_not_committed(tmp_path: Path) -> None:
+    checkout = _a_checkout(tmp_path, _BUILD_OK)
+
+    def git(*args: str) -> str:
+        done = subprocess.run(
+            ["git", "-C", str(checkout), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+        )
+        return done.stdout.strip()
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-q", "--no-gpg-sign", "-m", "a checkout")
+    (checkout / "one").write_text("", encoding="utf-8")
+    (checkout / "two").write_text("", encoding="utf-8")
+    result = _build(checkout, tmp_path / "bundle")
+    assert result.returncode == 0, result.stderr
+    built_from = (tmp_path / "bundle" / "BUILT-FROM").read_text(encoding="utf-8")
+    assert f"commit: {git('rev-parse', 'HEAD')}\n" in built_from, built_from
+    assert "uncommitted paths: 2\n" in built_from, built_from
+
+
+@needs_make
+@pytest.mark.parametrize(
+    ("build", "package"),
+    [
+        # The compiler fails after writing half of what it writes.
+        (_BUILD_OK + "exit 1\n", "LOADED = True\n"),
+        # The build succeeds and the package of that moment does not load
+        # against it: the failure of 2026-10-10, caught before it is installed.
+        (_BUILD_OK, "raise ImportError('undefined symbol: ImTypeset_Something')\n"),
+    ],
+    ids=["the build fails", "the pair does not load"],
+)
+def test_a_failed_typeset_lib_leaves_the_installed_pair_as_it_was(
+    build: str, package: str, tmp_path: Path
+) -> None:
+    checkout = _a_checkout(tmp_path, build, package)
+    bundle = _an_installed_pair(tmp_path)
+    before = _tree(bundle)
+    result = _build(checkout, bundle)
+    assert result.returncode != 0, result.stdout
+    assert _tree(bundle) == before
+    assert not Path(f"{bundle}.previous").exists()
+
+
+# ---------------------------------------------------------------------------
+# Tranche 3 (T3-D): a named commit, and the three ways the recipe above failed
+# late or paired wrongly. Each of the four was first seen to fail against the
+# Makefile as SW-0 left it.
+# ---------------------------------------------------------------------------
+
+needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def _git(where: Path, *args: str) -> str:
+    done = subprocess.run(
+        ["git", "-C", str(where), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    return done.stdout.strip()
+
+
+def _commit_all(where: Path, message: str) -> str:
+    if not (where / ".git").exists():
+        _git(where, "init", "-q")
+    _git(where, "add", "-A")
+    _git(where, "commit", "-q", "--no-gpg-sign", "-m", message)
+    return _git(where, "rev-parse", "HEAD")
+
+
+def _field(built_from: str, name: str) -> str:
+    found = re.search(rf"^{re.escape(name)}: (.*)$", built_from, re.MULTILINE)
+    assert found, f"no `{name}:` line in\n{built_from}"
+    return found.group(1)
+
+
+@needs_make
+@needs_git
+def test_built_from_never_describes_a_repository_that_merely_encloses_the_checkout(
+    tmp_path: Path,
+) -> None:
+    """
+    2026-10-11: an extract of imtypeset lay inside advtext's repository, and
+    BUILT-FROM gave advtext's HEAD and advtext's uncommitted paths as
+    imtypeset's.
+    """
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    checkout = _a_checkout(outer, _BUILD_OK)
+    (outer / "theirs").write_text("", encoding="utf-8")
+    enclosing = _commit_all(outer, "the repository around it")
+    result = _build(checkout, tmp_path / "bundle")
+    assert result.returncode == 0, result.stderr
+    built_from = (tmp_path / "bundle" / "BUILT-FROM").read_text(encoding="utf-8")
+    assert enclosing not in built_from, built_from
+    assert "not a git checkout" in _field(built_from, "commit")
+    assert _field(built_from, "uncommitted paths") == "unknown"
+
+
+@needs_make
+@needs_git
+def test_typeset_lib_builds_a_named_commit_and_not_the_working_tree(tmp_path: Path) -> None:
+    """
+    The commit's script, sources and package, taken out of the checkout's
+    object store; the working tree, which has moved on in every one of those,
+    is neither read nor written.
+    """
+    checkout = _a_checkout(tmp_path, _BUILD_OK, "COMMITTED = 1\n")
+    (checkout / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    first = _commit_all(checkout, "the commit to build from")
+    _git(checkout, "tag", "named")
+    script = checkout / "python" / "host" / "build_bundle_library.sh"
+    package = checkout / "python" / "imtypeset" / "__init__.py"
+    package.write_text("COMMITTED = 2\n", encoding="utf-8")
+    script.write_text(_BUILD_OK.replace("echo new", "echo second"), encoding="utf-8")
+    second = _commit_all(checkout, "a later commit")
+    # ... and a working tree that would fail the build and the import alike.
+    package.write_text("raise ImportError('the working tree was read')\n", encoding="utf-8")
+    script.write_text("exit 1\n", encoding="utf-8")
+    (checkout / "untracked").write_text("", encoding="utf-8")
+    before = _tree(checkout)
+
+    bundle = tmp_path / "bundle"
+    result = _build(checkout, bundle, "IMTYPESET_COMMIT=named")
+    assert result.returncode == 0, result.stderr
+    assert _tree(checkout) == before, "the build wrote in the checkout"
+    assert (bundle / "libimtypeset_bundle.so").read_text(encoding="utf-8") == "new\n"
+    snapshot = bundle / "pysnap" / "imtypeset" / "__init__.py"
+    assert snapshot.read_text(encoding="utf-8") == "COMMITTED = 1\n"
+    built_from = (bundle / "BUILT-FROM").read_text(encoding="utf-8")
+    assert _field(built_from, "imtypeset") == str(checkout)
+    assert _field(built_from, "commit") == first, "the full hash, resolved from the name"
+    assert _field(built_from, "uncommitted paths") == "0 (an archive of a commit)"
+    assert _field(built_from, "by") == "make typeset-lib IMTYPESET_COMMIT=named"
+    assert built_from in result.stdout
+    # The extract is installed with the pair, is the commit, and is not a checkout.
+    extract = bundle / "src"
+    assert (extract / "python" / "imtypeset" / "__init__.py").read_text() == "COMMITTED = 1\n"
+    assert not (extract / ".git").exists() and not (extract / "untracked").exists()
+    assert not Path(f"{extract}.tar").exists()
+
+    # An abbreviated hash of the later commit replaces all three.
+    result = _build(checkout, bundle, f"IMTYPESET_COMMIT={second[:10]}")
+    assert result.returncode == 0, result.stderr
+    assert (bundle / "libimtypeset_bundle.so").read_text(encoding="utf-8") == "second\n"
+    assert snapshot.read_text(encoding="utf-8") == "COMMITTED = 2\n"
+    assert _field((bundle / "BUILT-FROM").read_text(encoding="utf-8"), "commit") == second
+    assert (extract / "python" / "imtypeset" / "__init__.py").read_text() == "COMMITTED = 2\n"
+    assert _tree(checkout) == before
+
+
+@needs_make
+@needs_git
+def test_the_extract_s_neighbours_are_named_from_the_checkout(tmp_path: Path) -> None:
+    """
+    The build script finds the Dear ImGui Bundle checkout and a Dear ImGui
+    clone beside its own checkout by default. An extract in the bundle has
+    neither beside it, so both are handed over, from IMTYPESET_ROOT.
+    """
+    build = (
+        _BUILD_OK + 'echo "$1|$IMTYPESET_IMGUI_CLONE" > "$IMTYPESET_BUNDLE_OUT/obj/neighbours"\n'
+    )
+    checkout = _a_checkout(tmp_path, build)
+    _commit_all(checkout, "a checkout")
+    bundle = tmp_path / "bundle"
+    result = _build(checkout, bundle, "IMTYPESET_COMMIT=HEAD")
+    assert result.returncode == 0, result.stderr
+    neighbours = (bundle / "obj" / "neighbours").read_text(encoding="utf-8").strip()
+    assert neighbours == f"{checkout}/../imgui_bundle|{checkout}/../imgui"
+
+
+@needs_make
+@needs_git
+@pytest.mark.parametrize("what", ["no such commit", "not a repository", "inside another's"])
+def test_a_commit_that_cannot_be_taken_stops_before_anything_is_touched(
+    what: str, tmp_path: Path
+) -> None:
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    checkout = _a_checkout(outer, _BUILD_OK)
+    if what == "no such commit":
+        _commit_all(checkout, "a checkout")
+    elif what == "inside another's":
+        # HEAD resolves here -- in the repository around the checkout. That is
+        # not a commit of imtypeset, and building it would say that it was.
+        _commit_all(outer, "the repository around it")
+    bundle = _an_installed_pair(tmp_path)
+    before = _tree(bundle)
+    commit = "no-such-rev" if what == "no such commit" else "HEAD"
+    result = _build(checkout, bundle, f"IMTYPESET_COMMIT={commit}")
+    assert result.returncode != 0, result.stdout
+    assert "IMTYPESET_COMMIT" in result.stderr, result.stderr
+    assert _tree(bundle) == before
+    assert not Path(f"{bundle}.building").exists()
+
+
+@needs_make
+@pytest.mark.parametrize("given", ["{}/", "{}//", "build/../{}/"], ids=["slash", "two", "dots"])
+def test_a_bundle_directory_given_with_a_trailing_slash_is_the_same_directory(
+    given: str, tmp_path: Path
+) -> None:
+    """
+    `IMTYPESET_BUNDLE=dir/` staged in `dir/.building`, inside the bundle, and
+    the build failed at the last rename after doing all the work.
+    """
+    checkout = _a_checkout(tmp_path, _BUILD_OK)
+    bundle = _an_installed_pair(tmp_path)
+    spelled = f"{tmp_path}/{given.format('bundle')}" if "build" in given else given.format(bundle)
+    result = _build(checkout, spelled)
+    assert result.returncode == 0, result.stderr
+    assert (bundle / "libimtypeset_bundle.so").read_text(encoding="utf-8") == "new\n"
+    assert sorted(path.name for path in bundle.iterdir() if path.name.startswith(".")) == []
+    assert not Path(f"{bundle}.building").exists() and not Path(f"{bundle}.previous").exists()
+    opted = _recipe("test", "TYPESET=1", f"IMTYPESET_BUNDLE={spelled}", "IMTYPESET_ROOT=/it")
+    assert opted.strip() == (
+        f"IMTYPESET_LIBRARY={bundle}/libimtypeset_bundle.so "
+        f"IMTYPESET_PYTHON={bundle}/pysnap echo -m pytest -q"
+    )
+
+
+def _an_interpreter_that_reports(tmp_path: Path) -> Path:
+    """
+    `$(PY)` for a run that goes all the way: the real interpreter for the
+    build's import of the pair (`-P -B -c ...`), and for everything else --
+    `-m pytest`, a script -- a line saying which pair it would have been
+    handed, without running a suite or opening a window inside one.
+    """
+    import sys
+
+    stub = tmp_path / "python-stub"
+    stub.write_text(
+        "#!/bin/sh\n"
+        f'if [ "$1" = "-P" ]; then exec "{sys.executable}" "$@"; fi\n'
+        'echo "suite: $IMTYPESET_LIBRARY $IMTYPESET_PYTHON"\n',
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    return stub
+
+
+def _suite(tmp_path: Path, bundle: Path, *more: str) -> subprocess.CompletedProcess[str]:
+    """`make ... TYPESET=1` on `bundle`, with the interpreter that reports."""
+    stub = tmp_path / "python-stub"
+    if not stub.exists():
+        _an_interpreter_that_reports(tmp_path)
+    return _make(
+        *more,
+        f"PY={stub}",
+        "TYPESET=1",
+        f"IMTYPESET_BUNDLE={bundle}",
+        f"IMTYPESET_ROOT={tmp_path / 'imtypeset'}",
+    )
+
+
+@needs_make
+@pytest.mark.parametrize("before", ["no bundle", "a library and no snapshot"])
+def test_building_and_testing_in_one_invocation_uses_the_pair_just_built(
+    before: str, tmp_path: Path
+) -> None:
+    """
+    `make typeset-lib test TYPESET=1`. Which package goes with the library is
+    settled when the Makefile is read, before the build; with no snapshot yet
+    the suite got the new library and the checkout's live package.
+    """
+    _a_checkout(tmp_path, _BUILD_OK)
+    bundle = tmp_path / "bundle"
+    if before != "no bundle":
+        bundle.mkdir()
+        (bundle / "libimtypeset_bundle.so").write_text("old\n", encoding="utf-8")
+    result = _suite(tmp_path, bundle, "typeset-lib", "test")
+    assert result.returncode == 0, result.stderr
+    assert (bundle / "libimtypeset_bundle.so").read_text(encoding="utf-8") == "new\n"
+    assert result.stdout.splitlines()[-1] == (
+        f"suite: {bundle}/libimtypeset_bundle.so {bundle}/pysnap"
+    )
+
+
+@needs_make
+def test_a_library_replaced_under_its_snapshot_is_refused_and_a_built_pair_never_is(
+    tmp_path: Path,
+) -> None:
+    """
+    Both directions, on one bundle: the pair as `make typeset-lib` left it
+    runs, the same directory after something else wrote the library does not,
+    and building again runs again.
+    """
+    checkout = _a_checkout(tmp_path, _BUILD_OK)
+    bundle = tmp_path / "bundle"
+    assert _build(checkout, bundle).returncode == 0
+    library = bundle / "libimtypeset_bundle.so"
+    built_from = (bundle / "BUILT-FROM").read_text(encoding="utf-8")
+    assert re.fullmatch(r"\d+ \d+", _field(built_from, "library cksum")), built_from
+    report = f"suite: {library} {bundle}/pysnap"
+
+    for target in _OPT_IN_TARGETS:
+        good = _suite(tmp_path, bundle, target, "SHOT_TABS=document")
+        assert good.returncode == 0, (target, good.stderr)
+    assert _suite(tmp_path, bundle, "test").stdout.splitlines()[-1] == report
+    # What the first import leaves beside the library does not make it stale,
+    # and neither does a new modification time on the same bytes.
+    (bundle / "libimtypeset_bundle.so.gate").write_text("stamp\n", encoding="utf-8")
+    library.write_bytes(library.read_bytes())
+    assert _suite(tmp_path, bundle, "test").stdout.splitlines()[-1] == report
+
+    # The build script run by hand into the same directory: a new library,
+    # the old snapshot, the old BUILT-FROM.
+    library.write_text("built by hand\n", encoding="utf-8")
+    for target in _OPT_IN_TARGETS:
+        stale = _suite(tmp_path, bundle, target, "SHOT_TABS=document")
+        assert stale.returncode != 0, f"`make {target} TYPESET=1` ran a stale pair"
+        assert "suite:" not in stale.stdout
+        assert "make typeset-lib" in stale.stderr and str(library) in stale.stderr, stale.stderr
+    # Named through the environment instead of TYPESET=1: the same answer.
+    named = _make("test", "PY=echo", env={"IMTYPESET_LIBRARY": str(library)})
+    assert named.returncode != 0 and "make typeset-lib" in named.stderr
+
+    # The ways out: say which package yourself ...
+    mine = _suite(tmp_path, bundle, "test", "IMTYPESET_PYTHON=/mine/python")
+    assert mine.stdout.splitlines()[-1] == f"suite: {library} /mine/python", mine.stderr
+    # ... or build, which a stale pair must not stand in the way of, alone or
+    # with the suite behind it.
+    again = _suite(tmp_path, bundle, "typeset-lib", "test")
+    assert again.returncode == 0, again.stderr
+    assert again.stdout.splitlines()[-1] == report
+    assert _suite(tmp_path, bundle, "test").stdout.splitlines()[-1] == report
+
+
+@needs_make
+@pytest.mark.parametrize(
+    "case", ["no BUILT-FROM", "BUILT-FROM from before the checksum", "no snapshot", "an empty line"]
+)
+def test_a_pair_the_check_cannot_judge_is_not_called_stale(case: str, tmp_path: Path) -> None:
+    """
+    Every doubt goes to running: the bundles built before the checksum existed
+    (the shared one among them) and a library with no snapshot are as they were.
+    """
+    _a_checkout(tmp_path, _BUILD_OK)
+    bundle = _an_installed_pair(tmp_path)
+    package = f"{bundle}/pysnap"
+    if case == "no BUILT-FROM":
+        (bundle / "BUILT-FROM").unlink()
+    elif case == "no snapshot":
+        shutil.rmtree(bundle / "pysnap")
+        (bundle / "BUILT-FROM").write_text("library cksum: 1 1\n", encoding="utf-8")
+        package = f"{tmp_path}/imtypeset/python"
+    elif case == "an empty line":
+        (bundle / "BUILT-FROM").write_text("library cksum: \n", encoding="utf-8")
+    result = _suite(tmp_path, bundle, "test")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[-1] == f"suite: {bundle}/libimtypeset_bundle.so {package}"
 
 
 def _floor() -> tuple[int, ...]:

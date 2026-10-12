@@ -2,12 +2,11 @@
 r"""
 Play a mouse into the real demo and check what it selected and what it copied.
 
-`advtext.ui.document_view` turns a pointer position into a range of the
-document and a keypress into clipboard text. For most of this project's life
-that path had run sixty times a second with `is_mouse_clicked` false and no
-further, and `README.md` said so: *no mouse click has ever reached a real
-frame*. This script is the instrument that retires that sentence, and it says
-below exactly how far it retires it.
+The Document page's view turns a pointer position into a range of the document
+and a keypress into clipboard text. For most of this project's life that path
+had run sixty times a second with `is_mouse_clicked` false and no further.
+This script is the instrument that retired that sentence, and it says below
+exactly how far it retires it.
 
 ## What it does
 
@@ -15,17 +14,12 @@ It runs **the real app** -- `advtext.ui.app.run`, through the real
 `immapp.run`, with the real fonts, sidebar, scrolling child window and GLFW
 clipboard -- and before each frame posts input events to ImGui's own queue
 (`io.add_mouse_pos_event`, `add_mouse_button_event`, `add_mouse_wheel_event`,
-`add_key_event`). The positions are not guessed. `DocumentView._handle_mouse` is
-wrapped for the length of the run so that the layout and the screen origin the
-view itself used on the last frame can be read back; the wrapper calls the real
-method and changes nothing. A glyph's screen position is then that origin plus
-the glyph's own shipped coordinates, which is the arithmetic the view claims to
-be doing in the other direction.
+`add_key_event`). The positions are not guessed.
+`advtext.ui.typeset_view.TypesetView._handle_mouse` is wrapped for the length
+of the run so that the screen origin the view itself used on the last frame
+can be read back; the wrapper calls the real method and changes nothing.
 
-Eight gestures, each with an expectation built **without** calling
-`SelectionModel.select_at`, `hit`, `word_at`, `line_at` or `text` -- those are
-the code under test, and an expectation computed by them would be the view
-agreeing with itself:
+Eight gestures:
 
 1. a drag over the first two words of a line, left to right;
 2. the same drag right to left, which must select the same thing;
@@ -36,17 +30,42 @@ agreeing with itself:
    so that a copy that never happened cannot pass on stale contents;
 7. a wheel scroll past a whole window height, then a drag on a line that was
    below the fold before it -- the check that the hit-test origin follows the
-   scroll, which nothing headless reaches;
+   scroll;
 8. a drag that starts on a visible line and ends on a line below the bottom of
-   the window, then Ctrl+C -- the claim `tests/test_document_view.py` exists to
-   defend, that culling what is drawn does not cull what is copied.
+   the window, then Ctrl+C: culling what is drawn does not cull what is copied.
 
-Expected text is the characters of the shipped glyphs on the targeted lines,
-joined by this file's own rule, and for the paragraph drag it is additionally
-required to occur verbatim in the markdown source. Lines are found **by
-content** (`find_line`) and a missing one is a loud failure, per
+Lines are found **by content** and a missing one is a loud failure, per
 `.concerns/lead--visual-standard.md`: a target that silently lands somewhere
 else is how a crop of whitespace got reviewed twice.
+
+## What it aims with, what it expects, and its limit
+
+What it aims with is the view's public surface: `origin`, `set_lines()` (each
+line as a range of its block's text and a rectangle) and `span_rects()` (where
+one character is). What it expects is a slice of `TypesetView.texts`, which is
+the description handed to the library and not anything the library answered,
+and for the paragraph drag that slice must also occur verbatim in the markdown.
+What it never calls to build an expectation is `hit_test`, `select_range` or
+`selected_text`. **Its limit**: where a character is on screen is asked of the
+same library that then hit-tests the click (`range_rects` going out,
+`select_range` coming back), so a defect the two share is not seen; what is
+seen is the view's part, which is the origin it subtracts, the scroll, the
+press and drag state, the click counter, the ownership of the selection and
+the copy.
+
+## It needs the imtypeset library, and says so when there is none
+
+The Document page draws a `TypesetView` when the library is loaded and its
+fonts are in the atlas (`advtext.typesetter.ready()`), and one line saying why
+not otherwise. Until tranche 5 (2026-10-11) it drew advtext's own
+`DocumentView` then, and this script had a second gesture script for that
+view, with expectations built from the old core's shipped glyphs
+(`advtext.selection`, `advtext.shipout`). That half is gone with the fallback
+it probed. With no library there is nothing to play a mouse at: the run stops
+before the first gesture, prints the page's own sentence, and exits 2
+(`make typeset-lib`, then `IMTYPESET_LIBRARY=... IMTYPESET_PYTHON=...`, or
+`make ... TYPESET=1`). With the library asked for and a view that still does
+not draw, the exit is 1: that is a failure, not an absence.
 
 ## What it does not do, stated so nobody reads more into a green run
 
@@ -80,15 +99,15 @@ refused there is no unix socket to listen on. The app opens in that server in
 about two seconds.
 
 `--no-window` drives the same script through `App.gui()` inside frames of a
-bare `imgui.create_context()`, the idiom `tests/test_imgui_draw.py`
-established. It is what `tests/test_mouse_probe.py` runs, so the gesture script
-itself is covered wherever the suite runs. It is lower fidelity in the ways one
-would expect: no font atlas of ours (`draw` falls back to the bound face at the
-right positions), ImGui's in-memory clipboard rather than the platform's, and a
-fixed `delta_time`.
+bare `imgui.create_context()`. There is no runner there to call the app's
+font callback, so this mode calls it itself (`advtext.ui.app.
+_load_fonts_for_run`, which loads the library's fonts into the bare context's
+atlas) and unloads the library afterwards. It is lower fidelity in the ways
+one would expect: nothing rasterises a glyph, the clipboard is ImGui's
+in-memory one rather than the platform's, and `delta_time` is fixed.
 
 Exit status: 0 when every check passed, 1 when one did not, 2 when the probe
-could not run at all (no display, no `unshare`).
+could not run at all (no display, no `unshare`, no imtypeset library).
 """
 
 from __future__ import annotations
@@ -115,10 +134,6 @@ ROOT = Path(__file__).resolve().parent.parent
 # Run from anywhere without an install, matching scripts/shot.py.
 if __package__ in (None, ""):  # pragma: no cover - import shim for direct execution
     sys.path.insert(0, str(ROOT))
-
-from advtext.selection import Fragment, Selection, SelectionModel  # noqa: E402
-from advtext.shipout import SetGlue  # noqa: E402
-from advtext.units import px_from_sp, sp_from_px  # noqa: E402
 
 OPENING = "This document is the first"
 """
@@ -221,55 +236,115 @@ def post(io: Any, event: Event, imgui: Any) -> None:
 
 
 @dataclass(slots=True)
-class Seen:
+class SeenTypeset:
     """
-    The last frame's `DocumentView`, its layout, and where it put the document.
+    The last frame's `TypesetView` and where it put the document, in pixels.
 
-    Filled in by `watch`. `origin` is the screen position of the document's own
-    (0, 0) -- the text block's corner -- and `window_top` / `window_height` are
-    the scrolling child window's rectangle, so a line can be asked whether it is
-    on screen.
+    Filled in by `watch`. There is no layout
+    object to hold: the view answers `set_lines` and `span_rects` in pixels from
+    the document's corner, and `origin` is where that corner was on screen.
     """
 
     view: Any = None
-    layout: Any = None
     origin: tuple[float, float] = (0.0, 0.0)
     window_top: float = 0.0
     window_height: float = 0.0
     frames: int = 0
 
-    @property
-    def model(self) -> SelectionModel:
-        if self.layout is None:
-            raise ProbeError(
-                "the Document page has not drawn a frame, so there is no layout to aim at"
-            )
-        model: SelectionModel = self.layout.model
-        return model
+    def lines(self) -> list[Any]:
+        """
+        Every line of every block that is neither a table nor a hosted widget.
 
-    @property
-    def px_per_inch(self) -> float:
-        value: float = self.view.px_per_inch
-        return value
+        `TypesetView.set_lines`, which lays out each block it is asked about:
+        after this the document's height is no longer an estimate, so a line's
+        place does not move under a later gesture. A table's lines sit side by
+        side and a hosted block has none, and the probe aims only where "the
+        line at this y" has one answer.
+        """
+        if self.view is None:
+            raise ProbeError("no TypesetView has drawn a frame, so there are no lines to aim at")
+        skipped = {*self.view.tables, *self.view.hosts}
+        return [line for line in self.view.set_lines() if line.block not in skipped]
 
-    def screen_y(self, y_sp: int) -> float:
-        """Where a document y, in scaled points, is on screen right now."""
-        return self.origin[1] + px_from_sp(y_sp, self.px_per_inch)
+    def text(self, line: Any) -> str:
+        """The characters of one line: its range of the block's described text."""
+        whole: str = self.view.texts[line.block]
+        return whole[line.start : line.end]
 
-    def on_screen(self, fragment: Fragment, *, inset_px: float = 4.0) -> bool:
+    def on_screen(self, line: Any, *, inset_px: float = 4.0) -> bool:
         """Whether a line's whole band is inside the child window."""
-        top = self.screen_y(fragment.top)
-        bottom = self.screen_y(fragment.bottom)
         return (
-            top >= self.window_top + inset_px
-            and bottom <= self.window_top + self.window_height - inset_px
+            self.origin[1] + line.top >= self.window_top + inset_px
+            and self.origin[1] + line.bottom <= self.window_top + self.window_height - inset_px
         )
+
+    def point(self, line: Any, offset: int, fraction: float) -> Move:
+        """
+        The screen position `fraction` of the way across character `offset` of a line.
+
+        The character's rectangle is
+        `span_rects` of that one character, and a character with no rectangle
+        of its own, or with one of no width, is a loud failure rather than a
+        guess at where it might be.
+        """
+        at = line.start + offset
+        rects = self.view.span_rects(line.block, at, at + 1)
+        if len(rects) != 1 or not rects[0][2] > rects[0][0]:
+            raise ProbeError(
+                f"character {offset} of the line {self.text(line)!r} "
+                f"has no one rectangle: {rects!r}"
+            )
+        left, top, right, bottom = rects[0]
+        return Move(
+            self.origin[0] + left + fraction * (right - left),
+            self.origin[1] + (top + bottom) / 2.0,
+        )
+
+    def line_copy(self, line: Any) -> str:
+        """
+        What copying one whole line should put on the clipboard.
+
+        The line's characters without the white space it was broken at. That
+        is the library's stated rule and not something this file found out by
+        asking it: "a copy does not end in the space a line was broken at"
+        (`../imtypeset/docs/advtext-swap-status.md`, "Answers"). A line that ends where its block's
+        text ends was not broken and loses nothing.
+        """
+        text = self.text(line)
+        broken = line.end < len(self.view.texts[line.block])
+        return text.rstrip() if broken else text
+
+    def copies_as_itself(self, line: Any) -> bool:
+        """
+        Whether copying this whole line gives `line_copy` of it.
+
+        False where the text a copy gives is not the text described (the
+        library's own account of a range), so gestures 7 and 8 do not aim there.
+        """
+        document = self.view.native_document
+        copied = document.range_text(
+            ((line.block, line.start), (line.block, line.end)), self.view.separator
+        )
+        return bool(copied == self.line_copy(line))
+
+
+@dataclass(slots=True)
+class Seen:
+    """
+    What the run saw: the `TypesetView` that drew, and that one did.
+
+    `renderer` is the class whose `_handle_mouse` was called last, `""` when
+    none was: the Document page then drew its one line and no view.
+    """
+
+    typeset: SeenTypeset = field(default_factory=SeenTypeset)
+    renderer: str = ""
 
 
 @contextlib.contextmanager
 def watch(seen: Seen) -> Iterator[None]:
     """
-    Record every `DocumentView._handle_mouse` call into `seen`, changing nothing.
+    Record every `TypesetView._handle_mouse` call into `seen.typeset`, changing nothing.
 
     The wrapper calls the real method with the real arguments; it exists because
     the origin the view hit-tests against is computed inside `draw` from ImGui's
@@ -282,135 +357,29 @@ def watch(seen: Seen) -> Iterator[None]:
     """
     from imgui_bundle import imgui
 
-    from advtext.ui.document_view import DocumentView
+    from advtext.ui.typeset_view import TypesetView
 
-    real = DocumentView._handle_mouse
+    real_typeset = TypesetView._handle_mouse
 
-    def spy(self: Any, layout: Any, origin: Any) -> None:
-        seen.view = self
-        seen.layout = layout
-        seen.origin = (float(origin.x), float(origin.y))
-        seen.window_top = float(imgui.get_window_pos().y)
-        seen.window_height = float(imgui.get_window_size().y)
-        seen.frames += 1
-        real(self, layout, origin)
+    def spy_typeset(self: Any, doc: Any, origin: Any, size: Any) -> Any:
+        typeset = seen.typeset
+        typeset.view = self
+        typeset.origin = (float(origin.x), float(origin.y))
+        typeset.window_top = float(imgui.get_window_pos().y)
+        typeset.window_height = float(imgui.get_window_size().y)
+        typeset.frames += 1
+        seen.renderer = "TypesetView"
+        return real_typeset(self, doc, origin, size)
 
-    DocumentView._handle_mouse = spy  # type: ignore[method-assign]
+    TypesetView._handle_mouse = spy_typeset  # type: ignore[method-assign]
     try:
         yield
     finally:
-        DocumentView._handle_mouse = real  # type: ignore[method-assign]
+        TypesetView._handle_mouse = real_typeset  # type: ignore[method-assign]
 
 
 # ----------------------------------------------------------------------
-# Aiming. Pure: fragments in, pixels out.
-
-
-def line_text(fragment: Fragment) -> str:
-    """
-    The characters on one visual line, an interword glue as one space.
-
-    Written here rather than borrowed from `advtext.selection._render`, which is
-    part of what a copy is checked against.
-    """
-    return "".join(
-        " " if isinstance(item, SetGlue) else chr(item.codepoint) for item in fragment.items
-    )
-
-
-def line_copy(fragment: Fragment) -> str:
-    """
-    What copying one whole visual line should put on the clipboard.
-
-    `line_text` with the fill left out: glue of no natural width is the
-    `\\rightskip` or `\\parfillskip` at the end of the line, which takes a
-    reading-order index and is not a space anybody typed. `line_text` keeps it,
-    because the probe aims by item offset and needs one character an item;
-    since 2026-10-07 a copy does not (`advtext.selection.FragmentQueries.text`).
-    Restated here from the shipped commands rather than imported, for the
-    reason `line_text` is.
-    """
-    return "".join(
-        ("" if item.natural == 0 else " ") if isinstance(item, SetGlue) else chr(item.codepoint)
-        for item in fragment.items
-    )
-
-
-def find_line(model: SelectionModel, opening: str) -> int:
-    """
-    The position in `model.fragments` of the first line that starts with `opening`.
-
-    By content, and loud when absent. The message quotes the lines that *are*
-    there, because the usual cause is a different `--source` and the fix is to
-    read what it says.
-    """
-    for at, fragment in enumerate(model.fragments):
-        if line_text(fragment).startswith(opening):
-            return at
-    present = [line_text(fragment)[:40] for fragment in model.fragments[:6]]
-    raise ProbeError(f"no line starts with {opening!r}; the first lines are {present!r}")
-
-
-def alone_in_its_band(model: SelectionModel, at: int) -> bool:
-    """
-    Whether no other line with anything on it shares this line's vertical band.
-
-    Where two lines sit side by side, "the line at this y" is a question with
-    more than one answer, and the probe aims only where it has one so that no
-    expectation depends on which of them the view would pick. Measured on
-    2026-10-06: a table row ships as *one* line today, so nothing in
-    `demo/sample.md` is side by side and this rejects nothing there. It is here
-    for the shapes that are -- a stacked-limits operator is a line inside a
-    line -- and for table cells once they wrap into lines of their own.
-    """
-    line = model.fragments[at]
-    for other_at, other in enumerate(model.fragments):
-        if other_at == at or not other.items:
-            continue
-        if other.top < line.bottom and line.top < other.bottom:
-            return False
-    return True
-
-
-def copies_as_itself(model: SelectionModel, fragment: Fragment) -> bool:
-    """
-    Whether copying this whole line gives its own characters and nothing else.
-
-    True of a line of a paragraph. False of a table row, which ships as one
-    line and copies with a tab between its cells, and of anything else whose
-    copy carries a separator the glyphs do not. Gestures 7 and 8 build their
-    expected text from the line's glyphs, so they aim only at lines for which
-    that is what a copy returns.
-
-    **Found by a failure, 2026-10-07.** Those two gestures pick "the first line
-    below the fold", so which line they get depends on the height of the
-    window. At the 1100x800 the app opened at, it was a line of prose every
-    time and nothing here said it had to be. When the tab bar became a sidebar
-    the page body grew by the tab bar's 36 px, the first line below the fold
-    became the header row of `demo/sample.md`'s table, and the probe reported
-    `'Module\tOwns'` against an expected `'Module Owns'` -- a correct copy,
-    and a wrong expectation.
-    """
-    copy = getattr(model, "copy_text", model.text)
-    return bool(copy(Selection(fragment.start, fragment.end)) == line_copy(fragment))
-
-
-def cell_point(seen: Seen, fragment: Fragment, offset: int, fraction: float) -> Move:
-    """
-    The screen position `fraction` of the way across item `offset` of a line.
-
-    A quarter of the way in is left of the item's midpoint, so the caret lands
-    before it; three quarters is right of it, so the caret lands after. The
-    probe uses only those two and the centre, never an edge, so that no
-    expectation depends on how a tie at a boundary is resolved.
-    """
-    left = fragment.edges[offset]
-    right = fragment.edges[offset + 1]
-    x_px = px_from_sp(left, seen.px_per_inch) + fraction * px_from_sp(
-        right - left, seen.px_per_inch
-    )
-    y_sp = (fragment.top + fragment.bottom) // 2
-    return Move(seen.origin[0] + x_px, seen.screen_y(y_sp))
+# Aiming.
 
 
 def first_words_end(text: str, count: int = 2) -> int:
@@ -488,25 +457,15 @@ def _copy(imgui: Any) -> Frames:
     yield from _play(Key("ctrl", True), Key("c", True), Key("c", False), Key("ctrl", False))
 
 
-def _drag_first_words(seen: Seen, at: int, label: str, checks: list[Check]) -> Frames:
-    """Drag over the first two words of line `at`, forwards, and check it."""
-    line = seen.model.fragments[at]
-    text = line_text(line)
-    count = first_words_end(text)
-    yield from _play(
-        cell_point(seen, line, 0, 0.25),
-        Button(True),
-        cell_point(seen, line, count - 1, 0.75),
-        Button(False),
-    )
-    checks.append(
-        Check(
-            f"{label}: range",
-            Selection(line.indices[0], line.indices[count - 1] + 1),
-            seen.view.selection,
-        )
-    )
-    checks.append(Check(f"{label}: text", text[:count], seen.view.selected_text()))
+class NotDrawing(ProbeError):
+    """
+    No `TypesetView` drew a frame, so there was nothing to play a mouse at.
+
+    The message is the Document page's own sentence
+    (`advtext.ui.pages.typeset.why_not`). `main` exits 2 on this when the
+    library was never asked for, and 1 when it was: the first is an absence,
+    the second a failure.
+    """
 
 
 def script(
@@ -518,11 +477,11 @@ def script(
     opening: str = OPENING,
 ) -> Frames:
     """
-    The eight gestures in the module docstring, in order.
+    The settling frames, then the eight gestures of `script_for_typeset`.
 
     `source` is the markdown the app was given, used once: the paragraph drag's
     expected text must occur in it verbatim, which is the one expectation here
-    that does not come from the layout at all.
+    that does not come from the view at all.
     """
     # Settling. The first frame sizes the child window and the second gives it
     # its scrollbar, which narrows the content region; the layout is not the one
@@ -531,50 +490,101 @@ def script(
     # near it inside ImGui's 0.3 s double-click time would count as its second.
     for _ in range(SETTLE_FRAMES):
         yield []
-    if seen.frames == 0:
-        raise ProbeError("the Document page never drew: DocumentView._handle_mouse was not called")
+    if seen.renderer != "TypesetView":
+        from advtext.ui.pages.typeset import not_drawing, why_not
 
-    model = seen.model
-    at = find_line(model, opening)
-    if at + 2 >= len(model.fragments) or not all(
-        model.fragments[at + step].items and alone_in_its_band(model, at + step)
-        for step in range(3)
-    ):
-        raise ProbeError(f"the paragraph starting {opening!r} must run to at least three lines")
-    first, second, third = (model.fragments[at + step] for step in range(3))
-    if not all(seen.on_screen(line) for line in (first, second, third)):
-        raise ProbeError(f"the paragraph starting {opening!r} is not on screen at the start")
+        raise NotDrawing(
+            "the Document page drew no TypesetView in "
+            f"{SETTLE_FRAMES} frames; it says: {not_drawing(why_not())}"
+        )
+    yield from script_for_typeset(seen.typeset, imgui, checks, source=source, opening=opening)
 
-    # 1. A drag, left to right.
-    yield from _drag_first_words(seen, at, "1 drag over two words, left to right", checks)
 
-    # 2. The same drag backwards. The range is normalised, so it must be equal,
-    #    and a hand-rolled selection that assumes start <= end selects nothing.
-    text = line_text(first)
+def _typeset_range(line: Any, begin: int, end: int) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Characters `[begin, end)` of a line, as a `TypesetView` states a selection."""
+    return ((line.block, line.start + begin), (line.block, line.start + end))
+
+
+def _drag_first_words_typeset(
+    seen: SeenTypeset, line: Any, label: str, checks: list[Check]
+) -> Frames:
+    """Drag over the first two words of a line, forwards, and check it."""
+    text = seen.text(line)
     count = first_words_end(text)
     yield from _play(
-        cell_point(seen, first, count - 1, 0.75),
+        seen.point(line, 0, 0.25),
         Button(True),
-        cell_point(seen, first, 0, 0.25),
+        seen.point(line, count - 1, 0.75),
+        Button(False),
+    )
+    checks.append(Check(f"{label}: range", _typeset_range(line, 0, count), seen.view.selection))
+    checks.append(Check(f"{label}: text", text[:count], seen.view.selected_text()))
+
+
+def _prose(seen: SeenTypeset, line: Any, words: int) -> bool:
+    """Whether a line begins with a character and holds `words` words or more."""
+    text = seen.text(line)
+    return bool(text) and not text[0].isspace() and len(re.findall(r"\S+", text)) >= words
+
+
+def script_for_typeset(
+    seen: SeenTypeset,
+    imgui: Any,
+    checks: list[Check],
+    *,
+    source: str,
+    opening: str = OPENING,
+) -> Frames:
+    """
+    The eight gestures, played at a `TypesetView`.
+
+    Entered from `script` after its settling frames. Eighteen checks. The module
+    docstring says what the expectations are built from and what they cannot see.
+    """
+    view = seen.view
+    lines = seen.lines()
+    found = [at for at, line in enumerate(lines) if seen.text(line).startswith(opening)]
+    if not found:
+        present = [seen.text(line)[:40] for line in lines[:6]]
+        raise ProbeError(f"no line starts with {opening!r}; the first lines are {present!r}")
+    at = found[0]
+    if at + 2 >= len(lines) or len({line.block for line in lines[at : at + 3]}) != 1:
+        raise ProbeError(f"the paragraph starting {opening!r} must run to at least three lines")
+    first, second, third = lines[at : at + 3]
+    if not all(seen.on_screen(line) for line in (first, second, third)):
+        raise ProbeError(f"the paragraph starting {opening!r} is not on screen at the start")
+    whole: str = view.texts[first.block]
+
+    # 1. A drag, left to right.
+    yield from _drag_first_words_typeset(
+        seen, first, "1 drag over two words, left to right", checks
+    )
+
+    # 2. The same drag backwards.
+    text = seen.text(first)
+    count = first_words_end(text)
+    yield from _play(
+        seen.point(first, count - 1, 0.75),
+        Button(True),
+        seen.point(first, 0, 0.25),
         Button(False),
     )
     checks.append(
         Check(
             "2 the same drag, right to left: range",
-            Selection(first.indices[0], first.indices[count - 1] + 1),
-            seen.view.selection,
+            _typeset_range(first, 0, count),
+            view.selection,
         )
     )
-    checks.append(
-        Check("2 the same drag, right to left: text", text[:count], seen.view.selected_text())
-    )
+    checks.append(Check("2 the same drag, right to left: text", text[:count], view.selected_text()))
 
     # 3. Across lines: from the second word of the first line to the end of the
-    #    first word of the third. A wrap copies as one space.
+    #    first word of the third. Within a block a copy is the text as written,
+    #    so the expectation is that stretch of the described text, whatever
+    #    white space the description has where the lines were broken.
     start = first_words_end(text, 1) + 1
-    third_text = line_text(third)
-    stop = first_words_end(third_text, 1)
-    expected = " ".join([text[start:].rstrip(), line_text(second).strip(), third_text[:stop]])
+    stop = first_words_end(seen.text(third), 1)
+    expected = whole[first.start + start : third.start + stop]
     checks.append(
         Check(
             "3 the expected paragraph text occurs verbatim in the markdown source",
@@ -583,45 +593,49 @@ def script(
         )
     )
     yield from _play(
-        cell_point(seen, first, start, 0.25),
+        seen.point(first, start, 0.25),
         Button(True),
-        cell_point(seen, third, stop - 1, 0.75),
+        seen.point(third, stop - 1, 0.75),
         Button(False),
     )
     checks.append(
         Check(
             "3 drag across three lines: range",
-            Selection(first.indices[start], third.indices[stop - 1] + 1),
-            seen.view.selection,
+            ((first.block, first.start + start), (third.block, third.start + stop)),
+            view.selection,
         )
     )
-    checks.append(Check("3 drag across three lines: text", expected, seen.view.selected_text()))
+    checks.append(Check("3 drag across three lines: text", expected, view.selected_text()))
 
-    # 4. A double click, on the second word of three letters or more on the
-    #    second line. `\w` is the selection module's own definition of a word
-    #    character -- alphanumerics and the underscore -- restated, not imported.
-    second_text = line_text(second)
-    words = [match for match in re.finditer(r"\w+", second_text) if len(match.group()) >= 3]
+    # 4. A double click, on the second word of the second line that is three
+    #    letters or more and has white space or the line's end on both sides:
+    #    a word nobody's rule for a word boundary could cut differently.
+    second_text = seen.text(second)
+    words = [match for match in re.finditer(r"(?<!\S)\w{3,}(?!\S)", second_text)]
     if len(words) < 2:
         raise ProbeError(f"the line {second_text!r} needs two words of three letters or more")
     word = words[1]
-    on_word = cell_point(seen, second, (word.start() + word.end() - 1) // 2, 0.5)
+    on_word = seen.point(second, (word.start() + word.end() - 1) // 2, 0.5)
     yield from _play(on_word, Button(True), Button(False), Button(True), Button(False))
     checks.append(
         Check(
             "4 double click: range",
-            Selection(second.indices[word.start()], second.indices[word.end() - 1] + 1),
-            seen.view.selection,
+            _typeset_range(second, word.start(), word.end()),
+            view.selection,
         )
     )
-    checks.append(Check("4 double click: text", word.group(), seen.view.selected_text()))
+    checks.append(Check("4 double click: text", word.group(), view.selected_text()))
 
-    # 5. A triple click, on the third line. A line away from the double click
-    #    above, which is further than ImGui's double-click distance, so this is
-    #    a new click sequence and not clicks three to five of the last one.
-    on_line = cell_point(seen, third, len(third.items) // 2, 0.5)
+    # 5. A triple click, on the third line, on the character nearest its
+    #    middle that is not white space. The range is the whole of the line's
+    #    range of the text, the white space it was broken at included; the
+    #    copy is without that white space (`SeenTypeset.line_copy`).
+    third_text = seen.text(third)
+    middle = len(third_text) // 2
+    while middle < len(third_text) - 1 and third_text[middle].isspace():
+        middle += 1
     yield from _play(
-        on_line,
+        seen.point(third, middle, 0.5),
         Button(True),
         Button(False),
         Button(True),
@@ -630,24 +644,25 @@ def script(
         Button(False),
     )
     checks.append(
-        Check("5 triple click: range", Selection(third.start, third.end), seen.view.selection)
+        Check("5 triple click: range", _typeset_range(third, 0, len(third_text)), view.selection)
     )
-    checks.append(Check("5 triple click: text", line_copy(third), seen.view.selected_text()))
+    checks.append(Check("5 triple click: text", seen.line_copy(third), view.selected_text()))
 
     # 6. Copy it.
     yield from _copy(imgui)
     checks.append(
         Check(
-            "6 ctrl+C: the clipboard holds the line", line_copy(third), imgui.get_clipboard_text()
+            "6 ctrl+C: the clipboard holds the line",
+            seen.line_copy(third),
+            imgui.get_clipboard_text(),
         )
     )
 
     # 7. Scroll by more than a window, then drag on a line that was below the
-    #    fold. The pointer is parked over the document first: the wheel goes to
-    #    the window under it.
+    #    fold. `fold` is in the document's own pixels, which a scroll leaves alone.
     origin_before = seen.origin[1]
     height = seen.window_height
-    fold = sp_from_px(seen.window_top + height - origin_before, seen.px_per_inch)
+    fold = seen.window_top + height - origin_before
     yield from _play(Move(seen.origin[0] + 40.0, seen.window_top + height / 2.0))
     for _ in range(80):
         if origin_before - seen.origin[1] > height:
@@ -660,73 +675,69 @@ def script(
         Check("7 the wheel scrolled the document by more than a window", True, scrolled > height)
     )
 
-    model = seen.model
+    lines = seen.lines()
     below = [
-        index
-        for index, line in enumerate(model.fragments)
+        line
+        for line in lines
         if line.top > fold
         and seen.on_screen(line)
-        and len(re.findall(r"\S+", line_text(line))) >= 3
-        and alone_in_its_band(model, index)
-        and copies_as_itself(model, line)
+        and _prose(seen, line, 3)
+        and seen.copies_as_itself(line)
     ]
     if not below:
         raise ProbeError("after scrolling, no line that began below the fold is on screen")
-    yield from _drag_first_words(
-        seen, below[0], "7 drag on a line that was below the fold before the scroll", checks
+    press = below[0]
+    yield from _drag_first_words_typeset(
+        seen, press, "7 drag on a line that was below the fold before the scroll", checks
     )
 
-    # 8. Press on that line and release on one beneath the window's bottom edge.
-    #    Nothing auto-scrolls; the line it ends on is not drawn. It must still be
-    #    selected and it must still be copied.
-    #
-    #    The press is on the line's *second* word. Gesture 7 pressed on its
-    #    first a few frames ago, and a second press at the same point inside
-    #    the double-click time is a double click: the drag would then run at
-    #    word granularity and, ending as it does on a word boundary, select
-    #    exactly what a character drag selects. It did, in the first version of
-    #    this script, and passed for the wrong reason.
-    press = model.fragments[below[0]]
-    press_text = line_text(press)
+    # 8. Press on that line's second word (not its first: `script` says why)
+    #    and release on a line beneath the window's bottom edge, which the
+    #    library has not drawn.
+    press_text = seen.text(press)
     begin = first_words_end(press_text, 1) + 1
     bottom = seen.window_top + seen.window_height
     beyond = [
-        index
-        for index, line in enumerate(model.fragments)
-        if seen.screen_y(line.top) > bottom + 100.0
-        and len(line.items) >= 4
-        and alone_in_its_band(model, index)
-        and copies_as_itself(model, line)
+        line
+        for line in lines
+        if seen.origin[1] + line.top > bottom + 100.0
+        and _prose(seen, line, 1)
+        and line.end - line.start >= 4
+        and seen.copies_as_itself(line)
     ]
     if not beyond:
         raise ProbeError(
             "no line lies more than 100 px below the window; the document is too short"
         )
-    release = model.fragments[beyond[0]]
-    release_text = line_text(release)
-    stop = first_words_end(release_text, 1)
+    release = beyond[0]
+    stop = first_words_end(seen.text(release), 1)
     yield from _play(
-        cell_point(seen, press, begin, 0.25),
+        seen.point(press, begin, 0.25),
         Button(True),
-        cell_point(seen, release, stop - 1, 0.75),
+        seen.point(release, stop - 1, 0.75),
         Button(False),
     )
-    wanted = Selection(press.indices[begin], release.indices[stop - 1] + 1)
-    checks.append(Check("8 drag past the bottom of the window: range", wanted, seen.view.selection))
-    selected = seen.view.selected_text()
+    wanted = ((press.block, press.start + begin), (release.block, release.start + stop))
+    checks.append(Check("8 drag past the bottom of the window: range", wanted, view.selection))
+    selected = view.selected_text()
+    # What a copy across blocks gives, restated from the view's contract and
+    # not asked of it: each block's text, the first from the press and the
+    # last to the release, the separator between, and nothing (no separator
+    # either) for a block with no text.
+    texts = view.texts
+    if press.block == release.block:
+        parts = [texts[press.block][press.start + begin : release.start + stop]]
+    else:
+        parts = [
+            texts[press.block][press.start + begin :],
+            *texts[press.block + 1 : release.block],
+            texts[release.block][: release.start + stop],
+        ]
     checks.append(
         Check(
             "8 drag past the bottom of the window: text runs from the pressed line to the unseen",
-            (True, True),
-            (
-                selected.startswith(press_text[begin:].rstrip()),
-                # White space removed from both sides: a line that opens
-                # with a list marker reads ` 1.markdown` item by item (fill,
-                # marker, a kern with no index, text) and `1. markdown` in a
-                # copy, which knows the marker from the text. The characters
-                # and their order are what this checks.
-                "".join(selected.split()).endswith("".join(release_text[:stop].split())),
-            ),
+            view.separator.join(part for part in parts if part),
+            selected,
         )
     )
     yield from _copy(imgui)
@@ -790,6 +801,8 @@ class Outcome:
     error: BaseException | None
     frames: int
     seconds: float
+    renderer: str = ""
+    """`TypesetView`, the view the gestures were played at; `""` if none drew."""
 
     @property
     def passed(self) -> bool:
@@ -803,53 +816,63 @@ def run_without_a_window(source: str, *, opening: str = OPENING) -> Outcome:
     A real `ImGuiContext`: the event queue, hover resolution, the sidebar, the
     child window and its scrolling are ImGui's own. Not real: there is no
     platform backend, so the clipboard is ImGui's in-memory one, the time step
-    is a constant sixtieth of a second, and no font of ours is in the atlas.
+    is a constant sixtieth of a second, and nothing rasterises a glyph.
 
-    The context is created if there is none and otherwise reused, as every
-    headless test in this tree does; the pointer is left released and off the
-    window so a later test in the same process inherits nothing.
+    **A context of its own, made here and destroyed here**, with the app's own
+    font callback run in it (`advtext.ui.app._load_fonts_for_run`): the
+    library's fonts go into this context's atlas and the library is unloaded
+    before the context is destroyed, as `run` does through hello_imgui. The
+    context that was current is put back. Without the library the callback
+    loads the app's one UI font through hello_imgui, which has no runner here;
+    that is skipped, the page draws its one line, and the outcome carries
+    `NotDrawing`.
     """
     from imgui_bundle import imgui
 
-    from advtext.ui.app import App
+    from advtext import typesetter
+    from advtext.ui import app as advtext_app
 
-    if imgui.get_current_context() is None:
-        imgui.create_context()
-    io = imgui.get_io()
-    size = imgui.ImVec2(1100.0, 800.0)
-    io.display_size = size
-    io.delta_time = 1.0 / 60.0
-    io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
-
-    # A window name no earlier run in this context used. The child window's
-    # scroll position is ImGui's state, keyed by the window's id, and gesture 7
-    # leaves it scrolled: a second run under the same name would start a screen
-    # and a half down and find its first paragraph off screen.
-    name = f"##advtext-mouse-probe-{imgui.get_frame_count()}"
-    app = App(source=source)
+    before = imgui.get_current_context()
+    own = imgui.create_context()
+    imgui.set_current_context(own)
     seen = Seen()
     checks: list[Check] = []
-    driver = Driver(script(seen, imgui, checks, source=source, opening=opening))
     began = time.perf_counter()
-    with watch(seen):
-        while not driver.done:
-            driver.before_frame(io, imgui)
-            imgui.new_frame()
-            try:
-                imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
-                imgui.set_next_window_size(size)
-                imgui.begin(name)
-                app.gui()
-                imgui.end()
-            finally:
-                imgui.render()
-        # Leave nothing held for whoever uses the context next.
-        io.add_mouse_button_event(0, False)
-        io.add_mouse_pos_event(-1.0e6, -1.0e6)
-        imgui.new_frame()
-        imgui.render()
+    try:
+        io = imgui.get_io()
+        size = imgui.ImVec2(1100.0, 800.0)
+        io.display_size = size
+        io.delta_time = 1.0 / 60.0
+        io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+        if typesetter.module() is not None:
+            advtext_app._load_fonts_for_run()
+
+        app = advtext_app.App(source=source)
+        driver = Driver(script(seen, imgui, checks, source=source, opening=opening))
+        with watch(seen):
+            while not driver.done:
+                driver.before_frame(io, imgui)
+                imgui.new_frame()
+                try:
+                    imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
+                    imgui.set_next_window_size(size)
+                    imgui.begin("##advtext-mouse-probe")
+                    app.gui()
+                    imgui.end()
+                finally:
+                    imgui.render()
+    finally:
+        typesetter.unload()
+        imgui.destroy_context(own)
+        if before is not None:
+            imgui.set_current_context(before)
     return Outcome(
-        "no window", tuple(checks), driver.error, driver.frames, time.perf_counter() - began
+        "no window",
+        tuple(checks),
+        driver.error,
+        driver.frames,
+        time.perf_counter() - began,
+        seen.renderer,
     )
 
 
@@ -930,7 +953,7 @@ def run_in_a_window(
 
     if shot is not None:
         _write_shot(shot)
-    return Outcome("window", tuple(checks), driver.error, driver.frames, seconds)
+    return Outcome("window", tuple(checks), driver.error, driver.frames, seconds, seen.renderer)
 
 
 def _write_shot(out: Path) -> None:
@@ -1019,6 +1042,17 @@ def wait_for_tcp_display(display: str, *, timeout: float = 10.0) -> bool:
             time.sleep(0.1)
 
 
+NO_LIBRARY = """\
+There is nothing to play a mouse at: {reason}
+
+The Document page draws its text through the imtypeset library and draws one
+line without it. Build the pinned library and run with it:
+
+  make typeset-lib
+  IMTYPESET_LIBRARY=build/imtypeset-bundle/libimtypeset_bundle.so \\
+  IMTYPESET_PYTHON=build/imtypeset-bundle/pysnap python scripts/mouse_probe.py --xvfb
+"""
+
 NO_DISPLAY = """\
 No window could be opened ({reason}).
 
@@ -1080,10 +1114,16 @@ def main(argv: list[str] | None = None) -> int:
             print(NO_DISPLAY.format(reason=reason), file=sys.stderr)
             return 2
 
-    print(f"mouse probe, {outcome.mode}: {outcome.frames} frames in {outcome.seconds:.2f}s")
+    print(
+        f"mouse probe, {outcome.mode}: {outcome.frames} frames in {outcome.seconds:.2f}s, "
+        f"renderer {outcome.renderer or 'none'}"
+    )
     print(report(outcome.checks))
     if outcome.error is not None:
         print(f"the probe stopped early: {type(outcome.error).__name__}: {outcome.error}")
+    if isinstance(outcome.error, NotDrawing) and not os.environ.get("IMTYPESET_LIBRARY"):
+        print(NO_LIBRARY.format(reason=outcome.error), file=sys.stderr)
+        return 2
     return 0 if outcome.passed else 1
 
 

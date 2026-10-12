@@ -1,23 +1,29 @@
 r"""
 The two streaming examples: `examples/stream_replay.py` and `examples/chat_transcript.py`.
 
-Each test says at what fidelity it runs, as `tests/test_examples.py` does:
+Both draw through the imtypeset library and through nothing else. Each test
+says at what fidelity it runs, as `tests/test_examples.py` does:
 
-- **the source text** -- the examples import the library only from the package
-  root;
-- **plain objects, a clock advanced by hand** -- a whole replay, with the
-  moved-lines counter held to what first-fit breaking predicts;
-- **real ImGui frames with no display** -- `show`, the controls, the scrolling;
+- **the source text** -- what the examples import, anywhere in the file;
+- **a fresh interpreter** -- what loading one loads;
+- **plain objects, no library** -- the pieces, the clock, the counter's
+  arithmetic, the transcript's theme: what an example is before it is shown;
+- **`main` with no library** -- it says why on standard error and returns
+  `NO_LIBRARY` without opening a window;
+- **real ImGui frames with no display, the library loaded** -- `show`, the
+  controls, the scrolling, in one child (`_HEADLESS`) that says whether
+  `typesetter.module()` and `ready()` held THERE, before its body and after;
 - **a real window** -- `main`, on an Xvfb in a user namespace where one can be
-  started.
+  started, with the library.
 
-**What the counter is held to.** `tests/test_stream_stability.py` and
-`tests/test_firstfit.py` established that a first-fit line depends only on the
-text up to its own end. From that: plain prose streamed under
-`KEEP_STREAMED` moves no settled line, at any measure, however the stream is
-cut; and where lines do move there is a cause that can be named -- markup that
-closed late, a table whose column grew, or a `RESET` at a commit. Each of those
-is a test here, and the first is the one the plan asked for.
+The last two are skipped, with the reason, when `IMTYPESET_LIBRARY` is not
+set. The pytest process never has the library ready (also under
+`make test TYPESET=1`), so nothing here draws in it.
+
+**What the counter is held to.** `RESET` moves lines, and only on a draw that
+found a block committed; a change of width is not a move; nothing is counted
+without a draw. How many settled lines `KEEP_STREAMED` moves is the library's
+line breaking and is reported, not asserted.
 
 Nothing in this file says how any of it looks. Nobody has watched it.
 """
@@ -26,6 +32,8 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
+import os
 import re
 import shutil
 import subprocess
@@ -38,29 +46,22 @@ from typing import Any
 import pytest
 
 import advtext
-from advtext import (
-    Align,
-    BareView,
-    CodeBlock,
-    CommitPolicy,
-    Face,
-    StreamView,
-    TableBlock,
-    TextBlock,
-    Theme,
-    build_document,
-    char_measure,
-    fontlib_metrics,
-    sp_from_px,
+from advtext import Align, Face, typesetter
+from advtext.description import FACE_DEFAULT, FACE_ROLES
+from advtext.typeset_markdown import (
+    MarkdownCode,
+    MarkdownConverter,
+    MarkdownStream,
+    MarkdownTable,
+    MarkdownText,
+    parse_markdown,
 )
-from advtext.nodes import CharNode
-from advtext.selection import Selection
-from advtext.style import parse_font_key
 
 _ROOT = Path(__file__).resolve().parent.parent
 _REPLAY = _ROOT / "examples" / "stream_replay.py"
 _CHAT = _ROOT / "examples" / "chat_transcript.py"
 _PROBE = _ROOT / "scripts" / "mouse_probe.py"
+_BOTH = pytest.mark.parametrize("path", [_REPLAY, _CHAT], ids=["stream_replay", "chat_transcript"])
 
 XVFB_REPLAY, XVFB_CHAT = 95, 93
 """
@@ -82,6 +83,44 @@ PROSE = (
 )
 """
 Three paragraphs with nothing in them that could change a character already shown.
+"""
+
+
+_VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
+_SKIP = (
+    "IMTYPESET_LIBRARY is not set: run `make test TYPESET=1` (after `make typeset-lib`) "
+    "for the tests that need the imtypeset library"
+)
+
+TYPESET_LAYER: set[str] = set()
+"""
+The modules of the typeset layer an example may import by their own path:
+none, since T5-B2 put the layer's names on the facade. Until then it was
+`advtext.typeset_markdown`, `advtext.ui.typeset_view` and
+`advtext.ui.typeset_stream_view`.
+"""
+
+OLD_NAMES = {
+    "BareView",
+    "DocumentView",
+    "StreamView",
+    "StreamDocument",
+    "CommitPolicy",
+    "DiffView",
+    "DiffFences",
+    "build_document",
+    "live_theme",
+    "char_measure",
+    "fontlib_metrics",
+    "load_faces",
+    "markdown_math",
+    "draw_document",
+}
+"""
+Names of the old views, the old stream, the old converter and the old draw
+backend. Most are gone from the facade (T5-B2); `build_document`,
+`char_measure`, `fontlib_metrics` and `load_faces` are still on it, for the
+reference core and the no-library UI font. An example imports none.
 """
 
 
@@ -109,31 +148,93 @@ def chat_module(bundled_fonts: Any) -> ModuleType:
 # the source text
 
 
-@pytest.mark.parametrize("path", [_REPLAY, _CHAT], ids=["stream_replay", "chat_transcript"])
-def test_the_examples_import_advtext_only_from_the_package_root(path: Path) -> None:
+@_BOTH
+def test_the_examples_import_the_facade_and_the_typeset_layer_and_nothing_old(path: Path) -> None:
     """
-    Fidelity: the source text. "Public facade only", held by reading the imports.
+    Fidelity: the source text, every import in the file, a function's body included.
+
+    From the package root, names in `advtext.__all__` and the module
+    `typesetter`; no submodule of advtext by its own path (`TYPESET_LAYER`,
+    which is empty). No old view, old stream, old converter or old font
+    loader by any route: not from the root (`OLD_NAMES`) and not by module.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     from_root: list[str] = []
+    by_name: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 assert not alias.name.startswith("advtext"), f"import {alias.name}"
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            assert not module.startswith("advtext."), f"from {module} import ..."
+            if module.startswith("advtext."):
+                by_name.add(module)
             if module == "advtext":
                 from_root.extend(alias.name for alias in node.names)
-    assert {"StreamView", "StreamDocument"} <= set(from_root)
-    assert set(from_root) <= set(advtext.__all__)
+    assert by_name <= TYPESET_LAYER, sorted(by_name - TYPESET_LAYER)
+    assert {"TypesetStreamView", "MarkdownStream", "TypesetUnavailable"} <= set(from_root)
+    assert "typesetter" in from_root and "Theme" in from_root
+    assert set(from_root) - {"typesetter"} <= set(advtext.__all__)
+    assert not set(from_root) & OLD_NAMES, sorted(set(from_root) & OLD_NAMES)
+    # And no attribute of the package root reached without an import.
+    reached = {
+        node.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "advtext"
+    }
+    assert not reached, sorted(reached)
 
 
-@pytest.mark.parametrize("path", [_REPLAY, _CHAT], ids=["stream_replay", "chat_transcript"])
-def test_loading_an_example_loads_neither_the_demo_app_nor_a_window_runner(path: Path) -> None:
+@_BOTH
+def test_importing_an_example_loads_none_of_the_old_core(path: Path) -> None:
     """
     Fidelity: a fresh interpreter, by import graph.
+
+    None of it (`tests/test_typeset_closure.py`, whose list of the old core
+    this reads; `advtext.units` and `advtext.fontmetrics` were the floor of
+    everything that names a `Theme` until T5-B2), and none of `advtext.style`,
+    `advtext.stream`, `advtext.markdown`.
     """
+    from test_typeset_closure import OLD_CORE, THEME
+
+    env = {name: value for name, value in os.environ.items() if name not in _VARIABLES}
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            textwrap.dedent(f"""
+                import importlib.util, json, sys
+                spec = importlib.util.spec_from_file_location("example", {str(path)!r})
+                example = importlib.util.module_from_spec(spec)
+                sys.modules["example"] = example
+                spec.loader.exec_module(example)
+                print(json.dumps(sorted(n for n in sys.modules if n.startswith("advtext"))))
+                """),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+        env={**env, "PYTHONPATH": str(_ROOT)},
+    )
+    assert result.returncode == 0, result.stderr
+    loaded = set(json.loads(result.stdout))
+    assert "advtext.ui.typeset_stream_view" in loaded
+    assert loaded & OLD_CORE == THEME, sorted(loaded & OLD_CORE)
+    for name in ("advtext.stream", "advtext.markdown", "advtext.style", "advtext.ui.fonts"):
+        assert name not in loaded, name
+
+
+@_BOTH
+def test_loading_an_example_loads_neither_the_demo_app_nor_a_window_runner(path: Path) -> None:
+    """
+    Fidelity: a fresh interpreter, by import graph. And what an example is
+    before it is shown needs no library: it is made, and its clock advanced,
+    with the library's variables removed.
+    """
+    env = {name: value for name, value in os.environ.items() if name not in _VARIABLES}
     result = subprocess.run(
         [
             sys.executable,
@@ -147,37 +248,24 @@ def test_loading_an_example_loads_neither_the_demo_app_nor_a_window_runner(path:
                 names = ("advtext.ui.app", "imgui_bundle.hello_imgui", "imgui_bundle.immapp")
                 print([name for name in names if name in sys.modules])
                 made = example.replay() if hasattr(example, "replay") else example.Transcript()
-                made.advance(1.0)
+                print(made.advance(1.0), "imtypeset" in sys.modules)
                 print("advtext.ui.app" in sys.modules)
                 """),
         ],
         capture_output=True,
         text=True,
         cwd=_ROOT,
+        env={**env, "PYTHONPATH": str(_ROOT)},
     )
     assert result.returncode == 0, result.stderr
-    # Loading the file loads no window runner. Building what it shows reads
-    # font files, which the library finds through `imgui_bundle`; the demo
-    # application is still not involved.
-    assert result.stdout.splitlines() == ["[]", "False"]
+    # Loading the file loads no window runner. Forty pieces in the first
+    # second, with nothing of the library imported; the demo application is
+    # still not involved.
+    assert result.stdout.splitlines() == ["[]", "40 False", "False"]
 
 
 # ----------------------------------------------------------------------
-# the replay, with a clock advanced by hand
-
-
-def run_to_the_end(playing: Any, width_px: float, *, step: float = 1.0 / 60.0) -> int:
-    """
-    Tick a replay at sixty frames a second of pretend time until it is done. Returns the frames.
-    """
-    frames = 0
-    width = sp_from_px(width_px)
-    while not playing.done:
-        playing.tick(step, width)
-        frames += 1
-        assert frames < 200_000, "the replay never finished"
-    playing.tick(step, width)
-    return frames + 1
+# the replay: plain objects, no library
 
 
 def test_tokens_cut_the_source_into_small_pieces_that_join_back_to_it(
@@ -213,205 +301,55 @@ def test_the_clock_decides_how_many_pieces_arrive_and_fractions_are_carried(
     assert playing.advance(1.0) == len(playing.pieces) - 42
     assert playing.done and playing.stream.closed
     assert playing.advance(1.0) == 0
+    assert playing.stream.source == PROSE
 
 
-@pytest.mark.parametrize("width_px", [360.0, 560.0])
-@pytest.mark.parametrize("rate", [40.0, 700.0])
-def test_plain_prose_streamed_and_kept_moves_no_settled_line(
-    replay_module: ModuleType, width_px: float, rate: float
-) -> None:
+def test_a_replay_is_a_stream_and_no_view_until_it_is_shown(replay_module: ModuleType) -> None:
     """
-    Fidelity: a whole replay, plain objects. **The prediction the plan asked to be held.**
-
-    First-fit at natural spacing sets each line from the text up to its own
-    end, so nothing arriving later can move it; `KEEP_STREAMED` commits the
-    block as it was. Two measures and two rates -- one piece every frame or
-    two, and a dozen pieces a frame -- because the count must not depend on
-    how the stream happened to be cut into frames.
+    Fidelity: plain objects, in a process where the library is not ready. The
+    two policies are one theme or two; a tick feeds and counts nothing, and
+    the status line and the report are made without a view.
     """
-    playing = replay_module.replay(PROSE, tokens_per_second=rate)
-    frames = run_to_the_end(playing, width_px)
-    assert playing.done and frames > 10
-    assert playing.moved == 0 and playing.moves == []
-    # And there were settled lines to move: the paragraphs wrapped.
-    assert len(replay_module.lines_of(playing.view)) >= 8
-    assert playing.view.relayouts >= frames // 4
-
-
-def test_resetting_on_commit_moves_lines_and_only_when_a_block_commits(
-    replay_module: ModuleType,
-) -> None:
-    """
-    Fidelity: a whole replay. The other policy: lines move, at commits and nowhere else.
-    """
-    playing = replay_module.replay(PROSE, policy=CommitPolicy.RESET, tokens_per_second=60.0)
-    width = sp_from_px(360.0)
-    moved_at_a_commit: list[int] = []
-    while not playing.done:
-        settled = len(playing.stream.committed) if playing.fed else 0
-        moved = playing.tick(1.0 / 60.0, width)
-        committed = len(playing.stream.committed) > settled
-        if moved:
-            assert committed, f"{moved} lines moved at piece {playing.fed} with nothing committing"
-            moved_at_a_commit.append(moved)
-    # Three paragraphs, each of several lines, each set again once.
-    assert len(moved_at_a_commit) == 3
-    assert all(count >= 2 for count in moved_at_a_commit)
-    assert playing.moved == sum(moved_at_a_commit)
-    assert [count for _, count in playing.moves] == moved_at_a_commit
-
-
-def _extends(before: Any, after: Any) -> bool:
-    """
-    Whether block `after` is block `before` with more text on the end and nothing else changed.
-    """
-    if isinstance(before, TextBlock) and isinstance(after, TextBlock):
-        return (
-            before.kind is after.kind
-            and after.material[: len(before.material)] == before.material
-            and before.marker == after.marker
-        )
-    if isinstance(before, CodeBlock) and isinstance(after, CodeBlock):
-        # Every line but the last, which is the one being typed.
-        return after.lines[: len(before.lines) - 1] == before.lines[:-1]
-    return before == after
-
-
-def test_on_the_demo_document_every_line_that_moves_has_a_cause_that_can_be_named(
-    replay_module: ModuleType,
-) -> None:
-    """
-    Fidelity: a whole replay of `demo/stream.md`, kept. Not zero, and never without a reason.
-
-    The document was written to change its mind: emphasis that opens long
-    before it closes, a code span, a table. A settled line may move for two
-    reasons and no other, and both are read off the blocks, not guessed from
-    the characters that happened to arrive (the test this replaces called a
-    step explained if its pieces contained an asterisk, a backtick or a bar,
-    which most steps of this document do):
-
-    - **the text before it changed** -- some block at or above the line's own,
-      among those not yet committed, is no longer its old self with more on
-      the end: an asterisk that turned out to be markup, a paragraph that
-      became a heading, a block that split;
-    - **a table moved it** -- the line is a table's, or a table above it grew.
-
-    A line that moved in a block that only gained text, under nothing that
-    changed, is the failure first-fit breaking exists to rule out, and is
-    reported with the line and the step.
-    """
-    playing = replay_module.replay(tokens_per_second=60.0)
-    width = sp_from_px(520.0)
-    causes: list[str] = []
-    while not playing.done:
-        before = playing.stream.blocks
-        settled = len(playing.stream.committed)
-        fed = playing.fed
-        if not playing.tick(1.0 / 60.0, width):
-            continue
-        after = playing.stream.blocks
-        for line in playing.changed:
-            above = range(settled, line.block + 1)
-            if any(isinstance(before[index], TableBlock) for index in above):
-                causes.append("table")
-            elif any(
-                index >= len(after) or not _extends(before[index], after[index]) for index in above
-            ):
-                causes.append("text changed")
-            else:
-                arrived = "".join(playing.pieces[fed : playing.fed])
-                causes.append(f"unexplained: block {line.block} after {arrived!r}")
-    assert causes, "nothing moved; the document no longer changes its mind"
-    assert set(causes) == {"text changed", "table"}, sorted(set(causes))
-    assert len(causes) == playing.moved
-    # The counter is small against the document: tens of settled lines, a
-    # handful moved. (A count, quoted so a change in it is seen; not a grade.)
-    assert playing.moved < len(replay_module.lines_of(playing.view)) // 2
-
-
-def test_a_line_that_moves_for_no_reason_would_be_called_unexplained() -> None:
-    """
-    The control for the test above: its two reasons do not cover everything.
-
-    A paragraph that only gained words is its old self extended, so a line of
-    it that moved has no cause the test accepts; the same paragraph with its
-    opening asterisks turned into bold is not.
-    """
-    theme = Theme.build()
-    short = build_document("Some plain words", theme, fontlib_metrics).blocks[0]
-    longer = build_document("Some plain words and more", theme, fontlib_metrics).blocks[0]
-    literal = build_document("Some **plain words", theme, fontlib_metrics).blocks[0]
-    bold = build_document("Some **plain words**", theme, fontlib_metrics).blocks[0]
-    assert _extends(short, longer)
-    assert not _extends(literal, bold)
-    assert not _extends(longer, short)
-
-
-def test_a_finished_replay_reads_as_the_document_does(replay_module: ModuleType) -> None:
-    """
-    Fidelity: plain objects. Streaming is a way of arriving, not a different document.
-    """
-    source = replay_module.SOURCE.read_text(encoding="utf-8")
-    playing = replay_module.replay(policy=CommitPolicy.RESET, tokens_per_second=5000.0)
-    run_to_the_end(playing, 560.0)
-    view = playing.view
-    view.select_all()
-
-    plain = BareView(
-        document=build_document(source, playing.theme, fontlib_metrics, references=False),
-        theme=playing.theme,
-        measure=char_measure(fontlib_metrics),
+    keep = replay_module.replay(PROSE, tokens_per_second=600.0)
+    reset = replay_module.replay(PROSE, policy="RESET", tokens_per_second=600.0)
+    ragged = replay_module.ragged(keep.theme)
+    assert ragged != keep.theme and replay_module.ragged(ragged) is ragged
+    assert type(keep.stream) is MarkdownStream and keep.view is None and reset.view is None
+    assert keep.stream.theme == ragged and keep.stream.live_theme == ragged
+    assert reset.stream.theme is reset.theme and reset.stream.live_theme == ragged
+    assert all(
+        block.style.align is Align.LEFT
+        for block in parse_markdown(PROSE, ragged).blocks
+        if isinstance(block, MarkdownText)
     )
-    plain.layout_for(sp_from_px(560.0))
-    plain.select_all()
-    assert view.selected_text() == plain.selected_text()
-    assert len(view.selected_text()) > 1500
+
+    assert keep.tick(1.0 / 60.0) == 0 and keep.fed == 10 and keep.view is None
+    assert keep.observe() == 0 and keep.edits == {"set": 0, "replace": 0, "append": 0}
+    status = keep.status()
+    assert f"10 of {len(keep.pieces)} pieces at 600/s" in status and "KEEP_STREAMED" in status
+    assert "settled lines moved: 0 (in 0 of 0 edits)" in status and "following the end" in status
+    first, second, third = replay_module.report(keep, 7)
+    assert first.startswith("frames=7 fed=10 ") and "done=0 policy=KEEP_STREAMED" in first
+    assert first.endswith("renderer=TypesetStreamView ready=0")
+    assert second.startswith("edits=0 appends=0 replaces=0 moved=0 ")
+    assert third.startswith("vertices=0 whole=1 blocks=")
 
 
 def test_restarting_under_the_other_policy_starts_the_count_again(
     replay_module: ModuleType,
 ) -> None:
-    playing = replay_module.replay(PROSE, policy=CommitPolicy.RESET, tokens_per_second=5000.0)
-    run_to_the_end(playing, 560.0)
-    assert playing.moved > 0 and playing.done
-    first_view = playing.view
-    playing.restart(CommitPolicy.KEEP_STREAMED)
+    playing = replay_module.replay(PROSE, policy="RESET", tokens_per_second=5000.0)
+    while not playing.done:
+        playing.tick(1.0 / 60.0)
+    first_stream = playing.stream
+    playing.moved, playing.moves = 3, [(10, 3)]
+    playing.restart("KEEP_STREAMED")
     assert (playing.fed, playing.moved, playing.moves) == (0, 0, [])
-    assert playing.view is not first_view and not playing.done
-    assert playing.policy is CommitPolicy.KEEP_STREAMED
-    run_to_the_end(playing, 560.0)
-    assert playing.moved == 0
-
-
-def test_a_change_of_width_is_not_counted_as_the_stream_moving_lines(
-    replay_module: ModuleType,
-) -> None:
-    """
-    Review 4, item 7 (measured: a finished replay narrowed from 560 to 400 px counted 4).
-
-    The counter is of lines moved *by text arriving*. A resize sets every
-    line again and says nothing about the stream, so a layout at a new width
-    starts the comparison over. The control is that the count still works
-    after one: the same replay under `RESET`, resized half way, goes on to
-    count the lines its commits move.
-    """
-    playing = replay_module.replay(PROSE, tokens_per_second=1e9)
-    playing.tick(1.0, replay_module.page_width(560.0))
-    playing.tick(0.0, replay_module.page_width(560.0))
-    assert playing.done and playing.moved == 0
-    assert playing.tick(0.0, replay_module.page_width(400.0)) == 0
-    assert playing.tick(0.0, replay_module.page_width(560.0)) == 0
-    assert playing.moved == 0 and playing.moves == []
-
-    resized = replay_module.replay(PROSE, policy=CommitPolicy.RESET, tokens_per_second=600.0)
-    wide, narrow = replay_module.page_width(560.0), replay_module.page_width(400.0)
-    while resized.fed < len(resized.pieces) // 3:
-        resized.tick(1.0 / 60.0, wide)
-    assert resized.moved == 0, "nothing has committed yet in the first third"
-    assert resized.tick(0.0, narrow) == 0, "the resize itself was counted"
-    while not resized.done:
-        resized.tick(1.0 / 60.0, narrow)
-    assert resized.moved > 0, "the counter stopped counting after a resize"
+    assert playing.stream is not first_stream and not playing.done
+    assert playing.policy == "KEEP_STREAMED" and playing.stream.source == ""
+    assert playing.stream.live_theme == playing.stream.theme
+    with pytest.raises(ValueError, match="SOMETIMES"):
+        playing.restart("SOMETIMES")
 
 
 def test_moved_lines_counts_what_changed_and_never_the_line_being_written(
@@ -438,99 +376,18 @@ def test_moved_lines_counts_what_changed_and_never_the_line_being_written(
 
 
 # ----------------------------------------------------------------------
-# real frames, no display
-
-
-def _frame(module: ModuleType, made: Any, seconds: float, *, wheel: float | None = None) -> Any:
-    """
-    One real frame with an example's `show` in a window that fills the display.
-    """
-    imgui = pytest.importorskip("imgui_bundle").imgui
-
-    if imgui.get_current_context() is None:
-        imgui.create_context()
-    io = imgui.get_io()
-    io.display_size = imgui.ImVec2(900.0, 500.0)
-    io.delta_time = 1.0 / 60.0
-    io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
-    io.add_mouse_pos_event(450.0, 300.0)
-    if wheel is not None:
-        io.add_mouse_wheel_event(0.0, wheel)
-    imgui.new_frame()
-    try:
-        imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
-        imgui.set_next_window_size(imgui.ImVec2(900.0, 500.0))
-        flags = imgui.WindowFlags_.no_decoration.value | imgui.WindowFlags_.no_move.value
-        imgui.begin(f"##advtext-{module.__name__}", None, flags)
-        result = module.show(made, lambda face: None, imgui, seconds)
-        imgui.end()
-    finally:
-        imgui.render()
-    return result
-
-
-def test_the_replay_window_feeds_draws_and_counts_frame_by_frame(
-    replay_module: ModuleType,
-) -> None:
-    """
-    Fidelity: real ImGui frames, no display. `show` end to end, with the time passed in.
-    """
-    playing = replay_module.replay(tokens_per_second=600.0)
-    frames = 0
-    while not playing.done and frames < 400:
-        stats = _frame(replay_module, playing, 1.0 / 60.0)
-        frames += 1
-    assert playing.done and 30 < frames < 200
-    for _ in range(3):
-        stats = _frame(replay_module, playing, 1.0 / 60.0)
-    assert stats.glyphs > 100
-    # One layout a frame at the most, though ten pieces arrived in each.
-    assert playing.view.relayouts <= frames + 3
-    assert playing.fed == len(playing.pieces) > 10 * playing.view.relayouts // 2
-    # The pane followed the text down, and the status line says what happened.
-    assert playing.view.following
-    status = playing.status()
-    assert f"{playing.fed} of {len(playing.pieces)} pieces" in status
-    assert f"settled lines moved: {playing.moved}" in status and "following the end" in status
-    assert playing.moved > 0
-
-    # Wheel up: the pane lets go, and says so.
-    _frame(replay_module, playing, 1.0 / 60.0, wheel=4.0)
-    _frame(replay_module, playing, 1.0 / 60.0)
-    assert not playing.view.following
-    assert "scrolled away from the end" in playing.status()
-    report = replay_module.report(playing, frames)
-    assert report[0].startswith(f"frames={frames} fed={playing.fed} ")
-    assert "done=1 policy=KEEP_STREAMED" in report[0]
-
-
-# ----------------------------------------------------------------------
-# the chat transcript
-
-
-def _faces(document: Any) -> set[Face]:
-    faces: set[Face] = set()
-    for block in document.blocks:
-        nodes: list[Any] = []
-        if isinstance(block, TextBlock):
-            nodes = [*block.material, *block.marker]
-        elif hasattr(block, "lines"):
-            nodes = [node for line in block.lines for node in line]
-        elif isinstance(block, TableBlock):
-            nodes = [
-                n for row in (block.header, *block.rows) for cell in row for n in cell.material
-            ]
-        faces.update(parse_font_key(n.font).face for n in nodes if isinstance(n, CharNode))
-    return faces
+# the chat transcript: plain objects, no library
 
 
 def test_the_transcript_is_one_monospace_face_set_ragged(chat_module: ModuleType) -> None:
     """
-    Fidelity: plain objects. "Mono ragged" checked on the blocks, not taken from the call.
+    Fidelity: plain objects. "Mono ragged" checked on the blocks each message
+    is read into and on what they are described with for the library, not
+    taken from the call: every style and every run is the code face (or the
+    block's own, which is), and every block of text is ragged.
     """
     transcript = chat_module.Transcript()
-    transcript.advance(1e9)
-    transcript.live.sync()
+    assert transcript.advance(1e9) == len(transcript.pieces)
     assert transcript.done and len(transcript.messages) == 4
     assert [message.role for message in transcript.messages] == [
         "you",
@@ -538,130 +395,87 @@ def test_the_transcript_is_one_monospace_face_set_ragged(chat_module: ModuleType
         "you",
         "assistant",
     ]
-    for message in transcript.messages:
-        document = message.view.document
-        assert _faces(document) == {Face.CODE}, message.role
-        aligns = {block.style.align for block in document.blocks if isinstance(block, TextBlock)}
+    assert all(message.view is None for message in transcript.messages)
+    assert transcript.live is None and "following the end" in transcript.status()
+    faces = transcript.theme.faces
+    assert {faces.regular, faces.bold, faces.italic, faces.bold_italic, faces.code} == {Face.CODE}
+    mono = {FACE_DEFAULT, FACE_ROLES["CODE"], FACE_ROLES["CODE_BOLD"]}
+    read = [
+        parse_markdown(message.markdown, transcript.theme, references=False).blocks
+        for message in transcript.messages[:-1]
+    ]
+    read.append(tuple(transcript.stream.blocks))
+    for blocks in read:
+        described = MarkdownConverter(transcript.theme).describe(blocks)
+        assert {style.Face for style in described.styles} <= mono - {FACE_DEFAULT}
+        assert {run.face for block in described.blocks for run in block.runs} <= mono
+        aligns = {block.style.align for block in blocks if isinstance(block, MarkdownText)}
         assert aligns == {Align.LEFT}
     # The streaming message really is the kind of thing a model writes.
-    kinds = {type(block).__name__ for block in transcript.live.document.blocks}
-    assert {"TextBlock", "CodeBlock", "TableBlock"} <= kinds
-    assert isinstance(transcript.live, StreamView)
-    assert all(not isinstance(m.view, StreamView) for m in transcript.messages[:-1])
+    kinds = {type(block) for block in transcript.stream.blocks}
+    assert {MarkdownText, MarkdownCode, MarkdownTable} <= kinds
+    assert transcript.messages[-1].markdown == transcript.stream.source
 
 
-def test_a_message_reads_the_same_finished_as_it_did_while_it_streamed(
-    chat_module: ModuleType,
-) -> None:
+def test_the_transcript_reports_before_it_is_shown(chat_module: ModuleType) -> None:
+    transcript = chat_module.Transcript(tokens_per_second=60.0)
+    assert transcript.advance(1.0) == 60 and not transcript.done
+    assert f"writing, 60 of {len(transcript.pieces)} pieces" in transcript.status()
+    *messages, total = chat_module.report(transcript, 3)
+    assert len(messages) == 4
+    assert messages[0] == "message=0 role=you vertices=0 whole=1 blocks=0"
+    assert total == ("frames=3 messages=4 fed=60 done=0 following=0 renderer=TypesetView ready=0")
+
+
+# ----------------------------------------------------------------------
+# `main` with no library: it says why and opens nothing
+
+
+@_BOTH
+def test_without_the_library_main_says_why_and_opens_no_window(path: Path) -> None:
     """
-    One setting for link reference definitions, in both kinds of message (review 4, item 7).
-
-    A stream cannot read `[1]: url` definitions -- one may arrive last and
-    change every `[1]` before it -- so a streamed message sets them as text.
-    Finished messages used to be built with definitions on, and the same text
-    was a link there: a host that swapped a finished stream for a document
-    built this way would see the message change under the reader. Both are
-    read with definitions off now. The control is the library's default,
-    which does make the link.
+    Fidelity: `main()` itself in a fresh interpreter, with the library's
+    variables and every display removed. It returns `NO_LIBRARY` (1), prints
+    nothing on standard output and one line on standard error naming the
+    variable, and never imports a window runner: there was no window to fail
+    to open.
     """
-    text = "See [the notes][1] for more.\n\n[1]: https://example.org/notes\n"
-    transcript = chat_module.Transcript(finished=(("you", text),), streaming=("model", text))
-    while not transcript.done:
-        transcript.advance(1.0)
-    transcript.stream.close()
-    finished = transcript.messages[0].view.document.blocks
-    streamed = transcript.stream.blocks
-    assert len(finished) == len(streamed) == 2
-    assert [getattr(block, "links", ()) for block in finished] == [(), ()]
-    assert [block.material for block in finished] == [block.material for block in streamed]
-
-    from advtext import build_document
-
-    default = build_document(text, transcript.theme, transcript.metrics)
-    assert len(default.blocks) == 1 and default.blocks[0].links  # type: ignore[union-attr]
-
-
-def test_text_arriving_in_the_last_message_costs_the_finished_ones_nothing(
-    chat_module: ModuleType,
-) -> None:
-    """
-    Fidelity: real ImGui frames, no display. Counted, not timed.
-
-    While the last message streams, each finished message's view builds no
-    layout and ships no unit: its caches are exactly as the first frames left
-    them.
-    """
-    transcript = chat_module.Transcript(tokens_per_second=600.0)
-    _frame(chat_module, transcript, 0.0)
-    _frame(chat_module, transcript, 0.0)
-    finished = transcript.messages[:-1]
-    layouts = [message.view.layout for message in finished]
-    shipped = [message.view._units.stats().misses for message in finished]
-    assert all(layout is not None for layout in layouts)
-
-    frames = 0
-    while not transcript.done and frames < 300:
-        _frame(chat_module, transcript, 1.0 / 60.0)
-        frames += 1
-    stats = _frame(chat_module, transcript, 1.0 / 60.0)
-    assert transcript.done and frames > 5
-    assert [message.view.layout for message in finished] == layouts
-    assert all(a is b for a, b in zip((m.view.layout for m in finished), layouts, strict=True))
-    assert [message.view._units.stats().misses for message in finished] == shipped
-    assert transcript.live.relayouts >= frames // 2
-    # The pane has followed the last message down, so the first one is off
-    # screen by now and draws nothing: culled, not laid out again.
-    assert len(stats) == 4 and stats[-1].glyphs > 100
-    assert sum(one.glyphs for one in stats) > 300
-    assert "last one finished" in transcript.status()
-
-
-def test_one_selection_across_the_transcript_and_the_copy_is_the_last_ones(
-    chat_module: ModuleType,
-) -> None:
-    """
-    Fidelity: real ImGui frames, no display.
-    """
-    imgui = pytest.importorskip("imgui_bundle").imgui
-    transcript = chat_module.Transcript(tokens_per_second=1e9)
-    _frame(chat_module, transcript, 1.0)
-    _frame(chat_module, transcript, 0.0)
-    first, last = transcript.messages[1].view, transcript.live
-    first.select_all()
-    _frame(chat_module, transcript, 0.0)
-    assert first.owns_selection and first.selected_text().startswith("Hang the marker")
-    # The numbered list keeps its numbers and its lines.
-    assert "\n1. Break the item" in first.selected_text()
-
-    last.select(Selection(0, 12))
-    _frame(chat_module, transcript, 0.0)
-    assert last.owns_selection and first.selection.is_empty
-    imgui.set_clipboard_text("SENTINEL")
-    io = imgui.get_io()
-    for down in (True, False):
-        io.add_key_event(imgui.Key.mod_ctrl, down)
-        io.add_key_event(imgui.Key.c, down)
-        _frame(chat_module, transcript, 0.0)
-    assert imgui.get_clipboard_text() == last.selected_text() != ""
-
-
-def test_the_transcript_follows_its_last_message_down(chat_module: ModuleType) -> None:
-    """
-    Fidelity: real ImGui frames, no display. One scrollbar, moved by the streaming view.
-    """
-    transcript = chat_module.Transcript(tokens_per_second=300.0)
-    frames = 0
-    while not transcript.done and frames < 300:
-        _frame(chat_module, transcript, 1.0 / 60.0)
-        frames += 1
-    for _ in range(3):
-        _frame(chat_module, transcript, 0.0)
-    assert transcript.live.following
-    assert transcript.live.origin is not None
-    # The last message began below where the pane began: the conversation is
-    # taller than the window and the pane has scrolled to keep its end in view.
-    first_origin = transcript.messages[0].view.origin
-    assert first_origin is not None and first_origin[1] < 0.0
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if name not in (*_VARIABLES, "DISPLAY", "WAYLAND_DISPLAY")
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            textwrap.dedent(f"""
+                import importlib.util, sys
+                spec = importlib.util.spec_from_file_location("example", {str(path)!r})
+                example = importlib.util.module_from_spec(spec)
+                sys.modules["example"] = example
+                spec.loader.exec_module(example)
+                code = example.main(["--frames", "5"])
+                runners = [n for n in ("imgui_bundle.hello_imgui", "imgui_bundle.immapp")
+                           if n in sys.modules]
+                print("code=%d no_library=%d runners=%r" % (code, example.NO_LIBRARY, runners),
+                      file=sys.stderr)
+                raise SystemExit(code)
+                """),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+        env={**env, "PYTHONPATH": str(_ROOT)},
+        timeout=120,
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stdout == ""
+    said, told = result.stderr.strip().splitlines()[-2:]
+    assert said == f"imtypeset is not drawing: {typesetter.LIBRARY_VARIABLE} is not set"
+    assert told == "code=1 no_library=1 runners=[]"
+    assert "Traceback" not in result.stderr
 
 
 # ----------------------------------------------------------------------
@@ -675,65 +489,585 @@ def _can_make_a_namespace() -> bool:
     return done.returncode == 0
 
 
-def _run_main(path: Path, display: int, *arguments: str) -> list[dict[str, str]]:
+def _run_main(
+    path: Path, display: int, *arguments: str, prelude: str = "", expect: int = 0
+) -> tuple[list[dict[str, str]], str]:
     """
-    An example's `main` in a GLFW window on an Xvfb, and the lines it printed as dicts.
+    An example's `main` with the library, in a GLFW window on an Xvfb.
+
+    The report lines it printed, as dicts, and its standard error. `prelude`
+    is run in the child before the example; `expect` is the exit status.
+    Skipped unless `IMTYPESET_LIBRARY` is set and an Xvfb can be started.
     """
+    if not os.environ.get(typesetter.LIBRARY_VARIABLE):
+        pytest.skip(_SKIP)
     if shutil.which("Xvfb") is None:
         pytest.skip("Xvfb is not installed, so there is no server to open the window on")
     if not _can_make_a_namespace():
         pytest.skip("`unshare -rm` cannot make a user namespace here, which the Xvfb recipe needs")
     probe = _load(_PROBE, f"advtext_mouse_probe_for_{path.stem}")
-    inner = textwrap.dedent(f"""
+    inner = (
+        textwrap.dedent(f"""
         import os, runpy, sys
         sys.path.insert(0, {str(_PROBE.parent)!r})
         from mouse_probe import wait_for_tcp_display
         if not wait_for_tcp_display(os.environ["DISPLAY"], timeout=30.0):
             raise SystemExit("the Xvfb never accepted a connection")
+        """)
+        + textwrap.dedent(prelude)
+        + textwrap.dedent(f"""
         sys.argv = [{str(path)!r}, *{list(arguments)!r}]
         runpy.run_path({str(path)!r}, run_name="__main__")
         """)
+    )
     command = probe.xvfb_command([sys.executable, "-c", inner], display=display)
     done = subprocess.run(
-        command, capture_output=True, text=True, timeout=180, check=False, cwd=_ROOT
+        command,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+        cwd=_ROOT,
+        env=dict(os.environ),
     )
-    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.returncode == expect, done.stdout + done.stderr
     lines = [
         line
         for line in done.stdout.splitlines()
-        if re.match(r"^(frames|layouts|glyphs|message)=", line)
+        if re.match(r"^(frames|message|edits|vertices)=", line)
     ]
-    assert lines, done.stdout + done.stderr
-    return [dict(part.split("=", 1) for part in line.split()) for line in lines]
+    return [dict(part.split("=", 1) for part in line.split()) for line in lines], done.stderr
 
 
-def test_the_replay_runs_to_the_end_in_a_real_window() -> None:
+def test_with_the_library_the_replay_runs_through_imtypeset_in_a_real_window() -> None:
     """
-    Fidelity: `main()` itself, in a GLFW window with an OpenGL context, on Xvfb.
+    Fidelity: `main()` itself with the library, in a GLFW window with an OpenGL
+    context, on Xvfb. The report is made in the child on its last frame and
+    says there that `typesetter.ready()` held and which view drew.
 
-    A rate high enough to feed the whole document well inside the frames
-    asked for, so the report is of a finished replay: every piece fed, the
-    stream closed, glyphs drawn with none missing, the pane at the end.
+    Three hundred pieces a second for 240 frames: the document arrives over
+    many frames, so appends are made and not only the first `set_blocks`.
 
     Software rendering and no window manager: a real window, not a desktop.
     Nobody looked at it.
     """
-    first, second, third = _run_main(
+    (first, second, third), _ = _run_main(
+        _REPLAY, XVFB_REPLAY, "--frames", "240", "--tps", "300", "--policy", "RESET"
+    )
+    assert first["renderer"] == "TypesetStreamView" and first["ready"] == "1"
+    assert first["frames"] == "240" and first["policy"] == "RESET"
+    assert int(first["fed"]) > 100
+    assert int(second["edits"]) > 20 and int(second["appends"]) > 10
+    assert int(second["replaces"]) >= 1 and second["following"] == "1"
+    assert int(third["vertices"]) > 100 and third["whole"] == "1"
+    assert int(third["blocks"]) >= int(third["committed"]) >= 1
+
+
+def test_with_the_library_the_transcript_runs_through_imtypeset_in_a_real_window() -> None:
+    """
+    Fidelity: `main()` itself with the library, on Xvfb. Four messages, the last one fed.
+    """
+    (*messages, total), _ = _run_main(_CHAT, XVFB_CHAT, "--frames", "60", "--tps", "100000")
+    assert [message["role"] for message in messages] == ["you", "assistant", "you", "assistant"]
+    assert all(message["whole"] == "1" for message in messages)
+    assert sum(int(message["vertices"]) for message in messages) > 1000
+    assert all(int(message["blocks"]) >= 1 for message in messages)
+    assert total["messages"] == "4" and total["done"] == "1" and total["frames"] == "60"
+    assert total["renderer"] == "TypesetView" and total["ready"] == "1"
+
+
+def test_with_the_library_the_replay_runs_to_the_end_in_a_real_window() -> None:
+    """
+    Fidelity: `main()` itself with the library, on Xvfb. A rate high enough to
+    feed the whole document well inside the frames asked for, so the report is
+    of a finished replay: every piece fed, the stream closed and every block
+    committed, vertices drawn with everything set as asked, the pane at the
+    end.
+    """
+    (first, second, third), _ = _run_main(
         _REPLAY, XVFB_REPLAY, "--frames", "90", "--tps", "100000", "--policy", "RESET"
     )
     assert first["frames"] == "90" and first["done"] == "1" and first["policy"] == "RESET"
+    assert first["renderer"] == "TypesetStreamView" and first["ready"] == "1"
     assert first["fed"] == first["pieces"] and int(first["pieces"]) > 500
-    assert int(second["layouts"]) >= 1 and second["following"] == "1"
-    assert int(third["glyphs"]) > 100 and third["missing"] == "0"
-    assert third["blocks"] == third["committed"]
+    assert int(second["edits"]) >= 1 and second["following"] == "1"
+    assert int(third["vertices"]) > 100 and third["whole"] == "1"
+    assert third["blocks"] == third["committed"] and int(third["blocks"]) > 10
 
 
-def test_the_transcript_runs_in_a_real_window() -> None:
+_FAILING_DRAW = """
+from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+state = {"draws": 0}
+real_draw = TypesetView.draw
+def failing(self, **kwargs):
+    state["draws"] += 1
+    if state["draws"] > 6:
+        raise TypesetUnavailable("raised by the test")
+    return real_draw(self, **kwargs)
+TypesetView.draw = failing
+"""
+
+
+@pytest.mark.parametrize(
+    ("path", "display"),
+    # In this order: the test before these ran on the replay's display, and a
+    # display's port is not always free the moment its server has gone.
+    [(_CHAT, XVFB_CHAT), (_REPLAY, XVFB_REPLAY)],
+    ids=["chat_transcript", "stream_replay"],
+)
+def test_when_a_draw_raises_in_the_window_main_says_why_and_returns_no_library(
+    path: Path, display: int
+) -> None:
     """
-    Fidelity: `main()` itself, in a GLFW window on Xvfb. Four messages drawn, the last one fed.
+    Fidelity: `main()` itself with the library, on Xvfb, with `TypesetView.draw`
+    made to raise `TypesetUnavailable` from its seventh call on. The window
+    closes by itself well before the 600 frames asked for (the run would
+    otherwise time out), `main` returns `NO_LIBRARY` (1), prints the reason on
+    standard error and no report: a report would say a renderer drew.
     """
-    *messages, total = _run_main(_CHAT, XVFB_CHAT, "--frames", "60", "--tps", "100000")
-    assert [message["role"] for message in messages] == ["you", "assistant", "you", "assistant"]
-    assert all(int(message["glyphs"]) > 20 for message in messages)
-    assert all(message["missing"] == "0" for message in messages)
-    assert total["messages"] == "4" and total["done"] == "1" and total["frames"] == "60"
+    lines, stderr = _run_main(path, display, "--frames", "600", prelude=_FAILING_DRAW, expect=1)
+    assert lines == []
+    assert "imtypeset is not drawing: raised by the test" in stderr
+    assert "Traceback" not in stderr
+
+
+# ----------------------------------------------------------------------
+# through imtypeset: real frames, no window, in a child that has the library
+
+_HEADLESS = r"""
+import importlib.util, json, sys
+from imgui_bundle import imgui
+from advtext import typesetter
+
+ROOT, PROSE = sys.argv[1], sys.argv[2]
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, ROOT + "/examples/" + name + ".py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+ts = typesetter.module()
+report = {"module": ts is not None, "reason": typesetter.reason()}
+if ts is None:
+    print("REPORT " + json.dumps(report))
+    raise SystemExit(0)
+imgui.create_context()
+io = imgui.get_io()
+io.display_size = imgui.ImVec2(900.0, 500.0)
+io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+report["load_fonts"] = typesetter.load_fonts()
+report["ready"] = typesetter.ready()
+replay, chat = load("stream_replay"), load("chat_transcript")
+
+def frame(module, made, seconds=1.0 / 60.0, wheel=None, width=900.0, keys=()):
+    io.delta_time = 1.0 / 60.0
+    io.add_mouse_pos_event(450.0, 300.0)
+    if wheel is not None:
+        io.add_mouse_wheel_event(0.0, wheel)
+    for key, down in keys:
+        io.add_key_event(key, down)
+    imgui.new_frame()
+    try:
+        imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
+        imgui.set_next_window_size(imgui.ImVec2(width, 500.0))
+        flags = imgui.WindowFlags_.no_decoration.value | imgui.WindowFlags_.no_move.value
+        imgui.begin("##advtext-" + module.__name__, None, flags)
+        try:
+            result = module.show(made, imgui, seconds)
+        finally:
+            imgui.end()
+    finally:
+        imgui.render()
+    return result
+
+def told(playing, frames):
+    view = playing.view
+    return {
+        "done": playing.done, "fed": playing.fed, "pieces": len(playing.pieces),
+        "frames": frames, "moved": playing.moved, "moves": [list(m) for m in playing.moves],
+        "stream": type(playing.stream).__name__, "view": type(view).__name__,
+        "edits": playing.edits, "following": view is not None and view.following,
+        "status": playing.status(), "report": replay.report(playing, frames),
+        "blocks": len(playing.stream.blocks), "committed": len(playing.stream.committed),
+        "whole": playing.whole,
+    }
+
+# 1. The replay of `demo/stream.md`, under each policy, to its end; then the wheel.
+unmade = []
+for policy in replay.POLICIES:
+    playing = replay.replay(tokens_per_second=600.0, policy=policy)
+    unmade.append(playing.view is None)
+    frames, last = 0, None
+    while not playing.done and frames < 400:
+        last = frame(replay, playing)
+        frames += 1
+    for _ in range(3):
+        last = frame(replay, playing)
+    report[policy] = dict(told(playing, frames), last=last)
+report["unmade"] = unmade
+# The finished replay reads as the document does: streaming is a way of arriving.
+from advtext.ui.typeset_view import TypesetView
+source = replay.SOURCE.read_text(encoding="utf-8")
+whole = TypesetView(source, theme=playing.theme, references=False)
+playing.view.select_all()
+frame(replay, playing)
+streamed_copy = playing.view.selected_text()
+report["reads_whole"] = {
+    "texts": list(playing.view.texts) == list(whole.texts), "count": len(whole.texts),
+    "blocks": tuple(playing.view.blocks) == tuple(whole.blocks),
+    "copied": len(streamed_copy),
+    "source_words": [word in streamed_copy for word in ("renderer", "table")],
+}
+whole.close()
+playing.view.clear_selection()
+frame(replay, playing, wheel=4.0)
+frame(replay, playing)
+report["wheel"] = [playing.view.following, playing.status()]
+
+# Plain prose under each policy, a piece a frame and ten a frame: where RESET moves lines.
+prose = {}
+for rate in (60.0, 600.0):
+    for policy in replay.POLICIES:
+        playing = replay.replay(PROSE, tokens_per_second=rate, policy=policy)
+        commits, settled, frames = [], 0, 0
+        while not playing.done and frames < 2000:
+            frame(replay, playing)
+            frames += 1
+            if len(playing.stream.committed) > settled:
+                settled = len(playing.stream.committed)
+                commits.append(playing.fed)
+        frame(replay, playing)
+        prose[policy + "@" + str(int(rate))] = {
+            "moves": [list(m) for m in playing.moves], "commits": commits,
+            "moved": playing.moved, "frames": frames, "edits": playing.edits,
+            "lines": len(replay.lines_of(playing.view)),
+        }
+        playing.view.close()
+report["prose"] = prose
+
+# A change of width is not the stream moving anything; a tick without a window counts nothing.
+playing = replay.replay(tokens_per_second=600.0)
+for _ in range(30):
+    frame(replay, playing)
+moved = playing.moved
+lines_before = replay.lines_of(playing.view)
+playing.tokens_per_second = 0.0
+frame(replay, playing, width=700.0)
+report["resized"] = [moved, playing.moved, replay.lines_of(playing.view) != lines_before]
+playing.tokens_per_second = 600.0
+before = playing.fed
+ticked = playing.tick(1.0 / 60.0)
+report["tick"] = [playing.fed - before, ticked]
+old_view = playing.view
+playing.restart("RESET")
+report["restarted"] = [playing.view is None, playing.fed, playing.moved, playing.policy,
+                       playing.edits, old_view.native_document is None]
+frame(replay, playing)
+report["shown_again"] = [type(playing.view).__name__, playing.view is not old_view, playing.fed]
+
+# 2. The transcript: four messages, the last one written while it is drawn.
+transcript = chat.Transcript(tokens_per_second=600.0)
+before_open = [m.view is None for m in transcript.messages]
+frame(chat, transcript, seconds=0.0)
+shapes = [type(m.view).__name__ for m in transcript.messages]
+revisions = [m.view.revision for m in transcript.messages[:-1]]
+frames = 0
+while not transcript.done and frames < 300:
+    frame(chat, transcript)
+    frames += 1
+drawn = frame(chat, transcript)
+for _ in range(3):
+    frame(chat, transcript, seconds=0.0)
+report["transcript"] = {
+    "before_open": before_open, "shapes": shapes, "frames": frames, "drawn": list(drawn),
+    "stream": type(transcript.stream).__name__,
+    "finished_edits": [dict(m.view.edits) for m in transcript.messages[:-1]],
+    "untouched": [m.view.revision for m in transcript.messages[:-1]] == revisions,
+    "live_edits": dict(transcript.live.edits), "following": transcript.live.following,
+    "vertices": [m.vertices for m in transcript.messages],
+    "status": transcript.status(), "report": chat.report(transcript, frames),
+    "aligns": sorted({b.style.align.name for m in transcript.messages for b in m.view.blocks
+                      if hasattr(b, "runs")}),
+    "links": sum(len(m.view.links) for m in transcript.messages),
+    "first_origin": transcript.messages[0].view.origin,
+    "live_origin": transcript.live.origin,
+}
+first, last = transcript.messages[1].view, transcript.live
+first.select_all()
+frame(chat, transcript)
+copied = first.selected_text()
+one = [first.owns_selection, copied[:15], "\n\nBreak the item to the measure" in copied,
+       "1. Break" in copied]
+last.select(((0, 0), (0, 12)))
+frame(chat, transcript)
+two = [last.owns_selection, first.selection, last.selected_text()]
+imgui.set_clipboard_text("SENTINEL")
+for down in (True, False):
+    frame(chat, transcript, keys=((imgui.Key.mod_ctrl, down), (imgui.Key.c, down)))
+report["selection"] = [one, two, imgui.get_clipboard_text()]
+# One setting for reference definitions, in both kinds of message.
+text = "See [the notes][1] for more.\n\n[1]: https://example.org/notes\n"
+both = chat.Transcript(finished=(("you", text),), streaming=("model", text), tokens_per_second=1e9)
+frame(chat, both)
+frame(chat, both)
+finished, streamed = both.messages[0].view, both.live
+default = TypesetView(text, theme=both.theme)
+report["references"] = {
+    "done": both.done, "blocks": [len(finished.blocks), len(streamed.blocks)],
+    "links": [len(finished.links), len(streamed.links)],
+    "same": list(finished.texts) == list(streamed.texts),
+    "default": [len(default.blocks), len(default.links)],
+}
+default.close()
+
+# After the body that needs the library, and before the two sections that take it away.
+report["after"] = {"module": typesetter.module() is not None, "ready": typesetter.ready(),
+                   "reason": typesetter.reason()}
+
+# 3. A draw that raises with the library still ready: `show` lets it out, with ImGui's
+# stack as it found it (the frame after is drawn).
+from advtext.ui.typeset_view import TypesetUnavailable
+real_draw = TypesetView.draw
+def failing(self, **kwargs):
+    raise TypesetUnavailable("raised by the test")
+playing = replay.replay(tokens_per_second=600.0)
+transcript = chat.Transcript(tokens_per_second=600.0)
+for _ in range(10):
+    frame(replay, playing)
+    frame(chat, transcript)
+TypesetView.draw = failing
+raised = []
+for module, made in ((replay, playing), (chat, transcript)):
+    try:
+        frame(module, made)
+        raised.append(None)
+    except TypesetUnavailable as exc:
+        raised.append(str(exc))
+TypesetView.draw = real_draw
+again = [frame(replay, playing), list(frame(chat, transcript))]
+report["middraw"] = {"ready": typesetter.ready(), "raised": raised, "again": again,
+                     "fed": [playing.fed, transcript.fed]}
+
+# 4. Last, because it is for the rest of the process: the library switched off.
+playing = replay.replay(tokens_per_second=600.0)
+for _ in range(10):
+    frame(replay, playing)
+transcript = chat.Transcript(tokens_per_second=600.0)
+for _ in range(5):
+    frame(chat, transcript)
+typesetter.disable("switched off by the test")
+raised = []
+for module, made in ((replay, playing), (chat, transcript)):
+    try:
+        frame(module, made)
+        raised.append(None)
+    except TypesetUnavailable as exc:
+        raised.append(str(exc))
+fresh = []
+for module, made in ((replay, replay.replay(PROSE)), (chat, chat.Transcript())):
+    try:
+        frame(module, made)
+        fresh.append(None)
+    except TypesetUnavailable as exc:
+        fresh.append(str(exc))
+report["off"] = {"ready": typesetter.ready(), "raised": raised, "fresh": fresh}
+print("REPORT " + json.dumps(report))
+"""
+
+
+@pytest.fixture(scope="module")
+def typeset() -> dict[str, Any]:
+    """
+    `_HEADLESS` run once in a child that has the library; skipped without the variable.
+
+    The child says whether the library was in use and ready before its body
+    and again after the part of it that draws.
+    """
+    if not os.environ.get(typesetter.LIBRARY_VARIABLE):
+        pytest.skip(_SKIP)
+    done = subprocess.run(
+        [sys.executable, "-B", "-c", _HEADLESS, str(_ROOT), PROSE],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(_ROOT)},
+        cwd=str(_ROOT),
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    lines = [line for line in done.stdout.splitlines() if line.startswith("REPORT ")]
+    assert len(lines) == 1, done.stdout + done.stderr
+    report: dict[str, Any] = json.loads(lines[0][len("REPORT ") :])
+    assert report["module"], f"imtypeset is not in use in the child: {report['reason']}"
+    assert report["load_fonts"] and report["ready"], report
+    after = report["after"]
+    assert after["module"] and after["ready"], f"the library was lost under the body: {after}"
+    print("observed (not asserted): lines KEEP_STREAMED moved:", json.dumps(report["prose"]))
+    return report
+
+
+def test_the_replay_feeds_draws_and_counts_frame_by_frame(typeset: dict[str, Any]) -> None:
+    """
+    Fidelity: real ImGui frames, no display, the library loaded. `show` end to
+    end under each policy, on `demo/stream.md`.
+
+    Counts: no view before the first frame; every piece fed, at most one edit
+    a frame, appends made, the pane at the end. `RESET` hands more blocks over
+    again than `KEEP_STREAMED` (a block is read in the theme when it commits)
+    and moves lines. How many lines `KEEP_STREAMED` moves on this document is
+    the library's line breaking and markup that closes late; it is reported
+    and not asserted.
+    """
+    assert typeset["unmade"] == [True, True]
+    keep, reset = typeset["KEEP_STREAMED"], typeset["RESET"]
+    for told in (keep, reset):
+        assert told["done"] is True and told["whole"] is True
+        assert (told["stream"], told["view"]) == ("MarkdownStream", "TypesetStreamView")
+        assert told["fed"] == told["pieces"] > 500 and 30 < told["frames"] < 200
+        edits = told["edits"]
+        assert edits["set"] == 1 and edits["append"] > 10
+        assert sum(edits.values()) <= told["frames"] + 3
+        assert told["last"] is True and told["following"] is True
+        assert told["blocks"] == told["committed"] > 10
+        assert f"settled lines moved: {told['moved']}" in told["status"]
+        assert f"of {sum(edits.values())} edits)" in told["status"]
+        assert told["report"][0].endswith("renderer=TypesetStreamView ready=1")
+        assert told["report"][1].startswith("edits=") and told["report"][2].startswith("vertices=")
+    assert "policy=KEEP_STREAMED" in keep["report"][0] and "policy=RESET" in reset["report"][0]
+    assert reset["edits"]["replace"] > keep["edits"]["replace"]
+    assert reset["moved"] > keep["moved"] >= 0
+    following, status = typeset["wheel"]
+    assert following is False and "scrolled away from the end" in status
+
+
+def test_a_finished_replay_reads_as_the_document_does(typeset: dict[str, Any]) -> None:
+    """
+    Streaming is a way of arriving, not a different document: the finished
+    `RESET` replay of `demo/stream.md` holds the blocks, and the texts the
+    library was given, that a `TypesetView` of the whole file holds (read, as
+    a stream is, with reference definitions off).
+    """
+    whole = typeset["reads_whole"]
+    assert whole["blocks"] is True and whole["texts"] is True and whole["count"] > 20
+    assert whole["copied"] > 1500 and all(whole["source_words"])
+
+
+@pytest.mark.parametrize("rate", [60, 600])
+def test_resetting_on_commit_moves_lines_and_only_when_a_block_commits(
+    typeset: dict[str, Any], rate: int
+) -> None:
+    """
+    Three plain paragraphs under `RESET`, a piece a frame and ten a frame:
+    lines moved on exactly the draws that found another block committed --
+    three of them -- and on no other. The lane beside it, the same pieces
+    under `KEEP_STREAMED`, went through the same counter with as many edits.
+    """
+    reset, keep = typeset["prose"][f"RESET@{rate}"], typeset["prose"][f"KEEP_STREAMED@{rate}"]
+    assert len(reset["commits"]) == 3 and reset["lines"] >= 4
+    assert [fed for fed, _ in reset["moves"]] == reset["commits"]
+    assert all(count >= 1 for _, count in reset["moves"])
+    assert reset["moved"] == sum(count for _, count in reset["moves"])
+    assert reset["edits"]["replace"] >= keep["edits"]["replace"] + 3
+    assert keep["frames"] == reset["frames"] and keep["lines"] == reset["lines"]
+
+
+def test_a_width_is_not_a_move_a_tick_counts_no_lines_and_a_restart_lets_go(
+    typeset: dict[str, Any],
+) -> None:
+    before, after, relaid = typeset["resized"]
+    assert relaid is True, "the resize moved nothing; the test is vacuous"
+    assert after == before, "a change of width was counted as lines moving"
+    assert typeset["tick"] == [10, 0]
+    # A restart closes the view's document and drops the view; the next frame makes another.
+    assert typeset["restarted"] == [
+        True,
+        0,
+        0,
+        "RESET",
+        {"set": 0, "replace": 0, "append": 0},
+        True,
+    ]
+    assert typeset["shown_again"] == ["TypesetStreamView", True, 10]
+
+
+def test_the_transcript_is_four_messages_and_only_the_last_is_edited(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    No view before the first frame. The finished messages are each handed to
+    the library once and never again while the last one streams; the last one
+    is appended to; everything is ragged; the pane followed the last message
+    down (the first message's top is above the pane's). One selection is
+    current across the transcript, and Ctrl+C copies the one last selected in.
+    """
+    told = typeset["transcript"]
+    assert told["before_open"] == [True] * 4 and told["stream"] == "MarkdownStream"
+    assert told["shapes"] == ["TypesetView"] * 3 + ["TypesetStreamView"]
+    assert told["frames"] > 5 and told["drawn"] == [True] * 4
+    assert told["finished_edits"] == [{"set": 1, "replace": 0, "append": 0}] * 3
+    assert told["untouched"] is True
+    assert told["live_edits"]["set"] == 1 and told["live_edits"]["append"] > 5
+    assert told["following"] is True and sum(told["vertices"]) > 300
+    assert told["first_origin"][1] < 0.0 < told["live_origin"][1]
+    assert "last one finished" in told["status"]
+    assert told["report"][-1].endswith("renderer=TypesetView ready=1")
+    assert all(line.startswith("message=") and " vertices=" in line for line in told["report"][:4])
+    assert "JUSTIFY" not in told["aligns"] and told["links"] == 0
+    one, two, clipboard = typeset["selection"]
+    # The numbered list keeps its items as blocks of their own. (Whether a copy
+    # carries an item's number is the view's: `one[3]`, printed and not asserted.)
+    assert one[:3] == [True, "Hang the marker", True]
+    print("observed (not asserted): a copied list item carries its marker:", one[3])
+    assert two[0] is True and two[1] is None and len(two[2]) == 12
+    assert clipboard == two[2] != "SENTINEL"
+
+
+def test_a_message_reads_the_same_finished_as_it_did_while_it_streamed(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    One setting for link reference definitions, in both kinds of message (review 4, item 7).
+
+    A stream cannot read `[1]: url` definitions -- one may arrive last and
+    change every `[1]` before it -- so a streamed message sets them as text.
+    A finished message is read the same way: two blocks, no link, the same
+    texts as the streamed one. The control is the view's default, which does
+    make the link.
+    """
+    told = typeset["references"]
+    assert told["done"] is True and told["blocks"] == [2, 2] and told["links"] == [0, 0]
+    assert told["same"] is True
+    assert told["default"] == [1, 1]
+
+
+def test_when_a_draw_raises_show_lets_it_out_and_leaves_the_frame_whole(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    `TypesetView.draw` made to raise `TypesetUnavailable` for one frame, with
+    the library ready throughout: `show` of each example raises it to its
+    caller (`main` then closes the window and says why), having ended its
+    child window -- the child's ImGui accepted that frame and drew the next,
+    in which both examples are set whole again.
+    """
+    told = typeset["middraw"]
+    assert told["ready"] is True
+    assert told["raised"] == ["raised by the test", "raised by the test"]
+    assert told["again"] == [True, [True] * 4]
+    assert told["fed"] == [120, 120]
+
+
+def test_when_the_library_is_switched_off_show_raises_and_says_why(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    `typesetter.disable` between two frames: the next `show` of an example
+    that was drawing raises `TypesetUnavailable` naming the reason, and so
+    does the first `show` of one made afterwards. Neither draws by another
+    route.
+    """
+    off = typeset["off"]
+    assert off["ready"] is False
+    for said in (*off["raised"], *off["fresh"]):
+        assert said is not None and "switched off by the test" in said

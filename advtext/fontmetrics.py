@@ -51,32 +51,13 @@ Deliberately out of scope here:
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass
 from typing import Protocol
 
-
-class Face(enum.Enum):
-    """
-    The typographic roles this project renders, named by role rather than by family.
-
-    `CODE_BOLD` is the one role with no file behind it in the fonts imgui-bundle
-    ships: the bundle has a single Inconsolata weight. It exists so that a host
-    with a bold monospace of its own has a role to register it under
-    (`advtext.fontlib.register_font`); until one is registered `advtext.fontlib`
-    backs it with `PROSE_BOLD`'s file, which is what bold inside code was set in
-    before this member existed. So iterating `Face` now visits a role that may
-    share a file with another -- a caller that wants one entry per *file* asks
-    `advtext.fontlib.backing_face`.
-    """
-
-    PROSE = "prose"
-    PROSE_BOLD = "prose-bold"
-    PROSE_ITALIC = "prose-italic"
-    PROSE_BOLD_ITALIC = "prose-bold-italic"
-    CODE = "code"
-    CODE_BOLD = "code-bold"
-    MATH = "math"
+# `Face` is `advtext.primitives`' since 2026-10-11 and is imported back: the
+# same enum under either path. It moved so that a theme can name a face
+# without loading this module's protocols, which are the reference core's.
+from advtext.primitives import Face as Face
 
 
 @dataclass(frozen=True, slots=True)

@@ -6,6 +6,599 @@ before `README.md` if you are deciding whether to trust anything here.
 It is written to be useful rather than flattering. Section 4 is the longest on
 purpose.
 
+## 0d. Revision of 2026-10-11: the swap. advtext draws through imtypeset and through nothing else
+
+The newest revision, put first. Section 0c below was the newest when it was
+written and says so; it is one day older and is not changed, and neither are
+sections 0, 0b and 1 to 6. **Those sections describe `main`.** Wherever they
+say `BareView`, `StreamView`, `DocumentView`, `DiffView`, the ImGui draw
+backend, `advtext.columns`, `advtext.mathtext`, the Blocks page or one of the
+bench and verify scripts, they describe something that is deleted on this
+branch. It is all still in `main` (30496e1) and in the local tag
+`advtext-reference`.
+
+**This is the branch `experimental/imtypeset-adoption`, and nothing on it is
+committed.** The work is staged in the git index as a checkpoint and the last
+task's changes sit unstaged on top of it; `HEAD` is still 30496e1.
+
+**No person has looked at any page of this demo in a window since the swap
+began. Not one.** Every page, every example and every photograph was produced
+and counted by agents; reviews were by reading (the reviewers had no shell
+and ran nothing). The tests say that vertices reach a draw list, that texts
+are equal, that a count is what it was. None says anything looks right.
+
+### What the user asked
+
+The user's words are quoted in full in `docs/decisions.md`, "The swap
+(2026-10-10 and 11)". The one that set the direction: "The intent is see
+adv-text with a full swap out using as much as it can from imtypeset." And,
+when tables and columns came up: "Isn't tables and columns straight from TeX?
+Shouldn't that be part of imtypeset?" Everything else in this section is an
+agent's reading of those sentences or an agent's decision, and
+`docs/decisions.md` marks each as one.
+
+### What is true of the tree now
+
+**advtext needs the imtypeset library to draw.** There is no second renderer.
+With the library loaded, every page of the demo and all four examples set and
+draw their text through `TypesetView`, `TypesetStreamView` or
+`TypesetDiffView`, or (Specimen, Formula, Math) show a section of imtypeset's
+own demo. Without it each page draws ONE wrapped line, "imtypeset is not
+drawing: " and the reason, and each example says why on standard error and
+exits 1. `make check` is green without the library and proves less: the
+tests that need it skip.
+
+**To build the library, pinned to a commit, and use it:**
+
+    make typeset-lib IMTYPESET_COMMIT=7a7bc36   # once; needs ../imtypeset and ../imgui_bundle
+    make check TYPESET=1                        # the gate that means something
+    make run TYPESET=1                          # the demo with its text
+    make shot-all TYPESET=1                     # 25 PNGs of 14 pages
+
+`7a7bc36` is the commit in use: `build/imtypeset-bundle/BUILT-FROM` says so
+(built 2026-10-11T10:28:22Z by that command, 0 uncommitted paths), and the
+library and the Python package beside it (`pysnap/`) come from that one
+commit; `make ... TYPESET=1` refuses a pair that does not match. The other
+team names the commit to build from in
+`../imtypeset/docs/advtext-swap-status.md`, "Build from". **That file now
+names a later one, `c9f8902`** (it lists `7a7bc36` as the one before, and
+one memory error fixed since). Everything measured in this section was
+measured against `7a7bc36`. **After the last task finished, the lead rebuilt
+the pair from `c9f8902`** (`make typeset-lib IMTYPESET_COMMIT=c9f8902`;
+`BUILT-FROM` now says that commit) **and ran both gates once on the quiet
+tree**: `make check` 2875 passed, 262 skipped, 4 xfailed (load 1.4);
+`make check TYPESET=1` 3129 passed, 8 skipped, 4 xfailed (load 4.1). The same
+counts as at `7a7bc36`; no figure above was re-measured on it.
+
+Since this revision a library that was ASKED FOR and is not drawing is no
+longer silent: `scripts/shot.py` exits 3 and writes no PNG, and
+`scripts/run_demo.py` says why when the window closes. Without the variable
+both behave as before (a deliberate one-line window, said on stderr).
+
+### What was deleted
+
+Counted against `HEAD` by this section's writer (`git diff HEAD
+--diff-filter=D --numstat`): **46 files, 48,788 lines.** By the builder who
+deleted most of them (T5-B1, its own tally against the index): 44 files and
+47,144 lines, plus 545 lines of `advtext/typesetter.py`. The other two files
+went a task earlier (the Blocks page and one test file).
+
+| what | files | lines (T5-B1's tally) |
+|---|---|---|
+| the old views | `advtext/ui/bare_view.py` (2433), `stream_view.py` (599), `document_view.py` (600), `diff_view.py` (2659), `ui/units.py` (2489) | 8,780 |
+| the old ImGui draw backend | `advtext/backends/imgui_draw.py` | 1,004 |
+| old-core modules nothing else imports | `advtext/columns.py` (542), `blocklayout.py` (469), `spans.py` (1386), `stream.py` (1673), `mathtext.py` (1587) | 5,657 |
+| the galleries, which are imtypeset's now | `advtext/ui/specimen.py` (891), `ui/formulas.py` (1230) | 2,121 |
+| the Blocks page | `advtext/ui/pages/blocks.py` | 416 (this writer's count) |
+| the old backend's instruments | `scripts/bench_draw.py`, `bench_reflow.py`, `verify_advances.py`, `verify_ascent.py`, `font_grid.py`, `pen_rules.py`, `render_grid_compare.py`, `_page_compare.py` | 4,009 |
+| examples of the old pipeline | `examples/minimal.py`, `examples/theme_gallery.py` | 858 |
+| tests whose subject is gone | 21 files (T5-B1), 2,626 tests | 24,715 |
+
+Also gone inside files that stay: `typesetter.Converter` (the walk from node
+material to a description) and the views' blocks-in path. The tests fell from
+5,753 to 3,105 (T5-B1), and stand at 3,141 after the two tasks since.
+
+**What the deleted tests compared against was frozen first.** Before the
+first deletion T5-B1 wrote the old core's answers to
+`tests/data/material_descriptions.json` (2,091 cases), `stream_corpora.json`
+and `material_tables.json`, and read all 2,092 back equal against the live
+old core. The typeset tests that said "new equals old" now say "new equals
+frozen", and a case that was not frozen raises; it does not pass.
+
+### What remains of the old core, and exactly why
+
+Two things, each with a named reason and each waiting on somebody.
+
+**1. The SVG litmus chain, and the 22 modules it imports. Waiting on the
+user.** `make svg`, `scripts/render_litmus.py`, `advtext/backends/svg.py`,
+`tests/test_litmus.py` and `tests/test_svg.py` were not touched. The user has
+been asked whether the SVG renderer leaves advtext and has not answered, so
+an agent (the lead) decided to keep it and everything it needs. The closure
+was measured before anything was deleted (T5-B1, by `ast` and by running the
+chain) and is held by a test (`tests/test_typeset_closure.py`):
+
+    advtext  advtext.backends  advtext.backends.svg  advtext.badness
+    advtext.fontlib  advtext.fontmetrics  advtext.linebreak  advtext.markdown
+    advtext.markdown_rules  advtext.math  advtext.math.atoms  advtext.math.mlist
+    advtext.nodes  advtext.pack  advtext.primitives  advtext.selection
+    advtext.shipout  advtext.style  advtext.theme  advtext.ui
+    advtext.ui.composition  advtext.units
+
+Five of those are shared with the typeset layer and are not old core
+(`advtext`, `advtext.ui`, `advtext.markdown_rules`, `advtext.theme`,
+`advtext.primitives`); the other 17 are the "reference core". Their own unit
+tests stay with them. The chain's five artifacts are byte for byte what they
+were before the theme was changed under it (T5-B2, sha256 of each).
+
+**2. The font reader, for metrics and for font files. Waiting on the other
+team.** imtypeset cannot yet answer a face's ascent, x-height or advance, and
+advtext still knows where the font files are. So four calls reach
+`advtext.fontlib` when they are CALLED (never at import):
+`typesetter.load_fonts()` (the files it hands the library),
+`Theme.at_pixel_height()` and `pages.face_metrics()` (an em size from a
+pixel height), and `typeset_diff_view.code_size(theme, pixel_height=...)`.
+The request is item 5 of `.concerns/lead--for-imtypeset-team.md`.
+`advtext/ui/fonts.py` also stays, outside both lists: the app loads ONE UI
+font through it when the library is not drawing, so that the one line can
+be read.
+
+**Apart from those calls the typeset layer imports none of the reference
+core**: at import and after `Theme.build()`, for `advtext`, the eight
+typeset modules, the eight `advtext.ui` modules, the pages package and its
+15 modules and the four examples, in both import forms, the set is empty
+(T5-B2, 37 rows, each a fresh interpreter; the test holds it). To get there
+`advtext/primitives.py` became the core-free home of the unit conversions
+and the `Face` enum, and `BlockStyle` carries its leading as a number.
+
+### The facade, before and after
+
+`advtext.__all__` was 94 names and is **89** (T5-B2; `tests/test_facade.py`
+holds the list). The rule: a name is there if and only if the module that
+defines it is in the tree; a deleted thing is removed, not aliased.
+
+- **Gone by name, 21:** `StreamDocument`, `CommitPolicy`, `live_theme`;
+  `markdown_math`, `typeset`, `Typeset`, `Refusal`, `RefusalKind`,
+  `supported_commands`; `draw`; `BareView`; `StreamView`; `LayoutStats`;
+  `DiffView`, `DiffFences`; `ColourSpan`, `code_position`, `colour_text`,
+  `find_spans`, `material_text`, `TextMatch`. `hasattr(advtext, "BareView")`
+  is False.
+- **The same name, now another object, 8:** `HostFor`, `SetLine`, `Hosted`,
+  `DiffLayout`, `SyntaxColour`, `language_for`, `HostedDiff`, `FindIndex`
+  are the typeset layer's. Their signatures differ from the old ones. A host
+  that imported one expecting the old class gets no error at import.
+- **New, 16:** `TypesetView`, `TypesetUnavailable`, `TypesetStreamView`,
+  `TypesetDiffView`, `TypesetDiffFences`, `MarkdownStream`, `parse_markdown`,
+  `MarkdownDocument`, `MarkdownConverter`, `Description`, `BlockDescription`,
+  `Finder`, `Match`, `load_fonts`, `ready`, `reason`.
+- **Kept, in three groups the file keeps apart:** the typeset layer (52),
+  font files (8), and "the reference core, kept for the litmus renderer"
+  (29), which are there because their modules are and for no other reason.
+
+### What was measured, by whom, at what load
+
+All on one 16-core machine. Every window was an Xvfb with a software
+rasteriser. **Read the ratios; no test asserts a time.** The comparisons
+against the old views were made while both existed and cannot be made again
+on this branch: the old side is deleted.
+
+- **The gate, on the tree as it stands, nothing else running** (T5-FINAL's
+  builder, an agent, 2026-10-11). `make check`: **2875 passed, 262 skipped, 4 xfailed**, load
+  0.43 at the start and 1.97 at the end. `make check TYPESET=1`, straight after:
+  **3129 passed, 8 skipped, 4 xfailed**, load 1.97 and 4.47. Ruff and black clean, mypy
+  clean over 51 files, both times. The windowed with-library files alone a
+  second time, 23 files, twice: 908 passed and 7 skipped both times (load 4.5 to
+  6.0, then 4.4 to 6.7). 3,141 tests each way; no failure and no error in any
+  run. These counts were written into this paragraph
+  after the runs; `tests/test_docs.py` was run again afterwards and passed.
+- **A frame while text arrives, the pages' own Python and the library's
+  calls** (T4-PAGES-B's builder, one round, load 11.4 to 13.6): Stream, both
+  panes, 23.2 ms through the old views and 2.22 ms through imtypeset, ratio
+  0.096; Chat's three replies 0.12 to 0.15; Stress streaming at 1, 4 and 16
+  panes 0.058 to 0.13; Stress finished 0.022 to 0.045. An earlier pair at
+  load 7 to 8 gave 0.085 for Stream: "the ratios hold, the milliseconds do
+  not" (the builder's words). The frame counts of the two columns differ.
+- **The diff view** (T4-DIFF's builder, three runs, load 11.2 to 13.0), old
+  over new: a steady frame 8.9 to 21.6, scrolling 8.9 to 14.8; a FIRST frame
+  1.1 to 4.8, and 1.4 to 1.9 for a whole 4,062-row file. One sample a run
+  for the first frame.
+- **Markdown source to a constructed view**, `sample.md` ten times over
+  (T3-B's builder, median of 5): 33 ms against 181 ms at load 8, 85 against
+  461 at load 12; ratio 5.4 to 5.5.
+- **Columns, the library's cut against the old `advtext.columns`**
+  (T5-COLUMNS's builder, load 2.0 to 3.2): the same number of columns in all
+  eight cases tried; every column starting at the same letter in one case
+  (the page's own geometry) and from 1 to 7 of them in the others. In six of
+  the seven that differ the library's first different column starts at a
+  block's start, which the other team's document says it may. **One is not
+  explained.**
+- **Tables, the library's widths against the old core's** (T4-TABLES's
+  builder, `demo/tables.md`, 684 px, five tables): columns, natural widths,
+  floors and row heights within 0.001 px; every table with a header 20.64 px
+  taller. A 200-row table streamed seven characters at a time: 146,304 cell
+  measurements against 603 when rows arrive whole (one run, load 12).
+- **What the tour's contrast test judges** (T5-FINAL's builder, with the
+  library, load 1.1 to 1.8): the glyphs judged on a page's fourth frame, and
+  the same page with the library's draw calls answered and nothing drawn.
+  The difference is the page's own text: from 603 (Chat) to 2,722 (Columns)
+  glyphs. The frame with nothing drawn by the library still had 219 to 885
+  glyphs on every page, more than the test's old lower bound of 212: that
+  bound was met without any page's text. And the Stream page's own text was
+  8 glyphs, because four frames of a replay is no text; the tour now feeds
+  it whole (1,290). Least contrast on any page, T5-APP's builder: 4.63
+  against a floor of 4.5.
+
+### What nobody has looked at
+
+Everything. Said as a list so that no line of it reads as checked:
+
+- Any of the fourteen pages with the library drawing: the text, the
+  selection highlight, links, rules, tables and their rules, formulas, the
+  diff's bands and gutters, the columns, the marks of a search.
+- The three gallery pages, which are imtypeset's demo sections shown at 16 px
+  where the other team's own pictures were taken at 19.
+- The one line each page draws without the library, in the app's one font.
+- Any of the four examples.
+- Any PNG `make shot` or `make shot-all` writes. The tests read sizes and
+  count colours.
+- A real pointer or keyboard on any of it. Events are queued through
+  `ImGuiIO`; no window manager, no GPU.
+- The Columns page has no sheet behind it now and is light ink on a dark
+  ground; `scripts/visual_diff.py` cannot find a region on it and says so
+  (T5-B1).
+
+### Open
+
+**From the review of phase A (a reviewer's, from reading), then run by the
+last task.** Each was reproduced by a test written first and seen to fail,
+unless it says otherwise. No longer open:
+
+- A library asked for and not drawing ended `scripts/shot.py` with a PNG and
+  exit 0. Reproduced in a window; fixed (above).
+- `TypesetView` took ANY exception under a call into the library for the
+  library's and switched it off for the process, so a slip in the view's own
+  Python turned every page into its one line. Reproduced with the library
+  (an `IndexError` switched it off). The three views now share one rule:
+  only an exception the `imtypeset` package defines switches the library
+  off; anything else is raised as itself.
+- The page tests' frame helpers rendered a frame whose window they had not
+  ended when `draw` raised: the test then failed with Dear ImGui's "Missing
+  End()" and the context was left mid-frame. Reproduced. The guard in
+  `tests/conftest.py` already covered the in-process helpers (now shown by a
+  test); 23 helpers, in-process and in child scripts, now end their window
+  in an inner `finally`.
+- `--tab columns:4097` was accepted and raised inside the page's first draw.
+  Refused where the launch is parsed (`PageSpec.max_count`).
+- A library with no font for the app's own role was unloaded and every page
+  then said `load_fonts()` had not succeeded, of a call that had. The pages
+  say which role had no font.
+- Chat, Stream and Stress kept their views' documents in the library after
+  giving up. They close them; the page's state stays, for `report()`.
+- The tour's contrast test, and Chat's "finished messages are not laid out
+  again": both strengthened (above, and the library's own layout counter).
+  Neither found a defect in a page.
+
+**Open, recorded and not scheduled. From the same review and not run by
+anyone:**
+
+- **Evidence that got thinner in phase A.** Find's 22-case oracle became
+  nine needle counts with no positions. The count of lines moved under
+  `KEEP_STREAMED` is not asserted on the typeset path. Diff's 54 "every case
+  in every mode" page tests draw nothing: they run without the library.
+- **The contrast reader skips translucent and rounded surfaces.** By the
+  reviewer's arithmetic Find's current match is about 3.1 against the 4.5
+  floor, and the test does not see it.
+- **Suspected, not confirmed:** Chat with a hosted diff in view when the
+  hosted widget fails; `scroll_to(block)` far down columns filled in order
+  stopping short; `scripts/mouse_probe.py --xvfb` passing through the inner
+  shell's status.
+
+**Open from earlier tranches, still so:**
+
+- Columns a host states for a table are lost to an edit above the table and
+  to a change of theme or link ink.
+- Keep or reset of a stream's held tables is inferred from `live_theme is
+  theme`, which is the same object for a theme that is already ragged.
+- A table row that arrives in pieces is replaced, not appended (the
+  146,304 above). With the other team.
+- The Stream page's `observe` makes about 600 library calls a frame on the
+  code source, outside the parts it times.
+- Fonts are measured through the old font reader (above).
+- A numbered list is copied without its markers.
+- The rule under a table's header takes a whole line of height. With the
+  other team.
+
+**Open from the deletion, by the builders who did it:**
+
+- `Theme.at_pixel_height()` and `face_metrics()` load seven reference-core
+  modules, not the one the plan named: both go through `advtext.style`. The
+  Themes page and Chat's mono preset therefore still load node and packing
+  classes when run. About ten lines to narrow; left because it would undo a
+  seam another task tests. **T5-B2's builder's least sure decision.**
+- `BlockStyle(interline=...)` is now a `TypeError` and a hand-built
+  `BlockStyle` cannot carry an arbitrary interline triple. Nothing in the
+  tree built one.
+- `load_faces`, `LoadedFaces`, `TEXT_FACES` and `ALL_FACES` are still on the
+  facade, by the rule, and load faces nothing sets text with. `ready` and
+  `reason` are on it and no example uses them from there.
+- `examples/theme_gallery.py` was deleted and not ported.
+- Docstrings in kept files still describe themselves by comparison with
+  deleted classes (about 110 mentions in the four largest typeset modules,
+  T5-B1's count), and `pyproject.toml`
+  has a mypy override naming `advtext.backends.imgui_draw`.
+- The windowed tests share one Xvfb port. T5-B1 made the fixture wait for it
+  to be free; six runs and the gates since passed, which is not a proof.
+
+**Open from the last task (T5-FINAL), its own:**
+
+- Built and gated once against `c9f8902` by the lead (above); nothing else was
+  re-measured on it, and the texts that name `7a7bc36` (the Columns page's
+  docstring among them) were not revisited.
+- **Only `README.md`, this section and `docs/decisions.md` were brought level
+  with the swap.** `docs/guide/`, `docs/adoption-plan.md`,
+  `docs/imgui-risks.md`, `docs/litmus.md`, `docs/subpixel.md`,
+  `docs/advance-rule.md`, `docs/visual-review.md` and `docs/cpp-extension.md`
+  describe `main`: its views, its draw backend and its measurements. Of
+  those only `docs/litmus.md` is about something this branch still runs
+  (`make svg`).
+- `scripts/run_demo.py` still exits 0 when the library was asked for and was
+  not drawing; it only says so. An agent's choice: the window was opened to
+  be looked at, and was.
+- A helper's inner `finally` does not help when `draw` leaves a CHILD window
+  open: Dear ImGui's complaint still replaces the exception. Only the
+  conftest guard covers that, and only in-process.
+- A view a page closed when it gave up makes its document again if anything
+  asks it a question (measured: the Stream test's own readout did).
+- The rule for whose a failure is turns on the exception's class. A
+  `ValueError` or `TypeError` the Python package raises for a bad argument
+  is now a bug that reaches the app's traceback page, where it used to
+  switch the library off. That is the intent; nobody has listed which
+  package calls can raise one on input a host controls.
+- The tour silences the library through `imtypeset._lib`, a private name of
+  a package this tree does not own. If it moves the test fails; it does not
+  pass.
+
+## 0c. Revision of 2026-10-10: an experimental branch draws through imtypeset
+
+The newest revision, put first; sections 0 and 0b below are older and are not
+changed by it. **This is the branch `experimental/imtypeset-adoption`, not
+`main`, and nothing on it is committed.** The user asked for the work to be
+started as an experimental branch (the words are quoted in `docs/decisions.md`,
+"imtypeset adoption, experimental branch"); an unattended team of agents did
+the rest, and every choice in it is an agent's.
+
+**No person has looked at any of this in a window. Review was by reading only:
+the three reviewers had no shell and ran nothing.** This section was written
+before the review-fix task and the terminal gate ran, and was brought level
+afterwards by the terminal gate's builder (IT-GATE2), who changed only the
+sentences those two tasks made untrue: this paragraph, the A0 row, "The suite"
+under "What was measured", and the first list under "Open".
+
+**The gate, 2026-10-10, on the tree as it stands, nothing else of this session
+running.** `make check` (ruff, black, mypy over 55 files, pytest): **5006
+passed, 49 skipped, 4 xfailed**, load average 1.4 at the start and 2.1 at the
+end. `make check TYPESET=1`, straight after: **5048 passed, 7 skipped, 4
+xfailed**, load 1.9 and 1.7. No failure and no error either way; 5055 tests
+each way, of which 42 need the library. Run by the terminal gate's builder, an
+agent. A green suite says what the tests assert, and the list under "What
+nobody has looked at" is what they do not.
+
+imtypeset is a sibling checkout, `../imtypeset`: a C++ typesetter that keeps
+one retained document and writes its own vertices. The plan this branch starts
+on is that tree's `docs/advtext-rework-plan.md`, section 6.3, steps A0 to A6.
+It was written by an agent from a spike and calls itself measured, not verified
+by a person. **None of its figures is repeated here.**
+
+**Without the library nothing changes.** With `IMTYPESET_LIBRARY` unset,
+nothing of imtypeset is imported, the facade is the same 94 names, and no
+existing view was edited. The new code is beside the old: `advtext/typesetter.py`,
+`advtext/typeset_find.py`, `advtext/ui/typeset_view.py`,
+`advtext/ui/typeset_stream_view.py`, `advtext/ui/pages/typeset.py`,
+`examples/typeset_minimal.py`. The one existing source file touched is
+`advtext/ui/app.py` (a font callback and an exit hook in `run`).
+
+**To turn it on:**
+
+    make typeset-lib                          # builds build/imtypeset-bundle/libimtypeset_bundle.so
+    make check TYPESET=1                      # the suite with the library; its tests skip without it
+    make run TYPESET=1 ARGS="--tab typeset"   # the one page that draws through it
+
+`TYPESET=1` puts `IMTYPESET_LIBRARY` (the built file) and `IMTYPESET_PYTHON`
+(`../imtypeset/python`, where the ctypes package is) in front of `test`, `run`,
+`shot` and `shot-all`; setting `IMTYPESET_LIBRARY` yourself does the same with
+another library. `make typeset-lib` needs `../imtypeset` and `../imgui_bundle`
+beside this checkout (`IMTYPESET_ROOT`), and `make clean` removes the library
+with the rest of `build/`. The first command and `make check TYPESET=1` were
+run by IT-A1's builder; **`make run TYPESET=1` and `make shot TYPESET=1` have
+not been run as make targets by anyone** (the page's two photographs were
+taken by a script calling `scripts/shot.py`).
+
+### What exists, step by step
+
+| step | state | what there is | evidence, and whose |
+|---|---|---|---|
+| A0 freeze the oracle | half; the other half **blocked** | a local tag, `advtext-reference`, at 32e3953. Not pushed | the lead: the plan's a3c589a and 32e3953 have the same tree (7a591a48); checked again by this section's writer, with `advtext/` unchanged from the tag to `HEAD`. Blocked: the oracle scripts that refuse an untagged tree, and the dump of goldens, are writes in `../imtypeset`, which this session could only read. **The plan's order was not kept**: it wants imtypeset's goldens dumped before any file of advtext is edited; `advtext/ui/app.py` is edited on this branch and no golden was dumped. The tag still names the unedited tree, so the dump can still be made from it |
+| A1 the description | built | `advtext/typesetter.py`: the gate, the font loader, a `Converter` from advtext's blocks to texts, runs and styles | IT-A1's builder: the plan's check (`census.py` reports only tables as misfits: 9 `TableBlock`s, 129 cells) passes, also run by the lead; over the six `demo/*.md` the port and the spike's converter describe 0 blocks differently; `tests/test_typeset.py` |
+| A2 `TypesetView` | built; one page opted in | `advtext/ui/typeset_view.py`; `examples/typeset_minimal.py`; a fifteenth demo page, `Typeset`, in a new sidebar group `Experimental`. No existing page was converted | builder-3: 3 library calls on a steady frame, counted, +1 under the mouse; `tests/test_typeset_view.py`, `tests/test_page_typeset.py`. The plan's own check (`views.py --scenario ...`) is not reported as run by anyone |
+| A3 streaming | built; on no page | `advtext/ui/typeset_stream_view.py`, over an unchanged `StreamDocument` | builder-5: four replays end with the text of a whole-source view; `tests/test_typeset_stream_view.py` |
+| A4 find | built; wired on the `Typeset` page | `advtext/typeset_find.py` | builder-2: matches equal a search written another way over six demo files; `tests/test_typeset_find.py` |
+| A5 tables | **not built** | a table is a Host block of a guessed height (24 px a row) that nothing draws: a blank gap. Its text is empty, so it copies as nothing and find does not see it. The page says so in one line | |
+| A6 skip the material | **not built** | the description is still made by walking the material `build_document` produced | |
+
+`make shot-all` now has 27 requests for 15 pages (`scripts/shot.py --list`,
+counted by this section's writer); "fourteen pages" and "26 shots" in section
+0b are the second build as it was.
+
+### What was measured, by whom, at what load
+
+Each is quoted from a result file in `.concerns/` (not version-controlled).
+All on one 16-core machine while other agents ran suites on it; every window
+was Xvfb with a software rasteriser. **Read the ratios.** No test asserts a
+time.
+
+- **A steady frame, `TypesetView.draw` against `BareView.draw`** (builder-3,
+  IT-A2): the top of `demo/sample.md` at a 654 px measure, the call alone, the
+  median of 70 frames each, four runs at load 5.8 to 9.0. Ratios 36.7, 43.6,
+  56.2, 41.0; the builder's summary is "roughly 35 to 55 times less". BareView's
+  own figure moved by 60% between runs. The first frame, same runs: 2.9 to
+  3.5 ms plus 2.8 to 3.0 ms for the describe, against 182 to 348 ms for
+  BareView's layout; both exclude `build_document`, which both need.
+- **A frame that brings text, `TypesetStreamView.draw` against
+  `StreamView.draw`** (builder-5, IT-A3): `demo/sample.md` at 24 characters a
+  frame, five runs at load 4.5 to 8.5. Ratios 17.2 to 23.3 for the draw call.
+  **That is not the cost of new text**, in the builder's own reading: most of
+  it is the steady frame, and the parse, which both views pay and this work
+  does not touch, is now the larger part. The whole frame, parse and draw, is
+  "about 6 to 7 times" less.
+- **Edits per stream** (builder-5, one run each, headless): `sample.md` at 24
+  characters, 231 revisions made 170 `append_text`, 54 `replace_blocks` and 7
+  with no edit; `tables.md` 67, 37 and 75; `math.md` 179, 55 and 3. Never more
+  than one edit in a frame.
+- **The page, both ways** (builder-6, IT-PAGE, one run each at load about
+  3.2): searching "glue" finds 8 under either renderer; under `TypesetView` the
+  frame has 16 more vertices with the needle than without, and under `BareView`
+  none (it counts and does not mark). The two photographs are 1300x800,
+  non-blank, and differ in 15.8% of their pixels, part of which is a caption
+  line and not rendering. That figure says nothing about fidelity.
+- **The suite.** The counts for the tree as it stands are in the gate
+  paragraph at the top of this section (IT-GATE2's builder). The same two
+  commands were run once before on the same tree by the review-fix task's
+  builder (IT-GATE), with the same counts, at load 3.9 to 2.7. Before the
+  fixes, the last whole runs were builder-6's and builder-5's: `make test`
+  4995 passed, 47 skipped, 4 xfailed; `make test TYPESET=1` 5035 passed, 7
+  skipped, 4 xfailed (load 3.0 to 6.9). The difference is the review-fix
+  task's 12 tests (one of them library-only) and one test builder-5 added
+  after its whole runs. The 7 skipped with the library are older tests that
+  compare clock readings or take about 80 s, and run under `ADVTEXT_SLOW=1`.
+- **The six failures.** Two builders each saw the same six failures once in
+  `tests/test_typeset_view.py` under `TYPESET=1` while that file was being
+  written. IT-GATE2's builder ran that file alone three times with the
+  library, load 1.7 to 2.8: 26 passed, 26 passed, 26 passed; and it passed in
+  both whole runs with the library above. They have not been seen on a
+  finished file. **Why they happened then is still unexplained**: the second
+  reviewer read the file and found no assertion that load could move, and
+  named two things that could, neither tried: an earlier state of the test's
+  driver, and the one display the windowed tests of every pytest process
+  share.
+
+### What nobody has looked at
+
+Everything on screen. Stated as a list because each is something a test counts
+and nobody saw: `TypesetView`'s text, selection highlight, rule and quote-bar
+colours (vertices are emitted; that is all that is known); a streamed document
+beside the whole one (compared by text only; the two views set the same pieces
+3 px apart in height); the blank gap where a table is; the marks on the
+`Typeset` page; the two photographs, which their builder opened to see the
+pane was not empty and says nothing more about. Quotes share one bar and every
+list is loose, by the library's header: not looked at either. Double and
+triple click, Ctrl+A, a drag while text arrives, typing in the page's search
+box with a real keyboard: code that mirrors `BareView`'s and has no test.
+
+### Differences a host would meet
+
+From the result files; each is as built, not as intended for good.
+
+- `fonts=` is accepted and ignored: imtypeset draws from its own seven atlas
+  fonts, loaded by `typesetter.load_fonts()` at the end of
+  `load_additional_fonts`. `app.run` does that; a bare `app.load_fonts()` does
+  not.
+- Per-role palette inks and `page` are not applied. Live links are coloured
+  and not underlined; changing the link ink describes the document again.
+- Copying everything gives the non-empty block texts joined by the separator:
+  no list markers, nothing for a rule or a table, a formula as its source.
+- Find does not search table cells or formula source, and a match cannot span
+  an inline formula.
+- A selection that ends in a replaced block is dropped by `TypesetView`;
+  `TypesetStreamView` keeps it while the characters it names are unchanged and
+  drops it whole otherwise, where `StreamView` cuts it back.
+- `DiffView`, columns, the specimen and the formula pages have no counterpart
+  in the library and are not planned (the plan's own row).
+
+### Open
+
+**Found by review, from reading; then each reproduced by a test written first
+and seen to fail, and fixed, by the review-fix task's builder (IT-GATE). No
+longer open:**
+
+- `TypesetView.set_document` raised `TypesetUnavailable` after any
+  `typesetter.disable()`, and each call lengthened `reason()`: reproduced
+  with a stand-in and with the library (four calls, four raises, the reason
+  nested four deep). Now, when the library is off, the blocks are described
+  and kept, no edit is tried, the view lets go of the library's document, and
+  the next `draw` raises `TypesetUnavailable` with the reason unchanged.
+- A malformed mark handed to `set_marks` raised inside `draw`'s guarded
+  region and switched the library off for the whole process: reproduced with
+  the library (`set_marks(finder.matches)`, then one frame). Now `set_marks`
+  raises `TypeError` at the call, naming the mark, and keeps the marks it had.
+  It checks the shape and the types of the fields, not that the positions
+  exist.
+- `Finder`'s docstring showed the `finder.packed(document)` wiring; it now
+  shows `view.set_marks(finder.marks())` with `set_index` after every edit. A
+  docstring only.
+- `scripts/run_demo.py`'s docstring said fourteen pages; it says fifteen, and
+  a test compares the word with the count of pages.
+
+**Left by that task, and open:**
+
+- The same family as the first item, not reached through `set_document`: a
+  palette with another link ink makes the view close its library document
+  (`_redescribe`), a call into the library whether or not it has been
+  switched off. Not tested.
+- Letting go of the library's document after a switch-off leaves its release
+  to the library's Python package (`Document.__del__`, which makes the call
+  inside its own `try`): one call into a library that has just failed.
+- `TypesetStreamView.sync` still returns False once the library is off. It
+  is harmless and no longer needed for safety; its docstring's reason is no
+  longer true of the base view.
+- `scripts/render_litmus.py`'s docstring still says fourteen pages.
+
+**Open, recorded and not scheduled:**
+
+- **A5 and A6**, above. **The other half of A0**, which needs a write in
+  `../imtypeset`.
+- **Stand-in headers.** The wheel ships none and its ImGui is a fork, so the
+  library is compiled against upstream Dear ImGui of the same version and
+  accepted by imtypeset's field probe (22 probes passed, the lead and IT-A1's
+  builder), not by Dear ImGui's own check. The plan's section 3.2 has the two
+  commands that would remove the caveat; they need the network and have never
+  been run.
+- **The library is built from `../imtypeset`'s working tree**, which had
+  uncommitted changes and other agents editing it. Two builds of the same
+  day differ (IT-A1's builder: different sha256, 16 bytes apart in size; not
+  investigated, and the output path being embedded would also explain it). Every figure above is of the lead's build, which is not
+  reproducible from a commit.
+- **`typesetter.disable()` is for good and releases nothing**: the context,
+  the seven fonts and open Documents stay, and `unload()` becomes a no-op. A
+  gate that refuses still leaves `imtypeset._capi` imported and the shared
+  object loaded.
+- `draw()`'s "nothing drawn or claimed" on failure is false when the library
+  raises after the text is on the draw list: a host's fallback then draws a
+  second copy for one frame.
+- `on_link` or `style_links` set after construction never recolour links.
+- **In a stream**: a link in the part still being written cannot be clicked
+  while text arrives; packed marks are dropped at every sync and plain marks
+  sit on the wrong characters after a reinterpretation until the host searches
+  again; a host must describe the whole document again each revision to
+  rebuild its find index, because the view's descriptions are private.
+- A list marker is described by code point, not as written; an unknown block
+  type described first names a style that does not exist.
+- **Not tested by anyone**: destroying the ImGui context without
+  `typesetter.unload()` first, with a Document kept (IT-APP's builder saw the
+  library refuse `add_font` on a stale context with an error and no crash;
+  drawing a kept Document there was not tried); a real library failure
+  anywhere but layout; a library that refuses, through the app's callback.
+- **The tests' own limits**: the stream tests compare streamed and whole
+  documents by text, so a wrong run or style after `append_text` would pass;
+  the page test evidences marks by a vertex count, not a position; the
+  `Typeset` page is always the `BareView` path in a headless frame, by its
+  builder's decision, so `tests/test_pages.py` never sees the library draw;
+  `tests/conftest.py`'s `window` shares one TCP display between every pytest
+  process on the machine.
+- The plan's own open items that bear here (its section 7) were not looked
+  into: collapsed word gaps in justified text from the in-flight source, and
+  scroll estimates that have never been scrolled with a real mouse. Its
+  tab-in-code-block defect does not reach this converter by the reviewer's
+  reading (`_code_lines` expands tabs).
+
 ## 0. Revision of 2026-10-07: the adoption plan was built, and this file was not rewritten
 
 **Read `docs/adoption-plan.md`'s first section before the rest of this file.**

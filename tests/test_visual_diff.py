@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -291,9 +292,10 @@ def test_a_change_in_cluster_count_is_warned_about(page: np.ndarray) -> None:
 
 def test_find_sheet_refuses_a_page_that_has_no_sheet() -> None:
     """
-    The Blocks tab really is like this: an overlay on the window background with
-    no white page anywhere. Returning "the whole window" would put every
-    downstream measurement in the chrome and report it as body text.
+    The Blocks tab really was like this (an overlay on the window background with
+    no white page anywhere), and since tranche 5 the Columns page is.
+    Returning "the whole window" would put every downstream measurement in the
+    chrome and report it as body text.
     """
     dark = np.full((200, 300, 3), _WINDOW, dtype=np.uint8)
     with pytest.raises(vd.RegionNotFound, match="no sheet"):
@@ -543,7 +545,7 @@ def test_a_misspelt_tab_name_is_refused_before_anything_is_photographed() -> Non
 # ----------------------------------------------------------------------
 # Real pixels.
 #
-# Everything above runs with no display. These two do not, and they are the only
+# Everything above runs with no display. These three do not, and they are the only
 # tests here that can show the matcher works on a real render rather than on a
 # fixture built from the same metrics it consults. Gated exactly as
 # `tests/test_shot.py` gates its one real shot: by the `window` fixture in
@@ -553,28 +555,44 @@ def test_a_misspelt_tab_name_is_refused_before_anything_is_photographed() -> Non
 # were red in every session where it was set and unreachable.)
 #
 # What the Xvfb changes, stated rather than hidden: the rasteriser is llvmpipe,
-# so the pixels are not the GPU's. Both tests assert on where ink is, to within
+# so the pixels are not the GPU's. The tests assert on where ink is, to within
 # 3 px, and on counts of matching rows -- not on colours or on bytes.
+#
+# **Which page, and why it changed (tranche 5).** Until then the two tests of
+# content addressing photographed `columns:2`: the old Columns page set its
+# columns on a white sheet with advtext's own layout. That page is gone. The
+# Columns page is the library's columns in the pane, light ink on the window's
+# dark ground, and paints no sheet; every region this tool resolves begins at the
+# sheet, so on that page it resolves none, and says so (the third test below
+# holds that it REFUSES rather than measuring the chrome). The Document page
+# still paints a sheet and sets `demo/sample.md` on it through imtypeset, so the
+# two content tests photograph that: what they show now is that the finder
+# locates lines the LIBRARY set, by the same font's advance widths
+# (`advtext.fontlib`), to the same 3 px. They need the library: without it a
+# page draws one line saying so and no sheet, and they skip with the reason.
+# Making the finder work on a sheet-less dark page would be a new region finder
+# (light ink, a pane boundary to keep the sidebar and the controls out); it was
+# not built, and `.concerns/T5-B1--builder--result.md` says so.
+
+_NEEDS_LIBRARY = (
+    "IMTYPESET_LIBRARY is not set: without the library a page draws one line saying so "
+    "and nothing to locate; run `make test TYPESET=1` (after `make typeset-lib`)"
+)
 
 
-@pytest.fixture(scope="module")
-def real_columns_shot(window: Window) -> Path:
-    out = window.out / "visual-diff-columns.png"
+def _shot(window: Window, spec: str, name: str) -> Path:
+    if not os.environ.get("IMTYPESET_LIBRARY"):
+        pytest.skip(_NEEDS_LIBRARY)
+    out = window.out / name
     result = window.run(
         [
             str(_SCRIPT),
             "shoot",
             "--spec",
-            "columns:2",
-            # 1300x764 since the tab bar became a sidebar (C-shell, 2026-10-07),
-            # and it is the same page as the 1100x800 the two tests below were
-            # measured at: the sidebar takes 200 px of width and the tab bar's
-            # row gave back 36 px of height, so this window has the 1068x740 px
-            # body that one had. Measured, not assumed: outside two 2-px seams
-            # at the windows' own mid-heights the two bodies are pixel for
-            # pixel the same (`.concerns/C-shell--builder--result.md`). Shot at
-            # 1100x800 now, the columns are narrower and the phrase the first
-            # test proves absent is matched.
+            spec,
+            # 1300x764: a 200 px sidebar and a 1068x740 px body, the window the
+            # shots here have been taken at since the tab bar became a sidebar
+            # (C-shell, 2026-10-07).
             "--width",
             "1300",
             "--height",
@@ -587,28 +605,48 @@ def real_columns_shot(window: Window) -> Path:
     return out
 
 
-def test_a_real_two_column_shot_is_addressable_by_content(real_columns_shot: Path) -> None:
-    """
-    End to end on real pixels: sheet, both columns, and a phrase located by the
-    engine's own advance widths.
+@pytest.fixture(scope="module")
+def real_document_shot(window: Window) -> Path:
+    return _shot(window, "document", "visual-diff-document.png")
 
-    The phrase is the opening of `demo/columns.md`'s first paragraph, which
-    starts a line whatever the measure does, and it is deliberately free of
-    emphasis -- `locate_line` models one face at one size and a bold run inside
-    the phrase would defeat it.
+
+@pytest.fixture(scope="module")
+def real_columns_shot(window: Window) -> Path:
+    return _shot(window, "columns:2", "visual-diff-columns.png")
+
+
+_REAL_PHRASE = "This document is the first"
+"""
+The opening of `demo/sample.md`'s first paragraph, which starts a line whatever
+the measure does, and is deliberately free of emphasis: `locate_line` models one
+face at one size and a bold run inside the phrase would defeat it.
+"""
+
+
+def test_a_real_shot_of_a_page_on_a_sheet_is_addressable_by_content(
+    real_document_shot: Path,
+) -> None:
     """
-    rgb, text = vd.read_png(real_columns_shot)
+    End to end on real pixels: the sheet, its one column, and a phrase located
+    by the font's own advance widths, in text the library set.
+
+    Measured once before it was asserted (2026-10-11, Xvfb, library 7a7bc36):
+    sheet (393,57) 702x695; one column of 26 rows; the phrase on row 2 with
+    its five words 30, 72, 11, 22 and 28 px wide against 29.4, 70.6, 10.3,
+    21.6 and 27.8 expected. Only the 3 px bound is asserted.
+    """
+    rgb, text = vd.read_png(real_document_shot)
     grey = vd.grey_of(rgb)
     stamp = json.loads(text["advtext-shot"])
-    assert stamp["spec"] == "columns:2"
+    assert stamp["spec"] == "document"
     assert stamp["build"] == vd.build_id(_ROOT)
 
     sheet = vd.find_sheet(grey)
     bands = vd.find_columns(grey, sheet)
-    assert len(bands) == 2, [str(b) for b in bands]
+    assert len(bands) == 1, [str(b) for b in bands]
 
-    match = vd.locate_line(grey, "A column is not")
-    assert [w.text for w in match.words] == ["A", "column", "is", "not"]
+    match = vd.locate_line(grey, _REAL_PHRASE)
+    assert [w.text for w in match.words] == _REAL_PHRASE.split()
     assert match.rect.y > sheet.y and match.rect.bottom < sheet.bottom
     for word in match.words:
         assert abs(word.observed - word.expected) < 3.0, word
@@ -617,23 +655,47 @@ def test_a_real_two_column_shot_is_addressable_by_content(real_columns_shot: Pat
         vd.locate_line(grey, "zzqq wwxx vvkk")
 
 
-def test_the_word_space_test_is_what_makes_a_match_unique(real_columns_shot: Path) -> None:
+def test_the_word_space_test_is_what_makes_a_match_unique(real_document_shot: Path) -> None:
     """
     The ablation that a synthetic fixture cannot do honestly.
 
-    Measured on a real two-column shot at 1100x800: with the word-space test
-    off, "A column is not" groups successfully on **three** text rows, because a
-    greedy width accumulator can always find some run of letters that adds up.
-    With it on, exactly one row survives. (The same ablation on
-    `artifacts/demo-columns-2.png` and the phrase "is shorter than most people
-    guess." gave four against one, before T18-colmargin changed the measure and
-    that line re-broke.) If this ever stops holding, `locate_line` has become a
-    coin toss that still returns a rectangle.
+    With the word-space test off, the phrase groups successfully on more than
+    one text row, because a greedy width accumulator can always find some run
+    of letters that adds up; with it on, exactly one row survives. Measured
+    on this shot on 2026-10-11: rows 2 and 12 without, row 2 with. (On the old
+    Columns page, where this test was first written, "A column is not" gave
+    three rows against one.) If this ever stops holding, `locate_line` has
+    become a coin toss that still returns a rectangle.
     """
-    grey = vd.grey_of(vd.read_png(real_columns_shot)[0])
-    phrase = "A column is not"
-    without = vd.locate_lines(grey, phrase, min_space=0)
-    with_test = vd.locate_lines(grey, phrase)
+    grey = vd.grey_of(vd.read_png(real_document_shot)[0])
+    without = vd.locate_lines(grey, _REAL_PHRASE, min_space=0)
+    with_test = vd.locate_lines(grey, _REAL_PHRASE)
     assert len(with_test) == 1, [(m.column, m.row) for m in with_test]
     assert len(without) > 1, "the ablation found no false matches, so it proves nothing"
     assert (with_test[0].column, with_test[0].row) in [(m.column, m.row) for m in without]
+
+
+def test_a_real_shot_of_a_page_with_no_sheet_is_refused_and_not_measured(
+    real_columns_shot: Path,
+) -> None:
+    """
+    What the Columns page draws now: columns in the pane and no sheet. The shot
+    is taken and stamped as any other (the page name is validated, the build
+    is in the file), and every region is REFUSED with `RegionNotFound`: the
+    sheet, a column, a line by its words. Not one of them falls back to the
+    whole window, which would send a measurement into the sidebar.
+
+    This is the tool's own rule (`find_sheet`), met on a real page for the
+    first time since the Blocks page, which was its example, was deleted.
+    """
+    rgb, text = vd.read_png(real_columns_shot)
+    grey = vd.grey_of(rgb)
+    stamp = json.loads(text["advtext-shot"])
+    assert stamp["spec"] == "columns:2" and stamp["build"] == vd.build_id(_ROOT)
+    # Something was drawn: the page is not blank, it is light ink on a dark ground.
+    assert float((grey > 140.0).mean()) > 0.01 and float((grey > 235.0).mean()) < 0.01
+    with pytest.raises(vd.RegionNotFound, match="no sheet"):
+        vd.find_sheet(grey)
+    for region in ("sheet", "column:1", "row:1", "text:A column is not"):
+        with pytest.raises(vd.RegionNotFound, match="no sheet"):
+            vd.resolve_region(grey, region)

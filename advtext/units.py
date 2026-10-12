@@ -37,12 +37,34 @@ Out of scope: `mu` (math units, which scale with the current math style), `em`
 and `ex` relative units, and TeX's `xn_over_d` fixed-point multiply. The first
 two belong with the code that knows a style and a font; the third is an overflow
 dodge for 32-bit arithmetic that Python's unbounded ints make unnecessary.
+
+**Where the lengths themselves are defined.** `Scaled`, `UNITY`, the three
+resolutions and the six conversions are `advtext.primitives`' since
+2026-10-11 and are imported here: the same objects under either path. They
+moved so that a theme, and everything that sets its text through imtypeset,
+can name a length without loading this module, which with `GlueOrder`,
+`MAX_DIMEN` and `RUNNING` is part of the reference layout core. Everything
+this docstring says about them is still the decision.
 """
 
 from __future__ import annotations
 
 import enum
-from typing import Final, TypeAlias
+from typing import Final
+
+from advtext.primitives import (
+    BP_PER_INCH,
+    DEFAULT_PX_PER_INCH,
+    PT_PER_INCH,
+    UNITY,
+    Scaled,
+    pt_from_sp,
+    px_from_sp,
+    round_to_px,
+    sp_from_bp,
+    sp_from_pt,
+    sp_from_px,
+)
 
 __all__ = [
     "BP_PER_INCH",
@@ -60,42 +82,6 @@ __all__ = [
     "sp_from_px",
     "pt_from_sp",
 ]
-
-Scaled: TypeAlias = int
-"""
-A length in scaled points (2^-16 pt).
-
-An alias rather than a `NewType`, and that is a trade rather than an oversight.
-`NewType` would catch a raw int reaching a dimension parameter, but layout is
-almost entirely arithmetic *on* dimensions, and `a + b` over two `NewType` ints
-is an `int` again -- every sum, difference and glue accumulation would need a
-re-wrap. The wrapper noise would be dense enough to hide the thing it is meant
-to make visible. The name is documentation and the unit discipline is held by
-the conversions below being the only way in and out.
-"""
-
-UNITY: Final = 1 << 16
-"""Scaled points in one printer's point. TeX's `@d unity == '200000` (§101)."""
-
-PT_PER_INCH: Final = 72.27
-"""Printer's points per inch. This is the definition of TeX's `pt`."""
-
-BP_PER_INCH: Final = 72.0
-"""
-Big points per inch. `bp` is what PostScript, PDF and most digital type call a
-"point"; it is 1.00375 TeX points, and confusing the two is a 0.4% error that
-looks like a font bug rather than a unit bug.
-"""
-
-DEFAULT_PX_PER_INCH: Final = 96.0
-"""
-Assumed display resolution, in pixels per inch.
-
-96 is the CSS reference pixel and what ImGui's unscaled coordinates behave like
-at 100% UI scale. It is an assumption about the device, not a fact about the
-document, which is why every conversion takes it as an argument and this is only
-the default.
-"""
 
 MAX_DIMEN: Final = (1 << 30) - 1
 """
@@ -135,66 +121,3 @@ class GlueOrder(enum.IntEnum):
     FIL = 1
     FILL = 2
     FILLL = 3
-
-
-def sp_from_pt(points: float) -> Scaled:
-    """
-    Convert printer's points to scaled points, rounding once.
-    """
-    return round(points * UNITY)
-
-
-def pt_from_sp(length: Scaled) -> float:
-    """
-    Convert scaled points to printer's points. Exact for every `Scaled`.
-    """
-    return length / UNITY
-
-
-def sp_from_bp(big_points: float) -> Scaled:
-    """
-    Convert big points (1/72 inch, the PostScript point) to scaled points.
-    """
-    return round(big_points * (PT_PER_INCH / BP_PER_INCH) * UNITY)
-
-
-def sp_from_px(pixels: float, px_per_inch: float = DEFAULT_PX_PER_INCH) -> Scaled:
-    """
-    Convert device pixels to scaled points at a given display resolution.
-    """
-    return round(pixels * (PT_PER_INCH / px_per_inch) * UNITY)
-
-
-def px_from_sp(length: Scaled, px_per_inch: float = DEFAULT_PX_PER_INCH) -> float:
-    """
-    Convert scaled points to device pixels, **without** rounding.
-
-    Deliberately fractional. Rounding a position to the pixel grid is ship-out's
-    job and must happen once, at the end, on an absolute coordinate -- see
-    `round_to_px`. Rounding here instead would round every intermediate length
-    and put the error back where the scaled-point representation exists to keep
-    it out of.
-    """
-    return length * (px_per_inch / PT_PER_INCH) / UNITY
-
-
-def round_to_px(length: Scaled, px_per_inch: float = DEFAULT_PX_PER_INCH) -> int:
-    """
-    Snap an absolute ship-out coordinate to the pixel grid.
-
-    The single rounding step. Apply it to a final absolute position, never to a
-    width that another position will be computed from: rounding widths and then
-    summing them accumulates error along a line, while rounding the sums does
-    not.
-
-    **This is not §625's glue rounding and must not be used for it.** That one is
-    sp to sp, inside the layout core, and has to be Pascal's `round` -- half away
-    from zero -- because the algorithm takes differences of successive rounded
-    totals and a 1sp divergence shifts every glue node after it. This one is sp
-    to device pixels, happens once, and uses Python's `round`, which is
-    half-to-even; `round_to_px` of exactly 2.5px is 2 and of 3.5px is 4. Pixels
-    are a device grid and no later arithmetic depends on the tie-break, so
-    half-to-even is fine here and wrong there (correction C3 in
-    `docs/tex-notes.md`).
-    """
-    return round(px_from_sp(length, px_per_inch))

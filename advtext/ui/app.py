@@ -1,120 +1,62 @@
 r"""
 The demo application: a sidebar of pages, one window, and a theme that stays out of the way.
 
-**This has been executed and photographed.** `scripts/shot.py` drives this
-module's own `run` for N frames and grabs the window, and every claim below
-about how something *looks* was checked by reading the resulting PNG, taken on
-this machine's `DISPLAY=:1`. The module docstring here used to open "Never
-executed"; that was true for most of this project's life and is not true now.
+**The pages are discovered.** The navigation is a list down the left of the
+window, and what it lists is whatever `advtext.ui.pages.discover` finds: one
+module per page under `advtext/ui/pages/`, each exposing a `PAGE`.
+`advtext.ui.pages`' docstring is the contract. What is here is the shell: the
+sidebar, the request grammar (`parse_tab_request`), the chrome
+(`apply_style`), the fonts and `run`. The words "tab" and `--tab` survive in
+the grammar and in `TAB_NAMES` because scripts, Makefile targets and people's
+fingers already use them; they mean "page".
 
-Two sentences that stood here are withdrawn. *"`DISPLAY=:1` is live in this
-sandbox"*: whether a display is reachable is a fact about the session, and in
-the session of 2026-10-06 it was set and unreachable (`socket(AF_UNIX)` was
-refused), so every window opened then was on an Xvfb in a user namespace
-(`scripts/mouse_probe.py`, `xvfb_command`). *"Nothing in this environment
-synthesises a click"*: `scripts/mouse_probe.py` now does, into this app, through
-the real `immapp.run` -- eight gestures, eighteen checks on the selection and
-the clipboard, all passing in a real window and in a bare context. The events
-enter at `ImGuiIO`, not at the X server, and no person has dragged anything.
+**The app sets no text of its own.** Until 2026-10-11 `App` built a
+`DocumentView`, a font specimen and a formula gallery out of advtext's own
+layout core whichever renderer drew, held the column geometry of the Columns
+page, and loaded six faces into the atlas for the old ImGui draw backend.
+All of that is gone from this module (`.concerns/T5-APP--builder--result.md`
+lists the members and who called them). Every page draws through the typeset
+layer (`advtext.typesetter`, the imtypeset library) and keeps its own state;
+when the library is not loaded a page says so in one line
+(`advtext.ui.pages.typeset.why_not`). Importing this module loads what
+`advtext.theme` loads and nothing else of the old core
+(`tests/test_typeset_closure.py` holds the set).
+
+## What a screenshot can ask for
+
 `App.open_tab` and the grammar `parse_tab_request` implements were built when
-nothing could click a tab, and are still how a screenshot selects a page.
-
-**The tab bar is gone; the pages are discovered.** This module used to draw five
-tabs out of five methods of `App` and export their names as a tuple. The
-navigation is now a list down the left of the window, and what it lists is
-whatever `advtext.ui.pages.discover` finds: one module per page under
-`advtext/ui/pages/`, each exposing a `PAGE`. `advtext.ui.pages`' docstring is the
-contract. The five original tabs are five of those modules, and their frame code
-moved there unchanged; what stayed here is what `tests/test_app.py` pins without
-a window -- the column geometry and the caches on `App` -- plus the shell: the
-sidebar, the request grammar, the chrome, the fonts and `run`. The words "tab"
-and `--tab` survive in the grammar and in `TAB_NAMES` because scripts, Makefile
-targets and people's fingers already use them; they mean "page".
-
-**This is the demo, and it is no longer the smallest consumer of the library.**
-`examples/minimal.py` puts a markdown string in a plain ImGui window through
-`import advtext` alone, and a host embeds `advtext.ui.bare_view.BareView` or
-`advtext.ui.stream_view.StreamView`, not anything in this module. The page
-sheet, the capped measure and the pages are this application's presentation.
-`load_fonts` below is a thin caller of `advtext.ui.fonts.load_faces`.
-
-The five original pages, one for each claim that was worth looking at first:
-
-1. **Document** -- the markdown litmus test, laid out on a page and selectable.
-   Drag to select, double click for a word, triple for a line, Ctrl+C to copy.
-   `advtext.ui.document_view` owns the page geometry and the interaction.
-2. **Columns** -- the same material flowed into 1, 2 or 3 newspaper columns by
-   `advtext.columns`, text continuing from the foot of one column to the head of
-   the next. The column count is a control rather than a constant, because the
-   *reflow* is the demonstration: a static two-column render could have been
-   faked with two documents.
-3. **Specimen** -- every face this project renders, compared side by side, a size
-   ladder, and a kerning demonstration. `advtext.ui.specimen` builds it.
-4. **Formula** -- eleven formulae (nine until the second build added a radical and a
-   sized pair of delimiters), each chosen because it is the only one that makes
-   some rule of TeX's math mode visible: the display-size operator as a different
-   glyph, the four math styles and where they stop, the inter-atom spacing table
-   with and without its classes, and a binary operator that is only binary in
-   context. `advtext.ui.formulas` builds it and its docstring has the table.
-5. **Blocks** -- `advtext.blocklayout`'s toolbar at three widths, showing that a
-   centred item stays centred because two `fil` glues split the surplus evenly.
-
-## One page geometry, applied five times
-
-`advtext.ui.document_view.page_for` decides where the sheet sits and how wide the
-text on it is, and it carries the typographic argument for both. Each of the
-five goes through it -- `advtext.ui.pages.paint_sheet` is the one place that turns a
-`Page` into a filled rectangle and a text-block origin, so a margin cannot be applied to the
-document and forgotten on the specimen. `column_page` is the same arithmetic
-generalised to N columns and **reduces to `page_for` exactly at N = 1**, which is
-what `tests/test_app.py` pins rather than leaving as a comment.
+nothing could click the navigation, and are still how `scripts/shot.py`
+selects a page and its state.
 
 ## The theme
 
-`apply_style` is the whole of it: a neutral dark chrome around the light page
-that `advtext.backends.imgui_draw.Palette` already argues for. It is restrained
-on purpose. The text is the thing being shown and chrome that competes with it is
-a regression, so there is no accent on anything that is not interactive, no
-rounding on the sidebar's rows, and nothing that draws the eye off the sheet.
+`apply_style` is the whole of it: a neutral dark chrome. It is restrained on
+purpose: the text is the thing being shown, so there is no accent on anything
+that is not interactive and no rounding on the sidebar's rows.
 
-Set once from hello_imgui's `setup_imgui_style` callback rather than per frame,
-for the reason pptmstr's `theme.apply_style` gives: `ImGuiStyle` is global mutable
-state that persists across frames, unlike almost everything else in immediate
-mode.
+Set once from hello_imgui's `setup_imgui_style` callback rather than per
+frame: `ImGuiStyle` is global mutable state that persists across frames,
+unlike almost everything else in immediate mode.
 
-## The display sigma, which used to be the tab that could not work
+## Fonts
 
-`advtext.fontlib` mints private-use codepoints for glyphs a font leaves
-unencoded, which is how `summation.v1` -- the display-size sigma, a glyph with no
-codepoint at all -- is named. ImGui rasterises by Unicode codepoint and knows
-nothing of that minting, so this operator did not draw through this backend.
+**With the library, every font in the atlas is the library's.**
+`advtext.typesetter.load_fonts` adds one font per role (a copy of each file
+with its character map rewritten for typesetting), and the app adds none of
+its own: the other team's answer (f) in
+`../imtypeset/docs/advtext-swap-status.md` is that a face is shared by the
+host using the library's `ImFont`, found through
+`imtypeset.font_atlas_index(role)`. So the UI font -- the sidebar, the
+captions, every widget -- is the library's font for `UI_FACE`, and
+`PageContext.fonts` answers the library's font for any role a page wants to
+push. `_use_library_ui_font` makes that font ImGui's default by name
+(`io.font_default`) instead of relying on it being first in the atlas.
 
-It does now. `load_fonts` registers faces through `advtext.fontlib.
-imgui_font_file`, which writes our mappings into a copy of the font's format-12
-cmap subtables, and ImGui's own lookup finds the glyph unaided.
-`tests/test_imgui_draw.py` pins it without a display, and the Formula tab
-photographs it. `DrawStats.missing` is kept and still printed, because it is the
-honest report for a face that fails to load.
-
-## Fonts, twice
-
-ImGui rasterises from the same TTF files fontTools measures, and the two know
-nothing of each other. So the faces are registered with ImGui separately, in
-`load_fonts`, from the paths `advtext.fontlib` resolves -- one place naming the
-files, still. Since Dear ImGui 1.92 a face rasterises on demand at any pushed
-size (pptmstr relies on this at `pptmstr/theme.py:804-806`), so one `ImFont` per
-face at 16.0 is enough and the size is passed per draw call.
-
-**The Specimen tab is the first thing here that leans hard on that**, because its
-size ladder asks one face for six sizes in one frame. It holds: the ladder
-photographs as six visibly different sizes, which is the observation that would
-have failed if ImGui were re-using the baked 16 px raster for all of them.
-
-ImGui's advances and ascents both disagree with the ones we laid out with, by
-enough to see. Both are measured -- `scripts/verify_advances.py` and
-`scripts/verify_ascent.py`, neither of which needs a display -- and
-`advtext.backends.imgui_draw.baked_size_px` applies the correction they agree on.
-`docs/imgui-risks.md` lists what is still open, in priority order.
+**Without the library, one UI font**, loaded by `load_fonts` through
+`advtext.ui.fonts.load_faces`, so that the one line each page then draws can
+be read. That call and `advtext.typesetter.load_fonts` are the two places
+that still reach `advtext.fontlib` (to find a font file); both import it
+when they run and not before.
 
 Deliberately out of scope: docking, persistence beyond the ini file, and any
 editing.
@@ -122,36 +64,16 @@ editing.
 
 from __future__ import annotations
 
-import math
 import sys
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from advtext import fontlib
-from advtext.backends.imgui_draw import rgba
-from advtext.columns import split_into_columns
-from advtext.fontmetrics import Face
-from advtext.markdown import Document, build_document
-from advtext.math import Style, math_fonts, mlist_to_hlist
-from advtext.nodes import Box, Glue, Kern, Node
-from advtext.pack import CharMeasure, PackMode, hpack, vpack
-from advtext.shipout import Point, ship
-from advtext.style import BlockKind, Theme, char_measure, fontlib_metrics
-from advtext.ui import HSS, CommandIndex, LayoutCache, compose_blocks
-from advtext.ui.document_view import (
-    MEASURE_ALPHABETS,
-    TEXT_BLOCK_FRACTION,
-    DocumentView,
-    Page,
-    alphabet_length,
-    text_margin,
-)
-from advtext.ui.formulas import SUMMATION, Gallery, build_gallery
+from advtext.primitives import DEFAULT_PX_PER_INCH
+from advtext.theme import Theme
 from advtext.ui.pages import (
     DEMO_DIR,
-    PLATE_HEADS,
     SHARED_OPTION,
     Discovery,
     Failure,
@@ -162,33 +84,31 @@ from advtext.ui.pages import (
     demo_text,
     discover,
     is_count,
-    plate,
     split_options,
 )
-from advtext.ui.specimen import Specimen, build_specimen
-from advtext.units import DEFAULT_PX_PER_INCH, Scaled, sp_from_px
+from advtext.ui.palette import rgba
 
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from imgui_bundle import imgui
 
+    from advtext.primitives import Face
+
 __all__ = [
-    "COLUMN_COUNTS",
     "DEFAULT_MARKDOWN",
     "DEMO_DIR",
-    "GUTTER_LEADINGS",
-    "PLATE_HEADS",
     "SIDEBAR_WIDTH_PX",
+    "UI_FACE",
+    "UI_FONT_PX",
     "WINDOW_SIZE",
     "App",
-    "ColumnPage",
     "Failure",
     "PageError",
     "SidebarRow",
     "TabRequest",
     "apply_style",
-    "column_page",
     "demo_text",
     "load_fonts",
+    "not_drawing_at_exit",
     "page_names",
     "parse_tab_request",
     "run",
@@ -280,74 +200,21 @@ def __getattr__(name: str) -> object:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-COLUMN_COUNTS: Final = (1, 2, 3)
-"""
-The column counts the tab offers as buttons.
-
-Not a bound on the engine -- `advtext.columns.split_into_columns` takes any count
-of at least one, and `parse_tab_request` will accept any -- but the counts a
-newspaper uses at a window's width, and the ones the user asked about.
-"""
-
-GUTTER_LEADINGS: Final = 1.0
-"""
-The gutter between two columns, as a multiple of the body leading.
-
-A gutter has one job: make the return sweep land in the same column it started
-in. Bringhurst's rule (`The Elements of Typographic Style` 2.2.2) is that the
-space between columns should be visibly larger than the word space inside them,
-and that a gutter near the leading is the safe default because it puts the
-horizontal gap and the vertical one on the same scale -- the page then reads as a
-grid rather than as text with slots cut in it.
-
-Expressed against the leading rather than in points for the reason
-`TEXT_BLOCK_FRACTION` is a proportion: the leading is *measured* from the theme,
-so a larger body size widens the gutter by exactly as much as it widens the line.
-"""
-
-MAX_COLUMN_PAGES: Final = 24
-"""
-How many column pages the tab will lay out before it gives up and says so.
-
-A bound rather than a belief. The page count is derived from the material's own
-height, so it is right for every document the demo ships; this stops a caller who
-points the tab at a book, in a window eighty pixels tall, from composing four
-thousand columns inside one frame.
-"""
-
-PAGE_GAP_PX: Final = 28.0
-"""
-The dark band between one column page and the next, in pixels.
-
-Wide enough to read as a gap between two sheets rather than as a rule. A page
-break in a scroll needs to be unmistakable: the reader has to know that the text
-at the top of the next sheet follows the foot of the *last* column above it and
-not the foot of the first.
-"""
-
-COLUMN_RULE = rgba(0x11, 0x11, 0x11, 0x38)
-"""
-The hairline down the middle of a gutter: the page's ink, at 22% alpha.
-
-Derived from `Palette.ink` rather than picked, because it sits on `Palette.page`
-and has to belong to the same pair. Faint on purpose -- a full-strength rule
-between columns reads as a table.
-"""
-
 # Used when neither a source nor `demo/sample.md` is available. Short on purpose:
 # `demo/` is not shipped inside the wheel, so this is what an installed copy of
 # the package shows, and it should say what the project is rather than be long.
 DEFAULT_MARKDOWN = """\
 # advtext
 
-A text layout engine for Dear ImGui that borrows **TeX's model**: a document is a
-tree of *boxes*, *glue*, *kerns* and *penalties*, packed by `hpack` and `vpack`,
-broken into lines by a total-fit algorithm over badness and demerits, and shipped
-out as absolute glyph positions.
+Markdown, streams and diffs as selectable text in a Dear ImGui pane. The text is
+set by the **imtypeset** library on *TeX's model*: boxes, glue, kerns and
+penalties, lines broken over badness and demerits, every glyph at a position the
+typesetter worked out. `advtext` reads the markdown, describes it to the
+library, and is the view a host calls `draw()` on.
 
-Because every glyph position is computed here rather than inside a widget, hit
-testing is arithmetic over data we already have. That is why this text is
-selectable and ImGui's own is not.
+Because every glyph position is computed by the typesetter rather than inside a
+widget, hit testing is arithmetic over data it already has. That is why this
+text is selectable and ImGui's own is not.
 
 - Drag to select, and drag backwards too.
 - Double click for a word, triple click for a line.
@@ -428,7 +295,8 @@ def parse_tab_request(spec: str | None, found: Discovery | None = None) -> TabRe
         columns:3,debug     ... and the overlay
 
     An option is an integer of 1 or more (the column count; any page may read it
-    through `PageContext.count_for`), the word `debug`, or one of the words the
+    through `PageContext.count_for`, and a page may cap it with
+    `PageSpec.max_count`), the word `debug`, or one of the words the
     named page declares in `PageSpec.options`. Anything else raises `ValueError`
     **before the window opens**: a misspelt option that silently did nothing
     would produce a photograph of the default state under a filename claiming
@@ -461,6 +329,12 @@ def parse_tab_request(spec: str | None, found: Discovery | None = None) -> TabRe
             debug = True
         elif is_count(option):
             columns = int(option)
+            if page is not None and page.max_count is not None and columns > page.max_count:
+                raise ValueError(
+                    f"{spec!r}: {option!r} is more than {page.name} takes, which is at most "
+                    f"{page.max_count}. Refused here rather than on the first frame, where "
+                    "the page would raise it from inside its draw."
+                )
         elif page is not None and option in page.options:
             words.append(option)
         else:
@@ -521,219 +395,29 @@ def sidebar_rows(found: Discovery) -> tuple[SidebarRow, ...]:
     return tuple(rows)
 
 
-# ----------------------------------------------------------------------
-# Page geometry for N columns
-# ----------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class ColumnPage:
-    """
-    A sheet cut into `count` columns: where each one starts, and how wide it is.
-
-    Holds a `Page` rather than restating it. That is not tidiness -- it is what
-    makes "the Columns tab at one column sets exactly the page the Document tab
-    does" a fact about this type instead of a coincidence between two copies of
-    the same arithmetic.
-
-    Everything is in scaled points measured from the left edge of the content
-    region, like `Page`, so none of it knows about pixels or about ImGui.
-    """
-
-    page: Page
-    count: int
-    gutter: Scaled
-
-    @property
-    def column_width(self) -> Scaled:
-        """
-        One column's measure: the text block, less the gutters, divided up.
-
-        Floor division, so `count` columns and `count - 1` gutters always fit
-        inside the text block with at most `count - 1` scaled points of slack.
-        Handing the remainder to one column would make that column wider than its
-        neighbours by an amount no reader could see and every test would have to
-        special-case.
-        """
-        return (self.page.measure - self.gutter * (self.count - 1)) // self.count
-
-    def column_offset(self, index: int) -> Scaled:
-        """
-        From the content region's left edge to column `index`'s left edge.
-        """
-        if not 0 <= index < self.count:
-            raise IndexError(f"column {index} of {self.count}")
-        return self.page.text_offset + index * (self.column_width + self.gutter)
-
-    def rule_offset(self, index: int) -> Scaled:
-        """
-        The middle of the gutter that follows column `index`, where the rule goes.
-
-        `index` runs to `count - 2`: there is one gutter fewer than there are
-        columns, and a rule after the last column would be a rule in the margin.
-        """
-        if not 0 <= index < self.count - 1:
-            raise IndexError(f"gutter {index} of {self.count - 1}")
-        return self.column_offset(index) + self.column_width + self.gutter // 2
-
-
-def column_page(available: Scaled, *, alphabet: Scaled, leading: Scaled, count: int) -> ColumnPage:
-    """
-    The sheet for `count` columns in a content region of this width.
-
-    `advtext.ui.document_view.page_for`, generalised. The ideal sheet is no longer
-    one column of `MEASURE_ALPHABETS` alphabets plus its margins but `count` of
-    them plus the gutters between them, and everything else -- the `min` against
-    the available width, the centring, the `text_margin` rule -- is unchanged.
-
-    **The margin is `text_margin` and not a flat sixth of the sheet, and this is
-    the tab that made that necessary.** More columns want a wider sheet, so the
-    Columns tab is in the clamped branch at every count above one on any window
-    this display can show; taking the canon's third out of a clamped sheet made
-    the columns pay the whole shortfall. Measured on `demo/columns.md` in the
-    1100 px demo window, before and after, as a per-column measure in alphabets
-    against the 2.00-alphabet floor `MEASURE_ALPHABETS` derives from Bringhurst:
-
-        count   before          after
-        1       2.25 / 62.2ch   2.25 / 62.2ch   (unclamped; unchanged)
-        2       1.67 / 46.2ch   2.21 / 60.8ch
-        3       1.08 / 28.9ch   1.44 / 39.2ch
-
-    Three columns is still under the floor at 1100 px and no margin rule can fix
-    that -- three comfortable measures plus two gutters want a 2166 px sheet and
-    the window has 1070, so the margin is already down on its floor and the
-    columns are sharing what is left. What changed is that the margin no longer
-    takes width the text needed more. **At 1600 px all three counts set the full
-    2.25 and 62.2 characters**, where before three columns got 1.64 and 45.4:
-    once the sheet can afford the ideal text block, the surplus term hands the
-    columns their whole measure and the canon keeps only what is over.
-    Reproduce with `python /tmp/t18_measure.py`-style code, or read
-    `tests/test_app.py::test_the_clamped_three_column_measure_is_not_below_the_
-    project_floor`.
-
-    **At `count = 1` this returns exactly what `page_for` returns**, and not
-    approximately: the gutter term is multiplied by zero, which leaves the same
-    float expression, and every subsequent line is the same line.
-    `tests/test_app.py::test_one_column_sets_exactly_the_page_the_document_tab_sets`
-    sweeps a range of widths against `page_for` rather than trusting that reading.
-
-    The consequence worth stating is that **more columns make a wider sheet, not
-    narrower columns**, until the window runs out. Two columns of the ideal
-    measure want a sheet a little over twice as wide as one, so at a window that
-    can afford it the reader sees the same comfortable measure twice over, which
-    is what a newspaper is. Only once `available` bites do the columns start
-    sharing a fixed sheet and getting narrower -- and that is the regime a reader
-    sees when they drag the window in, which is the one that makes the reflow
-    obvious.
-    """
-    if count < 1:
-        raise ValueError(f"a column count must be at least 1, got {count}")
-
-    gutter = round(leading * GUTTER_LEADINGS)
-    ideal_body = alphabet * MEASURE_ALPHABETS * count + gutter * (count - 1)
-    ideal_sheet = round(ideal_body / TEXT_BLOCK_FRACTION)
-    sheet = min(available, ideal_sheet) if ideal_sheet > 0 else available
-    margin = text_margin(sheet, ideal_body=ideal_body, leading=leading)
-    page = Page(offset=(available - sheet) // 2, width=sheet, margin=margin, head=leading)
-    return ColumnPage(page=page, count=count, gutter=gutter)
-
-
-# ----------------------------------------------------------------------
-# The columns tab's cached layout
-# ----------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class ColumnLayout:
-    """
-    Everything the Columns tab derives from one (measure, height, count), cached together.
-
-    The three fields at the top are the cache key and are kept beside the result
-    for the reason `document_view.Layout` keeps its own width: "the layout is
-    stale" should be one comparison against the thing itself rather than three
-    fields somewhere else that can drift out of step with it.
-
-    `indexes` is one `CommandIndex` per column, in reading order across pages --
-    column *k* of page *p* is `indexes[p * count + k]`. Flat rather than nested
-    because that *is* the reading order, and a nested list would let a caller
-    iterate it in the wrong one.
-    """
-
-    column_width: Scaled
-    column_height: Scaled
-    count: int
-    pages: int
-    indexes: tuple[CommandIndex, ...]
-    overflow: int
-
-    @property
-    def key(self) -> tuple[Scaled, Scaled, int]:
-        """
-        What this layout is valid for.
-        """
-        return (self.column_width, self.column_height, self.count)
-
-
-def _column_pages(material_height: Scaled, column_height: Scaled, count: int) -> int:
-    """
-    How many pages of `count` columns to ask for, given the material's natural height.
-
-    The ceiling, **plus one page of slack**, because a column holds less than its
-    height: `advtext.columns` documents that a block boundary is not a legal
-    breakpoint, so every column loses whatever part of the last unbreakable run
-    did not fit. That loss is measured at under 3% of a column on
-    `demo/sample.md`, and a whole spare page covers a document many times worse
-    than that.
-
-    Slack rather than a retry loop on purpose. `split_into_columns` fills columns
-    in order, so the first *n* columns of a split into *N* are the same for every
-    `N >= n`; asking for one page too many therefore costs one extra `vsplit` per
-    spare column -- 0.53 ms for three, measured -- where growing `count` and
-    re-splitting would redo the whole cut. Trailing empty columns are dropped by
-    the caller, so the slack is invisible unless it is needed.
-    """
-    per_page = column_height * count
-    return min(MAX_COLUMN_PAGES, max(1, math.ceil(material_height / per_page) + 1))
-
-
-# ----------------------------------------------------------------------
-
-
 @dataclass(slots=True)
 class App:
     """
-    The shell, and the material of the five original pages.
+    The shell: what the sidebar lists, which page is showing, and what a page is built from.
 
-    The shell is `discovery` (what the sidebar lists), `current` (the page that
-    is showing), `context` (what every page is built from) and the page objects
-    themselves, built on first showing and kept.
-
-    The rest is two documents, one document view and three caches, which the
-    five original pages draw from. The formula and the block layouts depend only
-    on the measure; the specimen depends on the measure; the columns depend on
-    the measure, the visible height and the column count. Each is cached against
-    exactly what it depends on, and `DocumentView` owns the Document page's own
-    cache. A new page keeps its state on its own object, not here.
+    `discovery` is what the sidebar lists, `current` the page that is
+    showing, `context` what every page is built from, and the page objects
+    themselves are built on first showing and kept. A page keeps its state on
+    its own object. What the launch named is handed to the pages through
+    `context`: the two markdown sources, and the integer and the option words
+    of `--tab` (`PageContext.count_for`, `options_for`). The Columns page's
+    count was a field here; it is that page's own now.
     """
 
     theme: Theme = field(default_factory=Theme.build)
-    measure: CharMeasure = field(default_factory=lambda: char_measure(fontlib_metrics))
     px_per_inch: float = DEFAULT_PX_PER_INCH
     source: str = DEFAULT_MARKDOWN
     columns_source: str | None = None
     """
-    The markdown the Columns tab flows, or `None` to flow `source`.
+    The markdown the Columns page flows, or `None` to flow `source`.
 
-    A second document because the two tabs want different prose and it is
-    dishonest to pretend otherwise: newspaper columns need sustained paragraphs,
-    and a document that is 40% headings and tables demonstrates nothing when it is
-    cut into three. `run` fills this from `demo/columns.md`.
-    """
-    columns: int = 2
-    """
-    How many columns the Columns tab is showing. Two, because one demonstrates
-    nothing and three is tight in the default 1100 px window (`run` sets
-    1100 x 800; this said 980 px, which is not a size anything in the tree sets).
+    A second document because the two pages want different prose: columns
+    need sustained paragraphs. `run` fills this from `demo/columns.md`.
     """
     open_tab: str | None = None
     """
@@ -743,7 +427,6 @@ class App:
     it in, without clicking for either. After construction it holds the bare
     name; the first frame moves it into `current` and clears it.
     """
-    view: DocumentView = field(init=False)
     discovery: Discovery = field(init=False)
     """
     What `advtext.ui.pages.discover` found when this app was built. Scanned
@@ -764,55 +447,21 @@ class App:
     or `run` checks.
     """
     _views: dict[str, PageView] = field(default_factory=dict, init=False)
-    _formula: Box | None = field(default=None, init=False)
-    _formula_width: Scaled = field(default=0, init=False)
-    _specimen: Specimen | None = field(default=None, init=False)
-    _specimen_width: Scaled = field(default=0, init=False)
-    _gallery: Gallery | None = field(default=None, init=False)
-    _gallery_width: Scaled = field(default=0, init=False)
-    _columns_document: Document | None = field(default=None, init=False)
-    _columns_layout: ColumnLayout | None = field(default=None, init=False)
-    # A cache of its own rather than the view's, and **sized to the column
-    # control**. `LayoutCache` retains per pass key, and a pass key includes the
-    # measure, so each of `COLUMN_COUNTS` is a separate key: one resident pass per
-    # button. The default is two, and at two a viewer cycling 1 - 2 - 3 - 1 evicts
-    # the least recently used count every time round and pays a cold reflow for
-    # it. **Adding a fourth column count means raising this to four** -- the
-    # coupling is the reason the number is not just `len(COLUMN_COUNTS)` written
-    # out, which would hide that it is a memory bound as well as a hit rate.
-    #
-    # Separate from the view's cache rather than shared because the two tabs
-    # compose different documents; that was load-bearing before T10 fixed
-    # cross-consumer eviction and is now merely tidy.
-    _columns_blocks: LayoutCache = field(
-        default_factory=lambda: LayoutCache(resident_passes=len(COLUMN_COUNTS)), init=False
-    )
-    _alphabet: Scaled | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
-        self.view = DocumentView(
-            document=build_document(self.source, self.theme, fontlib_metrics),
-            theme=self.theme,
-            measure=self.measure,
-            px_per_inch=self.px_per_inch,
-        )
         self.discovery = discover()
         request = parse_tab_request(self.open_tab, self.discovery)
-        if request.columns is not None:
-            self.columns = request.columns
-        self.view.debug = request.debug
         self.open_tab = request.tab
         self.context = PageContext(
             theme=self.theme,
-            measure=self.measure,
             px_per_inch=self.px_per_inch,
             fonts=_face_font,
-            metrics=fontlib_metrics,
             debug=request.debug,
             request_page=request.tab,
             request_options=request.options,
             request_count=request.columns,
-            app=self,
+            source=self.source,
+            columns_source=self.columns_source,
         )
         if self.discovery.pages:
             self.current = self.discovery.pages[0].name
@@ -859,187 +508,6 @@ class App:
             raise KeyError(f"{name!r} is not a page; the pages are {page_names()!r}")
         self.page_errors.pop(spec.name, None)
         self._views.pop(spec.name, None)
-
-    # ------------------------------------------------------------------
-    # Material
-    # ------------------------------------------------------------------
-
-    def columns_document(self) -> Document:
-        """
-        The document the Columns tab flows, parsed once.
-        """
-        if self._columns_document is None:
-            self._columns_document = build_document(
-                self.columns_source if self.columns_source is not None else self.source,
-                self.theme,
-                fontlib_metrics,
-            )
-        return self._columns_document
-
-    def alphabet(self) -> Scaled:
-        """
-        The theme's lowercase alphabet, measured once.
-
-        The same quantity `DocumentView` measures, and held here as well rather
-        than reached for through the view: it costs twenty-six `CharMeasure` calls
-        and the Columns tab needs it every frame to place its sheet.
-        """
-        if self._alphabet is None:
-            self._alphabet = alphabet_length(self.theme, self.measure)
-        return self._alphabet
-
-    def page_for_columns(self, available: Scaled, count: int) -> ColumnPage:
-        """
-        Where the Columns tab's sheet sits, for a content region of this width.
-        """
-        return column_page(
-            available,
-            alphabet=self.alphabet(),
-            leading=self.theme.style(BlockKind.PARAGRAPH).interline.baselineskip.width,
-            count=count,
-        )
-
-    def column_layout(
-        self, column_width: Scaled, column_height: Scaled, count: int
-    ) -> ColumnLayout:
-        """
-        The cached column split for one measure, height and count.
-
-        **A column-count change is a full reflow and there is no way around it.**
-        Narrowing the page into more columns changes the measure, and
-        `advtext.ui.LayoutCache` correctly misses on every text block at a width it
-        has not seen. The split itself is not the cost -- `advtext.columns` measures
-        a three-way `vsplit` at 0.53 ms -- the line breaker is.
-
-        **Measured here, on `demo/columns.md` at an 800 px column height, against a
-        16.7 ms frame budget.** A viewer clicking 1, 2, 3, 1, 2, 3 -- so each count
-        is visited cold once and warm once:
-
-            first visit to a count     479 / 526 / 970 ms
-            second visit, 3 resident    19 /  20 /  22 ms
-            second visit, 2 resident   448 / 535 / 937 ms
-            an unchanged (width, height, count)     9 us
-
-        Four things follow, and together they are the honest account of this tab.
-
-        - **The first click on a count is a freeze, not a jank**, and nothing here
-          can fix that: the measure has never been composed, so the line breaker
-          runs over the whole document.
-        - **Every later click is 20 ms**, which is one dropped frame. That is what
-          `_columns_blocks` being sized to the control buys, and the third row above
-          is what it costs to get wrong -- at the `LayoutCache` default of two
-          resident passes the least recently used count is evicted every time round
-          and the cycle never warms up at all. A 25x difference from one argument.
-        - **Narrower is slower.** Three columns cost twice one, at a third of the
-          measure, because the breaker is superlinear in the number of lines and a
-          narrower measure makes more of them.
-        - **A resize drag is the bad case and this does not fix it.** Every pixel of
-          the drag is a new measure, and `docs/status.md` section 4 records that the
-          per-block cache gets zero hits across consecutive widths, so the tab pays
-          the cold figure per frame. The Document tab has the same defect against a
-          shorter document. Fixing it means quantising the width or deferring the
-          reflow until the drag stops, and neither belongs in a demo tab.
-        """
-        cached = self._columns_layout
-        if cached is not None and cached.key == (column_width, column_height, count):
-            return cached
-
-        material = compose_blocks(
-            self.columns_document().blocks,
-            self.theme,
-            column_width,
-            self.measure,
-            cache=self._columns_blocks,
-        ).contents
-        natural = vpack(material).box
-        pages = _column_pages(natural.height + natural.depth, column_height, count)
-        split = split_into_columns(material, height=column_height, count=count * pages)
-
-        # Trailing empty columns are the slack `_column_pages` deliberately asked
-        # for. Dropping them here, rather than asking for a tighter number there,
-        # is what lets the estimate be generous without ever showing a blank sheet.
-        used = 0
-        for index, result in enumerate(split.results):
-            if result.box.contents:
-                used = index + 1
-        pages = max(1, math.ceil(used / count))
-
-        fresh = ColumnLayout(
-            column_width=column_width,
-            column_height=column_height,
-            count=count,
-            pages=pages,
-            indexes=tuple(
-                CommandIndex.of(ship(result.box, Point(0, result.box.height), measure=self.measure))
-                for result in split.results[: pages * count]
-            ),
-            overflow=len(split.overflow),
-        )
-        self._columns_layout = fresh
-        return fresh
-
-    def formula_box(self, width: Scaled) -> Box:
-        """
-        The summation in display and text style, side by side, packed to a measure.
-
-        Side by side and not on two lines: the claim is that one is a *different
-        glyph* from the other, and a reader compares them faster than they compare
-        a picture with a memory.
-
-        Packed to the caller's measure rather than to a fixed 600 px, so the two
-        `HSS` glues centre the pair on the page the rest of the demo sets. The
-        construction is otherwise the one `tests/test_imgui_draw.py` pins.
-
-        **The Formula page no longer draws this.** It draws `gallery`, whose
-        `operator-style` entry is the same comparison with a caption and a label
-        under each half. This is kept as the smallest reproduction of it: it is
-        what `tests/test_app.py` pins the repack-on-measure-change behaviour
-        through, and `scripts/verify_ascent.py` names it for the size it sets.
-        """
-        if self._formula is None or self._formula_width != width:
-            size = sp_from_px(36.0, self.px_per_inch)
-            fonts = math_fonts(size, lambda at: fontlib.math_metrics(float(at)))
-            parts: list[Node] = []
-            for index, style in enumerate((Style.DISPLAY, Style.TEXT)):
-                if index:
-                    parts.append(Kern(width=size))
-                parts.extend(mlist_to_hlist([SUMMATION], style, fonts))
-            self._formula = hpack(
-                [Glue(HSS), *parts, Glue(HSS)], width, PackMode.EXACTLY, measure=fonts.measure
-            ).box
-            self._formula_width = width
-        return self._formula
-
-    def specimen(self, width: Scaled) -> Specimen:
-        """
-        The cached font specimen for one prose measure.
-
-        Cached for the reason `build_specimen`'s docstring asks it to be: 68 ms at
-        a 760 pt measure, of which 62 ms is the three section notes going through
-        the line breaker. Nothing in it depends on the window except that measure.
-        """
-        if self._specimen is None or self._specimen_width != width:
-            self._specimen = build_specimen(
-                self.theme, width, fontlib_metrics, measure=self.measure
-            )
-            self._specimen_width = width
-        return self._specimen
-
-    def gallery(self, width: Scaled) -> Gallery:
-        """
-        The cached formula gallery for one prose measure.
-
-        Cached for the reason the specimen is: **45 ms at the 468 px measure this
-        tab sets, warm, best of three, against a 16.7 ms frame budget** -- and
-        nearly all of it is the captions going through `break_paragraph` (nine of
-        them when that was measured; there are eleven now and it was not re-taken). The
-        math is a few ms, because nothing in a formula is line-broken. Nothing in
-        it depends on the window except the measure the captions break to.
-        """
-        if self._gallery is None or self._gallery_width != width:
-            self._gallery = build_gallery(self.theme, width, fontlib_metrics, measure=self.measure)
-            self._gallery_width = width
-        return self._gallery
 
     # ------------------------------------------------------------------
     # Frames
@@ -1191,13 +659,6 @@ class App:
         imgui.end_child()
 
 
-# The drawing helpers every page shared (`_caption`, `_plate`, `_paint_sheet`,
-# `_draw_at`, `_claim`) are `advtext.ui.pages.caption`, `plate`, `paint_sheet`,
-# `draw_at` and `claim` now, so that a page module does not import this one to
-# set a sheet. `_plate` keeps its old name here for `tests/test_app.py`.
-_plate = plate
-
-
 # ----------------------------------------------------------------------
 # Theme
 # ----------------------------------------------------------------------
@@ -1317,53 +778,233 @@ def apply_style() -> None:
 # Fonts
 # ----------------------------------------------------------------------
 
+UI_FACE: Final = "PROSE"
+"""
+The role whose font the app's own text is drawn in, by the name of its `Face` member.
+
+The running-text face. It is the file the app's UI font was before the
+library's fonts were shared (`Roboto-Regular`, as `advtext.fontlib` resolves
+`Face.PROSE`), so the chrome is set in the same file with and without the
+library. By name, as `advtext.description.FACE_ROLES` keys its roles, so
+this module does not import the enum to say it.
+"""
+
+UI_FONT_PX: Final = 16.0
+"""
+The pixel height the app's own text is drawn at, with the library and without.
+
+Without the library it is the size `load_fonts` loads the one font at
+(`advtext.ui.fonts.DEFAULT_LOAD_PX`, the same number;
+`tests/test_app_typeset.py` holds them equal). With it, the library's fonts
+carry no size of their own, and Dear ImGui's `style.font_size_base` would
+stay at its default of 20 (measured in the window, 2026-10-11), so
+`_use_library_ui_font` sets it to this.
+"""
+
 _FACES: dict[Face, imgui.ImFont | None] = {}
+"""
+The fonts the app itself put in the atlas: `UI_FACE`'s when the library is not
+drawing, and nothing when it is.
+"""
 
 
 def load_fonts() -> None:
     """
-    Register every face with ImGui, from the paths `advtext.fontlib` resolves.
+    Put the one UI font in the atlas: `UI_FACE`, from the path `advtext.fontlib` resolves.
 
-    A thin caller of `advtext.ui.fonts.load_faces`, which is where the loading
-    now lives so that a host can call it too. What stays here is what is the
-    demo's own: `hello_imgui`'s loader, the decision to load mathematics up
-    front (`ALL_FACES` -- the first page has a formula in it), and the module
-    global the pages read through `PageContext.fonts`.
+    What `run` loads when the library is not drawing, so that the sidebar and
+    the one line each page then draws can be read. A thin caller of
+    `advtext.ui.fonts.load_faces`; it never asks for the library, because it
+    is a public name that a test calls in the pytest process
+    (`tests/test_fonts_setup.py`).
 
-    A hello_imgui callback rather than something `run` calls directly: fonts must
-    be built after the backend exists and before the first frame, and the runner
-    owns that window. A face that fails to load is left absent rather than fatal
-    -- `draw` treats `None` as "use whatever is bound", so the demo degrades to
-    the default face at the right positions instead of not starting.
+    Until 2026-10-11 this loaded every face, mathematics included, for the
+    old ImGui draw backend. No page draws through that backend any more.
 
-    **The dict is cleared first.** It is a module global, and a second `run` in
-    one process would otherwise keep `ImFont` pointers belonging to the atlas the
-    first run destroyed -- `docs/status.md` section 4 records that hazard. Nothing
-    in the tree calls `run` twice today; clearing costs one statement and removes
-    a use-after-free from the list of things a future screenshot harness has to
-    know about.
+    A face that fails to load is left absent rather than fatal: ImGui then
+    draws in its built-in font.
+
+    **The dict is cleared first.** It is a module global, and a second `run`
+    in one process would otherwise keep an `ImFont` belonging to the atlas
+    the first run destroyed.
     """
     from imgui_bundle import hello_imgui
 
-    from advtext.ui.fonts import ALL_FACES, DEFAULT_LOAD_PX, load_faces
+    from advtext.primitives import Face
+    from advtext.ui.fonts import load_faces
 
     _FACES.clear()
     params = hello_imgui.FontLoadingParams()
-    # The files live in the imgui-bundle wheel, not in an assets folder of ours,
-    # so they are loaded by absolute path rather than through the asset system.
+    # The file lives in the imgui-bundle wheel, not in an assets folder of ours,
+    # so it is loaded by absolute path rather than through the asset system.
     params.inside_assets = False
     loaded = load_faces(
-        ALL_FACES,
-        loader=lambda path: hello_imgui.load_font(str(path), DEFAULT_LOAD_PX, params),
+        (Face[UI_FACE],),
+        loader=lambda path: hello_imgui.load_font(str(path), UI_FONT_PX, params),
     )
     _FACES.update(loaded.fonts)
 
 
+def _library_font(role_name: str) -> imgui.ImFont | None:
+    """
+    The library's `ImFont` for a role (by `Face` member name), or `None`.
+
+    `imtypeset.font_atlas_index` is asked every time: its answer moves when a
+    font is added to or removed from the atlas. `None` when the library is
+    not ready, when the role has no font, and when the index is not in the
+    atlas this binding shows.
+    """
+    from advtext import typesetter
+
+    if not typesetter.ready():
+        return None
+    from imgui_bundle import imgui
+
+    from advtext.description import FACE_ROLES
+
+    index = typesetter.module().font_atlas_index(FACE_ROLES[role_name])
+    if index is None:
+        return None
+    fonts = imgui.get_io().fonts.fonts
+    return fonts[index] if 0 <= index < len(fonts) else None
+
+
+def _use_library_ui_font() -> bool:
+    """
+    Make the library's font for `UI_FACE` Dear ImGui's default. False if there is none.
+
+    Set by name (`io.font_default`) and not left to the order the library
+    adds its roles in: `Fonts[0]` is whichever font was added first, and
+    that is the library's business. The size is `UI_FONT_PX`, which says why.
+    """
+    from imgui_bundle import imgui
+
+    font = _library_font(UI_FACE)
+    if font is None:
+        return False
+    imgui.get_io().font_default = font
+    imgui.get_style().font_size_base = UI_FONT_PX
+    return True
+
+
+def _use_own_ui_font() -> bool:
+    """
+    Make the font `load_fonts` loaded Dear ImGui's default, at `UI_FONT_PX`. False if it is absent.
+
+    Needed only when something else is in the atlas before it; see
+    `_load_fonts_for_run`. With the app's font alone in the atlas it is
+    `Fonts[0]` and the default without being named.
+    """
+    from imgui_bundle import imgui
+
+    font = next((font for face, font in _FACES.items() if face.name == UI_FACE), None)
+    if font is None:
+        return False
+    imgui.get_io().font_default = font
+    imgui.get_style().font_size_base = UI_FONT_PX
+    return True
+
+
+def _load_fonts_for_run() -> None:
+    """
+    `run`'s font callback: the library's fonts and none of the app's, or one UI font without it.
+
+    When `advtext.typesetter.module()` answers the library, its fonts are
+    loaded (`typesetter.load_fonts`, which destroys a context left from an
+    earlier Dear ImGui context first) and the role `UI_FACE` becomes the
+    default font; the app adds no copy of any face. When there is no library
+    -- no `IMTYPESET_LIBRARY`, or it refused -- or its fonts did not load,
+    this is `load_fonts`: one font. A failure in the library does not raise:
+    `typesetter.reason()` keeps the sentence and each page shows it. Fonts
+    that loaded with none for `UI_FACE` among them are a third case with no
+    refusal behind it; it is recorded with `typesetter.note`, which is what
+    the pages then show (`advtext.ui.pages.typeset.why_not`).
+
+    After a failed load the library's context is destroyed
+    (`typesetter.unload`) and the app's font is loaded and then NAMED the
+    default (`_use_own_ui_font`). Named, because the fonts the library added
+    before it failed are still in the atlas afterwards: measured in the
+    window on 2026-10-11 with a load that was made to report failure, seven
+    of the library's fonts and then the app's one, `Fonts[0]` the library's,
+    and the chrome drawn in it at Dear ImGui's default 20 px until this
+    function said otherwise.
+
+    **Not inside `load_fonts`**, which a test calls in the pytest process:
+    there, with the variable set, it would import the library into that
+    process and give it a context on whatever Dear ImGui context another
+    test left current.
+    """
+    from advtext import typesetter
+
+    _FACES.clear()
+    if typesetter.module() is None:
+        load_fonts()
+        return
+    loaded = typesetter.load_fonts()
+    if loaded and _use_library_ui_font():
+        return
+    typesetter.unload()
+    if loaded:
+        # The fonts DID load, and none of them is the one the app draws its
+        # own text in. Said, because after the unload nothing else says it:
+        # `reason()` is empty (the library was never refused) and each page
+        # would fall back on "load_fonts() has not succeeded", of a call that
+        # returned True.
+        typesetter.note(
+            f"the library loaded its fonts but has none for the role {UI_FACE}, which "
+            "the app draws its own text in, so the app unloaded the library"
+        )
+    load_fonts()
+    _use_own_ui_font()
+
+
+def _unload_typesetter() -> None:
+    """
+    `run`'s `before_exit`: imtypeset's context goes before the Dear ImGui context does.
+
+    Its fonts are in that context's atlas (`advtext.typesetter.load_fonts`
+    says whose job this is). Does nothing when the library is not in use.
+    """
+    from advtext import typesetter
+    from advtext.ui.pages.typeset import why_not
+
+    global _NOT_DRAWING_AT_EXIT
+    # Before the unload: afterwards `ready()` is false for a library that
+    # drew to the last frame as for one that never drew.
+    _NOT_DRAWING_AT_EXIT = why_not()
+    typesetter.unload()
+
+
+_NOT_DRAWING_AT_EXIT = ""
+
+
+def not_drawing_at_exit() -> str:
+    """
+    Why the library was not drawing when the last `run`'s window closed; empty if it was.
+
+    The sentence every page was showing in place of its content
+    (`advtext.ui.pages.typeset.why_not`), read in `before_exit` before the
+    library is unloaded. Empty while a run is going and before any has
+    ended. With no `IMTYPESET_LIBRARY` it says that the variable is not set,
+    which is no failure: whether the library was ASKED FOR is the caller's to
+    read from the environment, as `scripts/shot.py` and `scripts/run_demo.py`
+    do. A page that never drew is covered as one that did: the state is the
+    process's (`typesetter.disable` is for the whole run), not a page's.
+    """
+    return _NOT_DRAWING_AT_EXIT
+
+
 def _face_font(face: Face) -> imgui.ImFont | None:
     """
-    The loaded `ImFont` for a role, or `None` if it did not load.
+    The `ImFont` for a role, or `None`: `PageContext.fonts`.
+
+    The app's own font when it loaded one for the role (without the
+    library, `UI_FACE` only); otherwise the library's font for the role.
     """
-    return _FACES.get(face)
+    own = _FACES.get(face)
+    if own is not None:
+        return own
+    return _library_font(face.name)
 
 
 # ----------------------------------------------------------------------
@@ -1407,6 +1048,8 @@ def run(
     """
     from imgui_bundle import hello_imgui, immapp
 
+    global _NOT_DRAWING_AT_EXIT
+    _NOT_DRAWING_AT_EXIT = ""
     app = App(
         source=source or demo_text("sample.md") or DEFAULT_MARKDOWN,
         columns_source=columns_source or demo_text("columns.md"),
@@ -1423,7 +1066,8 @@ def run(
     if ini_folder is not None:
         params.ini_folder_type = hello_imgui.IniFolderType.absolute_path
         params.ini_filename = str(Path(ini_folder) / "advtext.ini")
-    params.callbacks.load_additional_fonts = load_fonts
+    params.callbacks.load_additional_fonts = _load_fonts_for_run
+    params.callbacks.before_exit = _unload_typesetter
     params.callbacks.setup_imgui_style = apply_style
     params.callbacks.show_gui = app.gui
     immapp.run(params)

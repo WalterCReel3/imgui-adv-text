@@ -735,9 +735,11 @@ def find_sheet(grey: Grey, *, paper_level: float = 235.0, gap_close: int = 8) ->
     necessary.
 
     Raises `RegionNotFound` when no plausible sheet is present, which is the
-    honest answer on the Blocks tab: it draws a debug overlay on the window
-    background and has no sheet at all. A tool that returned "the whole window"
-    there would send every downstream measurement into the chrome.
+    honest answer on a page that paints none. The Blocks tab was the first (a
+    debug overlay on the window background; deleted in tranche 5); since then
+    the Columns page is one, and any page that sets its text in the pane,
+    light on the window's dark ground. A tool that returned "the whole window" there
+    would send every downstream measurement into the chrome.
     """
     height, width = grey.shape
     paper = grey > paper_level
@@ -746,7 +748,7 @@ def find_sheet(grey: Grey, *, paper_level: float = 235.0, gap_close: int = 8) ->
         raise RegionNotFound(
             "no sheet: no column of this image is more than half near-white "
             f"(brightest column is {int(paper.sum(axis=0).max(initial=0))} of {height} px). "
-            "The Blocks tab genuinely has no sheet."
+            "A page that paints no sheet (Columns, for one) genuinely has none."
         )
     x0, x1 = columns
     rows = _longest(_close(paper[:, x0:x1].sum(axis=1) > 0.3 * (x1 - x0), gap_close))

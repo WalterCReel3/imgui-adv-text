@@ -178,9 +178,12 @@ def test_the_scan_finds_the_pages_at_all(found: pages.Discovery) -> None:
     with an empty batch.
     """
     names = [page.name for page in found.pages]
-    assert len(names) >= 5, f"only {names!r} came back from advtext.ui.pages"
-    for original in ("Document", "Columns", "Specimen", "Formula", "Blocks"):
+    assert len(names) >= 4, f"only {names!r} came back from advtext.ui.pages"
+    for original in ("Document", "Columns", "Specimen", "Formula"):
         assert original in names, f"{original} is no longer a page: {names!r}"
+    # Blocks was the fifth. It showed the old core's hpack and vpack and was
+    # deleted in tranche 5 (`.concerns/lead--tranche-5.md`, decision 3).
+    assert "Blocks" not in names
 
 
 def test_the_sidebar_and_the_batch_are_one_scan(found: pages.Discovery) -> None:
@@ -241,11 +244,12 @@ def test_a_page_cannot_opt_out_of_the_batch() -> None:
 
 def test_the_original_batch_is_still_in_it(found: pages.Discovery) -> None:
     """
-    The eight photographs the Makefile's list used to name, in its order.
+    The photographs the Makefile's list used to name, in its order.
 
     The pages moved from a tab bar to modules; what `make shot-all` writes for
     them must not have changed name or number on the way. Later pages may add
-    to the batch, hence a prefix-insensitive check and not equality.
+    to the batch, hence a prefix-insensitive check and not equality. There
+    were eight: `blocks` went with its page in tranche 5.
     """
     was = [
         "document",
@@ -255,8 +259,8 @@ def test_the_original_batch_is_still_in_it(found: pages.Discovery) -> None:
         "columns:3",
         "specimen",
         "formula",
-        "blocks",
     ]
+    assert "blocks" not in found.shot_specs()
     now = [spec for spec in found.shot_specs() if spec in was]
     assert now == was
 

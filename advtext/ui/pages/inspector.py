@@ -1,63 +1,91 @@
 r"""
-The Inspector page: point at a block and read what the library knows about it.
+The Inspector page: point at a block and read what the view knows about it.
 
-A document on the left in a `BareView`, and on the right, for the block under
-the pointer: its role, the markdown it came from, the reading-order indices and
-lines it owns, the layout unit it is part of, whether that unit was built for
-the last relayout or carried over, and what building it costs. The hovered
-block is outlined. A right click opens a menu with *Copy as text* and *Copy as
-markdown*. A slider changes the measure, so that relayouts happen and what each
-one reused can be counted.
+A document on the left, and on the right, for the block under the pointer:
+its role, the markdown it came from, how long its text is, how many lines the
+library set it on and where it is. The hovered block is outlined. A right
+click opens a menu with *Copy as text* and *Copy as markdown*. A slider
+changes the measure, so that the text is set again.
 
 **Everything here goes through the view's public surface, and that is the
-point of the page**: it is the host a `BareView` was designed for. The view
-draws no outline and opens no menu. It says which block is under the mouse
-(`block_under_mouse`), whether the point is on the selection (`under_mouse`),
-where the block's source is (`block_source`, `source_of`), what a copy of it
-would be (`block_text`, `selected_text`, `selected_source`), and where its unit
-sits (`layout`, `origin`); the page draws the rectangle and owns the popup
-(`begin_popup_context_item` with an ID of the page's, straight after `draw`).
-
-## Two readouts that are the view's own account
-
-Both used to be worked out here, because the view kept no per-layout account
-of its caches and no timings; both substitutes were wrong in ways their
-labels had to apologise for, and both are now read from the library.
-
-- **Reused or built** (`Reuse`) is `UnitLayout.stats`: the positions of the
-  units `layout_units` composed and shipped for this layout, and by
-  subtraction the ones it found. The page's old count compared `Unit` objects
-  with the last eight layouts it had seen, which over-reported builds twice
-  over: a unit found by value after a re-parse is a new object around the old
-  commands, and a unit the view's cache still held from further back than the
-  page's window was counted as built.
-- **Build time** is `Unit.build_seconds`: what composing and shipping the
-  unit took when the view's cache built it -- one wall-clock sample, carried
-  with the unit for as long as it is reused. The page used to compose and
-  ship the unit a second time itself to have a number.
+point of the page.** The view draws no outline and opens no menu. It says
+which block is under the mouse (`block_under_mouse`), what the library hit
+there (`under_mouse`), where the block's source is (`block_source`,
+`source_of`), what a copy of it would be (`block_text`, `selected_text`,
+`selected_source`), and where it sits (`block_rect`, `origin`); the page
+draws the rectangle and owns the popup (`begin_popup_context_item` with an ID
+of the page's, straight after `draw`).
 
 Nothing here judges how the outline or the panel looks.
+
+## What draws
+
+An `advtext.ui.typeset_view.TypesetView` fed the markdown SOURCE. There is no
+other renderer. The view is made once, when the page is built, if
+`advtext.typesetter.ready()` (the app's font callback loaded the library's
+fonts). When it is not, the page draws ONE wrapped line saying why
+(`advtext.ui.pages.typeset.why_not`, drawn by that module's `say_why_not`) and
+nothing else: no slider, no panel. A view call that raises
+`TypesetUnavailable` anywhere in a frame -- the draw, the menu's copies, the
+facts, the outline -- has drawn no text: the page drops the view and what was
+pointed at, keeps the sentence, and is that one line from the next frame on.
+The exception does not leave `draw`, so the app's traceback page is not
+reached; any other exception is a bug and is not caught.
+
+`InspectorPage.renderer` is `"TypesetView"` while there is a view and
+`"none"` when there is not; `reason` is then why.
+
+Nothing of the old layout core or the old views is imported by this module,
+at import or later.
+
+## The panel and the counts line
+
+The panel is `TypesetFacts`, read from the view's source map and from the
+library:
+
+| the panel says | from |
+|---|---|
+| role | `block_role` |
+| source, source lines | `block_source`, `source_of` |
+| characters: the length of the block's text | `block_text` |
+| lines the library set | `len(set_lines(n, n + 1))` |
+| rectangle: the block's FULL extent, space above and below included | `block_rect` |
+
+There are no layout units on this side, nothing is carried over from one
+layout to the next by this side, and the library times nothing, so the panel
+says nothing about any of the three.
+
+The counts line is the view's own (`typeset_readouts`): edits of the
+document, blocks in it, blocks the library has laid out so far (a counter
+that only goes up: a new measure lays out again what the window shows) and
+blocks it has not reached. One more call into the library a frame, for that.
+The outline is the block's full extent, its own spacing included. The menu's
+target is the library's hit under the right click: "on the selection" is the
+hit's position lying inside the selected range, which at a line's end or
+between two lines is the nearest caret and not the glyph under the point.
+*Copy as markdown* of a selection is `TypesetView.selected_source`, which
+takes every block between the first and the last selected, a rule included.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, NamedTuple
 
-from advtext.backends.imgui_draw import DARK_PALETTE, DrawStats, rgba
-from advtext.markdown import build_document
-from advtext.ui.bare_view import MIN_WIDTH_PX, BareView, Pointed, block_kind
+from advtext import typesetter
+from advtext.ui.ownership import MIN_WIDTH_PX
 from advtext.ui.pages import PageContext, PageSpec, caption, debug_toggle, demo_text
-from advtext.ui.units import PlacedUnit, UnitLayout
-from advtext.units import px_from_sp
+from advtext.ui.palette import DARK_PALETTE, rgba
+from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
 
 __all__ = [
     "PAGE",
-    "BlockFacts",
     "InspectorPage",
-    "Reuse",
-    "facts_of",
-    "readouts",
+    "Target",
+    "TypesetFacts",
+    "typeset_facts_of",
+    "typeset_panel_lines",
+    "typeset_readouts",
 ]
 
 FALLBACK = (
@@ -76,166 +104,157 @@ OUTLINE = rgba(0xF5, 0x9E, 0x0B)
 MENU_ID = "##advtext-inspector-menu"
 
 
-@dataclass(slots=True)
-class Reuse:
+class Target(NamedTuple):
     """
-    A running tally of what each relayout built and what it found.
+    What a context menu is about: a block, and whether the click was on the selection.
 
-    `observe(layout)` once a frame. A layout that is a new object is a
-    relayout, and its `stats` (`advtext.ui.units.LayoutStats`) say which of
-    its units were composed and shipped for it; the rest were found in the
-    view's cache. Nothing is worked out here: this adds the layouts up.
+    What is under the mouse is the library's hit; these are the two things
+    the menu reads of it.
     """
 
-    relayouts: int = 0
-    last_units: int = 0
-    last_reused: int = 0
-    last_built: int = 0
-    total_reused: int = 0
-    total_built: int = 0
-    _last: UnitLayout | None = field(default=None, init=False)
-
-    def observe(self, layout: UnitLayout | None) -> bool:
-        """Take note of the view's layout; true if it was a new one."""
-        if layout is None or layout is self._last:
-            return False
-        self._last = layout
-        stats = layout.stats
-        self.relayouts += 1
-        self.last_units = stats.units
-        self.last_built = len(stats.built)
-        self.last_reused = stats.reused
-        self.total_built += self.last_built
-        self.total_reused += self.last_reused
-        return True
-
-    def was_reused(self, unit: PlacedUnit) -> bool:
-        """Whether `unit`, of the layout last observed, was found and not built for it."""
-        layout = self._last
-        if layout is None:
-            return False
-        position = layout.position_of(unit)
-        return position is not None and not layout.stats.was_built(position)
+    block: int | None
+    selected: bool = False
 
 
 @dataclass(frozen=True, slots=True)
-class BlockFacts:
-    """What the panel says about one block."""
+class TypesetFacts:
+    """What the panel says about one block. The module docstring has the map."""
 
     block: int
     kind: str
     source: str | None
     source_lines: tuple[int, int] | None
-    """`[first, stop)` lines of the markdown, zero-based, if the document records them."""
-    indices: tuple[int, int]
-    """`[start, stop)` of the block's reading-order indices in the layout."""
+    """`[first, stop)` lines of the markdown, zero-based."""
+    characters: int
+    """The length of the block's text as the library holds it."""
     lines: int
-    """Set lines that hold at least one glyph."""
-    unit: int
-    """Index of its (first) unit in `layout.placed`."""
-    unit_blocks: tuple[int, int]
-    """`[first, stop)` of the blocks that unit sets: more than one for a quote."""
-    unit_count: int
-    """How many units set the block: more than one only when it is laid out in pieces."""
-    reused: bool
-    build_ms: float
-    """What the view's cache spent building the block's unit(s), whenever it built them."""
+    """Lines the library set the block on at the last layout."""
     rect: tuple[float, ...]
-    """`(x, y, width, height)` in pixels from the document's top-left: `BareView.block_rect`."""
+    """`(x, y, width, height)` in pixels from the document's top-left: the block's full extent."""
 
 
-def facts_of(view: BareView, source: str, block: int, reuse: Reuse) -> BlockFacts | None:
-    """The facts for block `block` of `view` as last laid out, or `None`."""
-    layout = view.layout
-    if layout is None or not 0 <= block < len(view.document.blocks):
+def typeset_facts_of(view: Any, block: int) -> TypesetFacts | None:
+    """
+    The facts for block `block` of a `TypesetView` as last drawn, or `None`.
+
+    Two calls into the library for the block (its rectangle and its
+    geometry) and one for each of its lines; the page asks when the block or
+    the layout changed, not every frame.
+    """
+    if not 0 <= block < len(view.texts) or view.origin is None:
         return None
-    units = layout.units_of_block(block)
     rect = view.block_rect(block)
-    first_at = layout.position_of(units[0]) if units else None
-    if not units or rect is None or first_at is None:
+    if rect is None:
         return None
-    first = units[0]
-    ppi = view.px_per_inch
     where = view.source_of(block)
-    own = layout.indices_of_block(block)
-    return BlockFacts(
+    x, y = view.origin
+    return TypesetFacts(
         block=block,
-        kind=block_kind(view.document.blocks[block]).name,
-        source=view.block_source(block, source),
+        kind=view.block_role(block) or "RULE",
+        source=view.block_source(block),
         source_lines=None if where is None else (where.span.line_start, where.span.line_end),
-        indices=(own.start, own.stop),
+        characters=len(view.block_text(block)),
         lines=len(view.set_lines(block, block + 1)),
-        unit=first_at,
-        unit_blocks=(first.block_range.start, first.block_range.stop),
-        unit_count=len(units),
-        reused=all(reuse.was_reused(unit) for unit in units),
-        build_ms=sum(unit.unit.build_seconds for unit in units) * 1000.0,
-        rect=(
-            px_from_sp(rect.x, ppi),
-            px_from_sp(rect.y, ppi),
-            px_from_sp(rect.width, ppi),
-            px_from_sp(rect.height, ppi),
-        ),
+        rect=(rect[0] - x, rect[1] - y, rect[2] - rect[0], rect[3] - rect[1]),
     )
 
 
-def readouts(reuse: Reuse, width_px: float) -> tuple[str, ...]:
-    """The counts line under the controls."""
-    return (
-        f"measure {width_px:.0f} px   relayouts {reuse.relayouts}   "
-        f"last: {reuse.last_units} units, {reuse.last_reused} reused, {reuse.last_built} built   "
-        f"all: {reuse.total_reused} reused, {reuse.total_built} built",
-    )
-
-
-def panel_lines(facts: BlockFacts) -> tuple[str, ...]:
+def typeset_panel_lines(facts: TypesetFacts) -> tuple[str, ...]:
     """The panel's lines for one block, above its source."""
     lines = "(not recorded)"
     if facts.source_lines is not None:
         lines = f"{facts.source_lines[0] + 1} to {facts.source_lines[1]}"
-    unit = f"unit {facts.unit}"
-    if facts.unit_count > 1:
-        unit += f" and {facts.unit_count - 1} more (laid out in pieces)"
-    if facts.unit_blocks[1] - facts.unit_blocks[0] > 1:
-        unit += f", shared by blocks {facts.unit_blocks[0]} to {facts.unit_blocks[1] - 1}"
-    start, stop = facts.indices
-    state = "carried over" if facts.reused else "built"
     return (
         f"block {facts.block}: {facts.kind}",
         f"source lines: {lines}",
-        f"indices: {start} to {stop} ({stop - start})",
+        f"characters: {facts.characters}",
         f"lines set: {facts.lines}",
-        unit,
-        f"at the last relayout: {state} (the layout's own stats)",
-        f"compose + ship when built: {facts.build_ms:.2f} ms (one sample, the view's)",
-        f"rectangle: y {facts.rect[1]:.0f}, height {facts.rect[3]:.0f} px",
+        f"rectangle: y {facts.rect[1]:.0f}, height {facts.rect[3]:.0f} px (its full extent)",
     )
 
 
+def typeset_readouts(view: Any, stats: Any, width_px: float, edits: int) -> tuple[str, ...]:
+    """
+    The counts line under the controls: the view's own account.
+
+    `stats` is the view's `ViewStats` as of the last frame, or `None`.
+    """
+    counted = (
+        "nothing drawn yet"
+        if stats is None
+        else f"blocks {stats.blocks}   laid out so far {stats.blocks_laid_out}   "
+        f"not reached yet {stats.blocks_deferred}"
+    )
+    return (f"measure {width_px:.0f} px   edits of the document {edits}   {counted}",)
+
+
+def _why_not() -> str:
+    """
+    Why imtypeset is not drawing, as one sentence; empty when `typesetter.ready()`.
+
+    `advtext.ui.pages.typeset.why_not`, which never asks `typesetter.module()`
+    (a page is built in the pytest process by every page-enumerating test,
+    and the library is kept out of that process). Imported when it is needed,
+    so that importing this page imports no other page.
+    """
+    if typesetter.ready():
+        return ""
+    from advtext.ui.pages.typeset import why_not
+
+    return why_not()
+
+
+def _not_drawing(reason: str) -> str:
+    """
+    The one line a page shows instead of its content: `advtext.ui.pages.typeset.not_drawing`.
+    """
+    from advtext.ui.pages.typeset import not_drawing
+
+    return not_drawing(reason)
+
+
+def _say_why_not(reason: str) -> None:
+    """
+    The whole of a frame without the library: one wrapped line, `say_why_not`'s.
+    """
+    from advtext.ui.pages.typeset import say_why_not
+
+    say_why_not(reason)
+
+
 class InspectorPage:
-    """The page: a `BareView`, the facts for the block last pointed at, and the menu."""
+    """
+    The page: a view, the facts for the block last pointed at, and the menu.
+
+    `typeset` is the `TypesetView`, or `None` when the library is not drawing
+    (`reason` says why, and the page is that one line). `view` is the same
+    object under the name the copies use.
+    """
 
     def __init__(self, context: PageContext) -> None:
         self.context = context
         text = demo_text("sample.md")
         self.source = FALLBACK if text is None else text
-        self.view = BareView(
-            document=build_document(self.source, context.theme, context.metrics),
-            theme=context.theme,
-            measure=context.measure,
-            px_per_inch=context.px_per_inch,
-        )
-        self.reuse = Reuse()
+        self.typeset: TypesetView | None = None
+        self.reason = _why_not()
+        """Why nothing is drawn, when nothing is; empty while the view draws."""
+        if not self.reason:
+            try:
+                self.typeset = TypesetView(self.source, theme=context.theme, palette=DARK_PALETTE)
+            except TypesetUnavailable as exc:
+                self.reason = str(exc)
+        self._revision = 0 if self.typeset is None else self.typeset.revision
         self.width_px = DEFAULT_WIDTH_PX
         self.max_width_px = DEFAULT_WIDTH_PX
         self.frames = 0
-        self.stats: DrawStats | None = None
+        self.view_stats: Any = None
+        """The view's `ViewStats` as of the last frame, or `None`."""
         self.hovered: int | None = None
         """The block under the pointer on the last frame, or `None`."""
         self.block: int | None = None
         """The block the panel is about: the last one hovered. It stays when the mouse leaves."""
-        self.facts: BlockFacts | None = None
-        self.menu: Pointed | None = None
+        self.facts: TypesetFacts | None = None
+        self.menu: Target | None = None
         """What the open context menu is about: what was under the right click."""
         self.menus_opened = 0
         self.copied: tuple[str, str] | None = None
@@ -244,52 +263,101 @@ class InspectorPage:
         """The outline drawn on the last frame, as screen `(x0, y0, x1, y1)`, or `None`."""
         self._facts_for: tuple[object, ...] | None = None
 
+    @property
+    def view(self) -> TypesetView | None:
+        """The view in use, or `None` when the library is not drawing."""
+        return self.typeset
+
+    @property
+    def renderer(self) -> str:
+        """`"TypesetView"` while the library draws this page, `"none"` when nothing does."""
+        return "TypesetView" if self.typeset is not None else "none"
+
     # -- what the controls and the menu do --------------------------------
 
     def set_width(self, width_px: float) -> None:
         """What the slider does: the next frame lays the document out at this measure."""
         self.width_px = max(MIN_WIDTH_PX, float(width_px))
 
-    def copy_text(self, target: Pointed) -> str:
-        """*Copy as text*: the selection if the click was on it, else the block as it reads."""
-        if target.selected:
-            text = self.view.selected_text()
-        else:
-            text = "" if target.block is None else self.view.block_text(target.block)
-        self.view.copy(text)
-        self.copied = ("text", text)
-        return text
+    def copy_text(self, target: Target) -> str:
+        """
+        *Copy as text*: the selection if the click was on it, else the block as it reads.
 
-    def copy_markdown(self, target: Pointed) -> str:
-        """*Copy as markdown*: the source of the selected blocks, else of the block."""
+        Nothing is copied, and the answer is empty, with no view.
+        """
+        view = self.typeset
+        if view is None:
+            return ""
         if target.selected:
-            text = self.view.selected_source(self.source)
+            text = view.selected_text()
         else:
-            found = (
-                None if target.block is None else self.view.block_source(target.block, self.source)
-            )
+            text = "" if target.block is None else view.block_text(target.block)
+        view.copy(text)
+        self.copied = ("text", text)
+        return str(text)
+
+    def copy_markdown(self, target: Target) -> str:
+        """
+        *Copy as markdown*: the source of the selected blocks, else of the block.
+
+        Nothing is copied, and the answer is empty, with no view.
+        """
+        view = self.typeset
+        if view is None:
+            return ""
+        if target.selected:
+            text = view.selected_source(self.source)
+        else:
+            found = None if target.block is None else view.block_source(target.block, self.source)
             text = "" if found is None else found
-        self.view.copy(text)
+        view.copy(text)
         self.copied = ("markdown", text)
-        return text
+        return str(text)
+
+    def target_under_mouse(self) -> Target:
+        """
+        What the view has under the mouse, as the menu wants it.
+
+        The library's hit at the last draw. `selected` is whether the hit's
+        position lies inside the selected range.
+        """
+        view = self.typeset
+        hit = None if view is None else view.under_mouse
+        if view is None or hit is None or not hit.in_block:
+            return Target(None, False)
+        place = (int(hit.position[0]), int(hit.position[1]))
+        selection = view.selection
+        return Target(place[0], selection is not None and selection[0] <= place < selection[1])
+
+    @property
+    def edits(self) -> int:
+        """How many times the view's document changed since the page opened; 0 with no view."""
+        return 0 if self.typeset is None else self.typeset.revision - self._revision
+
+    def lines(self) -> tuple[str, ...]:
+        """The counts line under the controls; the one "why not" line when nothing draws."""
+        if self.typeset is None:
+            return (_not_drawing(self.reason),)
+        return typeset_readouts(self.typeset, self.view_stats, self.width_px, self.edits)
 
     def report(self) -> list[str]:
         """What an unattended run prints: counts."""
-        reuse, stats, facts = self.reuse, self.stats, self.facts
-        layout = self.view.layout
+        facts = self.facts
+        counted = self.view_stats
+        view = self.typeset
         return [
-            f"frames={self.frames} blocks={len(self.view.document.blocks)} "
-            f"units={0 if layout is None else len(layout.placed)} "
-            f"width={self.width_px:.0f} relayouts={reuse.relayouts} "
-            f"last_reused={reuse.last_reused} last_built={reuse.last_built} "
-            f"reused={reuse.total_reused} built={reuse.total_built} "
+            f"frames={self.frames} renderer={self.renderer} "
+            f"blocks={0 if view is None else len(view.texts)} width={self.width_px:.0f} "
+            f"edits={self.edits} "
+            f"laid_out={0 if counted is None else counted.blocks_laid_out} "
+            f"deferred={0 if counted is None else counted.blocks_deferred} "
             f"hovered={-1 if self.hovered is None else self.hovered} "
             f"block={-1 if self.block is None else self.block} "
             f"kind={'-' if facts is None else facts.kind} "
             f"lines={0 if facts is None else facts.lines} "
             f"outlined={int(self.outlined is not None)} menus={self.menus_opened} "
-            f"glyphs={0 if stats is None else stats.glyphs} "
-            f"missing={0 if stats is None else stats.missing}"
+            f"whole={1 if counted is None else int(counted.whole)} "
+            f"vertices={0 if counted is None else counted.vertices}"
         ]
 
     # -- the frame ---------------------------------------------------------
@@ -298,8 +366,31 @@ class InspectorPage:
         from imgui_bundle import imgui
 
         self.frames += 1
+        view = self.typeset
+        if view is None:
+            _say_why_not(self.reason)
+            return
+        try:
+            self._frame(imgui, view)
+        except TypesetUnavailable as exc:
+            # Whatever raised drew no text: what was drawn before it is this
+            # frame, and the page is the one line from the next. Block numbers
+            # were the view's, so what was pointed at goes with it.
+            self.typeset = None
+            self.view_stats = None
+            self.reason = str(exc)
+            self.block = self.hovered = self.facts = self.menu = self._facts_for = None
+            self.outlined = None
+
+    def _frame(self, imgui: Any, view: TypesetView) -> None:
+        """
+        The frame through imtypeset. `TypesetUnavailable` is the caller's to catch.
+
+        Every pair opened here is closed on the way out of an exception, so
+        the caller's handler leaves ImGui's stacks as it found them.
+        """
         self._controls(imgui)
-        for line in readouts(self.reuse, self.width_px):
+        for line in self.lines():
             caption(line)
         imgui.separator()
 
@@ -314,27 +405,31 @@ class InspectorPage:
             imgui.ChildFlags_.borders.value,
             imgui.WindowFlags_.always_vertical_scrollbar.value,
         )
-        self.max_width_px = max(MIN_WIDTH_PX, imgui.get_content_region_avail().x)
-        width_px = min(self.width_px, self.max_width_px)
-        view = self.view
-        view.debug = self.context.debug
-        self.stats = view.draw(fonts=self.context.fonts, palette=DARK_PALETTE, width_px=width_px)
-        over = bool(imgui.is_item_hovered())
-        self.reuse.observe(view.layout)
-        self.hovered = view.block_under_mouse() if over else None
-        if self.hovered is not None:
-            self.block = self.hovered
-        if over and imgui.is_mouse_clicked(imgui.MouseButton_.right):
-            self.menu = view.under_mouse()
-        self._menu(imgui)
-        self._refresh()
-        self._outline(imgui)
-        imgui.end_child()
+        try:
+            self.max_width_px = max(MIN_WIDTH_PX, imgui.get_content_region_avail().x)
+            width_px = min(self.width_px, self.max_width_px)
+            view.debug = self.context.debug
+            view.draw(palette=DARK_PALETTE, width_px=width_px)
+            # One more call into the library a frame, for the counts line.
+            self.view_stats = view.stats
+            over = bool(imgui.is_item_hovered())
+            self.hovered = view.block_under_mouse() if over else None
+            if self.hovered is not None:
+                self.block = self.hovered
+            if over and imgui.is_mouse_clicked(imgui.MouseButton_.right):
+                self.menu = self.target_under_mouse()
+            self._menu(imgui)
+            self._refresh(width_px)
+            self._outline(imgui)
+        finally:
+            imgui.end_child()
 
         imgui.same_line()
         imgui.begin_child("##advtext-inspector-panel", imgui.ImVec2(0.0, 0.0))
-        self._panel(imgui)
-        imgui.end_child()
+        try:
+            self._panel(imgui)
+        finally:
+            imgui.end_child()
 
     def _controls(self, imgui: Any) -> None:
         imgui.set_next_item_width(320.0)
@@ -354,36 +449,54 @@ class InspectorPage:
         """The host's menu. The view opened nothing; this is attached to its rectangle."""
         if not imgui.begin_popup_context_item(MENU_ID):
             return
-        if imgui.is_window_appearing():
-            self.menus_opened += 1
-        target = self.menu if self.menu is not None else Pointed(None, None, False)
-        about = "selection" if target.selected else "block"
-        if imgui.menu_item(f"Copy {about} as text", "", False, target.block is not None)[0]:
+        # A copy asks the view, which may find the library gone: what was
+        # clicked is noted here and carried out after the popup is closed, so
+        # that no ImGui pair is open when it raises.
+        chosen = ""
+        try:
+            if imgui.is_window_appearing():
+                self.menus_opened += 1
+            target = self.menu if self.menu is not None else Target(None, False)
+            about = "selection" if target.selected else "block"
+            if imgui.menu_item(f"Copy {about} as text", "", False, target.block is not None)[0]:
+                chosen = "text"
+            if imgui.menu_item(f"Copy {about} as markdown", "", False, target.block is not None)[0]:
+                chosen = "markdown"
+        finally:
+            imgui.end_popup()
+        if chosen == "text":
             self.copy_text(target)
-        if imgui.menu_item(f"Copy {about} as markdown", "", False, target.block is not None)[0]:
+        elif chosen == "markdown":
             self.copy_markdown(target)
-        imgui.end_popup()
 
-    def _refresh(self) -> None:
+    def _refresh(self, width_px: float = 0.0) -> None:
         """Work the facts out again when the block or the layout changed, not every frame."""
-        view, block = self.view, self.block
-        layout = view.layout
+        view = self.typeset
+        if view is None:
+            return
+        block = self.block
+        # There is no layout object to compare. A block's facts change with
+        # the measure, with an edit, and with the document's height (a block
+        # above it was laid out for the first time and moved it).
+        layout: object = None if view.origin is None else (width_px, view.revision, view.height)
         key = (block, layout)
-        if self._facts_for is not None and all(
-            a is b or a == b for a, b in zip(self._facts_for, key, strict=True)
-        ):
+        if self._facts_for is not None and self._facts_for == key:
             return
         self._facts_for = key
         self.facts = None
         if block is None or layout is None:
             return
-        self.facts = facts_of(view, self.source, block, self.reuse)
+        self.facts = typeset_facts_of(view, block)
 
     def _outline(self, imgui: Any) -> None:
         self.outlined = None
-        rect = None if self.hovered is None else self.view.block_rect(self.hovered)
-        screen = None if rect is None else self.view.to_screen(rect)
-        if self.facts is None or screen is None:
+        view = self.typeset
+        if self.facts is None or self.hovered is None or view is None:
+            return
+        # One call into the library on a frame a block is hovered: its full
+        # extent on screen, as of this frame's draw.
+        screen = view.block_rect(self.hovered)
+        if screen is None:
             return
         box = (screen[0] - 3.0, screen[1] - 1.0, screen[2] + 3.0, screen[3] + 1.0)
         imgui.get_window_draw_list().add_rect(
@@ -396,7 +509,7 @@ class InspectorPage:
         if facts is None:
             caption("Point at a block. Right-click it for the copy menu.")
             return
-        for line in panel_lines(facts):
+        for line in typeset_panel_lines(facts):
             imgui.text_wrapped(line)
         imgui.separator()
         caption("markdown source, verbatim:")
@@ -410,5 +523,5 @@ PAGE = PageSpec(
     order=140,
     factory=InspectorPage,
     group="Embedding",
-    caption="Point at a block: its source, role, indices, unit, and what a relayout reused.",
+    caption="Point at a block: its source, role, lines and rectangle, and a copy menu.",
 )

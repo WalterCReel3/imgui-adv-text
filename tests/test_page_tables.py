@@ -1,19 +1,31 @@
 """
-The Tables page: its width arithmetic, its board with no ImGui, the page in
-frames with a mouse, and the real app in a window.
+The Tables page: its width arithmetic, what it says without the imtypeset
+library, the page in frames with a mouse when the library draws, and the real
+app in a window.
 
 **Four levels, stated so nobody reads more into a green run than is there.**
 
-1. `dragged`, `fitted` and `floors_of`: integers in, integers out.
-2. `Board` with no ImGui at all: `settle`, `drag`, `reset`, `observe` against
-   the view's own layout. "One unit re-shipped" is asserted here, by identity
-   of every other unit.
-3. The page through `App.gui` in frames of a real `ImGuiContext` with no
-   backend, mouse events queued before `new_frame`: a handle hovered, pressed,
-   moved and released; a press on text; a selection carried through a drag;
-   and the one gesture a mouse cannot make, a press on the frame of arrival.
-4. The real app in a real window (`tests/conftest.py::window`), the same
-   gesture injected, the page's own report read back as counts.
+1. `dragged` and `fitted`: integers in, integers out.
+2. Without the library, in this process (where it is never ready): the page
+   draws one line saying why and nothing else, its launch options are read
+   all the same, the readout lines are checked over a stand-in board, and a
+   fresh interpreter shows that opening the page imports no old view.
+3. With the library (skipped with the reason when `IMTYPESET_LIBRARY` is not
+   set): ONE child process with the library loaded and its fonts given,
+   driving the page in frames of a real `ImGuiContext` with no backend, mouse
+   events queued before `new_frame`: a handle hovered, pressed, moved and
+   released; a press on text; a selection carried through a drag; the one
+   gesture a mouse cannot make, a press on the frame of arrival; and the
+   library failing mid-run.
+4. The real app in a real window (`tests/conftest.py::window`), with and
+   without the library; with it, the same gesture injected and the page's own
+   report read back as counts.
+
+**The old board is gone and its answers are data.** Until T5-FB-C the page
+had a second board over the Python layout core, and the library's columns
+were compared with it live. `OLD_BOARD` below is what that board answered for
+`demo/tables.md` at the page's opening measure, written down once
+(`.concerns/T5-FB-C-scripts/freeze_tables.py`).
 
 **Nothing here judges how a table looks** at any width. Nobody has dragged a
 column with a hand.
@@ -21,72 +33,97 @@ column with a hand.
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import random
+import subprocess
+import sys
 import textwrap
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+import test_typeset_closure as closure
 
-from advtext.markdown import ColumnAlign, TableBlock, TextBlock, build_document
-from advtext.pack import hpack
-from advtext.selection import Selection
-from advtext.style import Theme, char_measure, fontlib_metrics
-from advtext.ui import SizedTable, pages, table_columns, with_columns
+from advtext import typesetter
+from advtext.ui import pages
 from advtext.ui.app import App, parse_tab_request
 from advtext.ui.pages import PageContext
 from advtext.ui.pages import tables as page
-from advtext.ui.pages.tables import Board, dragged, fitted, floors_of, readouts
-from advtext.units import UNITY, Scaled, px_from_sp, sp_from_px
+from advtext.ui.pages import typeset as typeset_page
+from advtext.ui.pages.tables import dragged, fitted, readouts
+from advtext.ui.typeset_view import TypesetUnavailable
+from advtext.units import Scaled, px_from_sp, sp_from_px
 
 if TYPE_CHECKING:
     from conftest import Window
 
 DENSITY = 96.0
 SIZE = (1300.0, 800.0)
+_ROOT = Path(__file__).resolve().parent.parent
+_VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
 
-SMALL = (
-    "A paragraph above the table, long enough to have words to select in it.\n\n"
-    "| Key | Value |\n"
-    "| --- | --- |\n"
-    "| one | alpha bravo charlie delta echo foxtrot golf hotel india juliet |\n"
-    "| two | kilo lima mike |\n\n"
-    "A paragraph below the table.\n"
-)
+OLD_BOARD: dict[str, Any] = {
+    "width_sp": 35522150,
+    "tables": [4, 7, 10, 13, 16],
+    "handles": 17,
+    "columns": [
+        [314.66232179457245, 405.33767009781036],
+        [77.9609220955272, 359.6631041796389, 282.3759656172167],
+        [68.61401498936281, 348.97357565379826, 128.67554775062268, 173.73685349859903],
+        [
+            84.39058689419885,
+            148.59373378476548,
+            183.2882347122769,
+            155.96976020911168,
+            147.7576762920299,
+        ],
+        [125.49215263724575, 370.7110299268369, 223.79680932830016],
+    ],
+    "natural": [
+        [110.12497486638648, 141.85936446009757],
+        [77.9609220955272, 958.6793867073994, 748.60903691236],
+        [44.31246594800748, 225.374896222499, 83.10153655562475, 112.20309905562475],
+        [
+            84.39058689419885,
+            381.999914059257,
+            579.281146222499,
+            451.7264157521275,
+            420.4139668301163,
+        ],
+        [125.49215263724575, 529.6717509534559, 223.79680932830016],
+    ],
+    "floors": [
+        [79.75779304171856, 69.67183608343711],
+        [77.9609220955272, 104.04679554535078, 83.42180770677668],
+        [44.31246594800748, 92.2577727726754, 83.10153655562475, 78.89060229867165],
+        [
+            84.39058689419885,
+            97.3515049359174,
+            96.35155196009757,
+            91.03903574486303,
+            87.89840831257784,
+        ],
+        [125.49215263724575, 123.66402682648403, 223.79680932830016],
+    ],
+    "available": [35522150, 35522150, 35522150, 35522150, 35522150],
+    "readouts": [
+        "table 1 of 5  ·  automatic  ·  720 px wide in a 720 px measure"
+        "  ·  0 of 2 columns under natural width, 0 at the floor",
+        "width / natural / floor, px:  315 / 110 / 80  ·  405 / 142 / 70",
+    ],
+}
+"""
+What the old core's board answered for `demo/tables.md` at 720 px, 96 px an inch.
 
-
-@pytest.fixture(scope="module")
-def theme() -> Theme:
-    return Theme.build()
-
-
-@pytest.fixture(scope="module")
-def measure() -> Any:
-    return char_measure(fontlib_metrics)
+Pixels for `columns`, `natural` and `floors` (a list a table), scaled points
+for `width_sp` and `available`, and its first two readout lines.
+"""
 
 
 def _px(value: float) -> Scaled:
     return sp_from_px(value, DENSITY)
-
-
-def _board(theme: Theme, measure: Any, text: str | None = SMALL, width_px: float = 720.0) -> Board:
-    """
-    A board settled and laid out at `width_px`, its first layout already observed.
-    """
-    board = Board(theme=theme, measure=measure, text=text)
-    _lay_out(board, width_px)
-    return board
-
-
-def _lay_out(board: Board, width_px: float | None = None) -> int | None:
-    """
-    What a frame does without a frame: settle, lay out, observe.
-    """
-    if width_px is not None:
-        board.settle(_px(width_px))
-    assert board.width is not None
-    board.view.layout_for(board.width)
-    return board.observe()
 
 
 # ----------------------------------------------------------------------
@@ -195,281 +232,8 @@ def test_fitted_sums_to_the_measure_exactly_whenever_it_squeezes() -> None:
             assert out == floors
 
 
-def test_a_columns_floor_is_its_longest_word_and_the_padding(theme: Theme, measure: Any) -> None:
-    """
-    The oracle is the word set on its own, not the breaker `floors_of` asks.
-    """
-    source = (
-        "| a | b |\n| --- | --- |\n"
-        "| one two incomprehensibilities three | xx |\n"
-        "| four | yy zzzzzzzzzzzzzzzzzzzzzzzz y |\n"
-    )
-    table = build_document(source, theme, fontlib_metrics).blocks[0]
-    assert isinstance(table, TableBlock)
-
-    def alone(word: str) -> Scaled:
-        block = build_document(word + "\n", theme, fontlib_metrics).blocks[0]
-        assert isinstance(block, TextBlock)
-        return hpack(block.material, measure=measure).box.width + 2 * theme.cell_padding
-
-    expected = (alone("incomprehensibilities"), alone("zzzzzzzzzzzzzzzzzzzzzzzz"))
-    assert floors_of(table, theme, measure) == expected
-    # The same for the table once it has widths of its own.
-    sized = with_columns(table, widths=(50 * UNITY, 60 * UNITY))
-    assert floors_of(sized, theme, measure) == expected
-
-
 # ----------------------------------------------------------------------
-# 2. The board
-# ----------------------------------------------------------------------
-
-
-def test_the_demo_document_has_the_five_cases_the_page_says_it_has(
-    theme: Theme, measure: Any
-) -> None:
-    """
-    Counted from the converted document, at the measure the page opens at.
-    """
-    text = pages.demo_text("tables.md")
-    assert text is not None, "demo/tables.md is missing"
-    board = _board(theme, measure, text=None, width_px=page.DEFAULT_PANE_PX)
-    assert len(board.tables) == 5
-    blocks = [board.block(table) for table in board.tables]
-    width = board.width
-    assert width is not None
-
-    fits = [sum(board.natural(table)) <= width for table in board.tables]
-    assert fits[0], "the short-cell table should fit and be scaled up"
-    assert not fits[1] and not fits[3]
-    # Too wide for the whole body too, so no setting of the slider un-squeezes it.
-    assert sum(board.natural(board.tables[3])) > _px(1068.0)
-    assert sum(board.floors(board.tables[3])) < width
-
-    aligns = set(blocks[2].aligns)
-    assert {ColumnAlign.CENTER, ColumnAlign.RIGHT} <= aligns
-
-    links = [cell.links for row in blocks[4].rows for cell in row if cell.links]
-    assert len(links) >= 3
-    assert all(len(block.header) >= 2 for block in blocks)
-
-
-def _as_set(board: Board, table: int, theme: Theme, measure: Any) -> tuple[Scaled, ...]:
-    """
-    What compose will set the view's own block to, asked of the library.
-    """
-    shown = board.view.document.blocks[table]
-    assert isinstance(shown, TableBlock) and board.width is not None
-    return table_columns(shown, theme, board.width, measure)
-
-
-def test_the_boards_columns_are_the_ones_the_view_is_set_to(theme: Theme, measure: Any) -> None:
-    board = _board(theme, measure, text=None)
-    assert board.width is not None
-    for table in board.tables:
-        assert board.columns(table) == _as_set(board, table, theme, measure)
-    first = board.tables[1]
-    assert board.drag(first, 0, sum(board.columns(first)[:1]) + _px(40.0))
-    _lay_out(board)
-    for table in board.tables:
-        assert board.columns(table) == _as_set(board, table, theme, measure)
-    assert isinstance(board.view.document.blocks[first], SizedTable)
-
-
-def test_a_drag_re_ships_the_one_table_and_no_other_unit(theme: Theme, measure: Any) -> None:
-    board = _board(theme, measure, text=None)
-    before = board.view.layout
-    assert before is not None and board.relayouts == 0
-    table = board.tables[1]
-    grip = next(g for g in board.grips() if g.table == table and g.edge == 1)
-
-    assert board.drag(table, 1, grip.x - _px(120.0))
-    assert _lay_out(board) == 1
-    after = board.view.layout
-    assert after is not None and after is not before
-    assert (board.reshipped, board.units, board.relayouts) == (1, len(after.placed), 1)
-    changed = [
-        new.block_start
-        for old, new in zip(before.placed, after.placed, strict=True)
-        if old.unit is not new.unit
-    ]
-    assert changed == [table]
-
-
-def test_a_narrower_column_wraps_its_cells_onto_more_lines(theme: Theme, measure: Any) -> None:
-    board = _board(theme, measure)
-    (table,) = board.tables
-    layout = board.view.layout
-    assert layout is not None
-    (unit,) = layout.units_of_block(table)
-    below_was = layout.units_of_block(table + 1)[0].y
-    lines = len(board.view.set_lines(table, table + 1))
-    assert lines == 3  # header and two rows, nothing wrapped at 720 px
-
-    grip = board.grips()[-1]
-    assert (grip.table, grip.edge) == (table, 1)
-    assert board.drag(table, 1, 0.0)
-    _lay_out(board)
-    layout = board.view.layout
-    assert layout is not None
-    (narrow,) = layout.units_of_block(table)
-    assert board.columns(table)[1] == board.floors(table)[1]
-    assert len(board.view.set_lines(table, table + 1)) > lines + 5
-    assert narrow.height > unit.height
-    # The paragraph under the table moved down by exactly what the table grew.
-    (below,) = layout.units_of_block(table + 1)
-    assert below.y - below_was == narrow.height - unit.height
-
-
-def test_the_handles_sit_on_the_column_edges_of_the_table_as_laid_out(
-    theme: Theme, measure: Any
-) -> None:
-    board = _board(theme, measure, text=None)
-    layout = board.view.layout
-    assert layout is not None
-    grips = board.grips()
-    assert len(grips) == sum(len(board.columns(table)) for table in board.tables)
-    for table in board.tables:
-        own = [grip for grip in grips if grip.table == table]
-        assert [grip.edge for grip in own] == list(range(len(own)))
-        units = layout.units_of_block(table)
-        assert {(grip.top, grip.bottom) for grip in own} == {(units[0].y, units[-1].bottom)}
-        xs = [grip.x for grip in own]
-        assert xs == sorted(xs)
-        assert xs[-1] == sum(board.columns(table)) + board.block(table).left_indent
-    # Between a settle at a new measure and the layout for it, nothing to grab.
-    board.settle(_px(500.0))
-    assert board.grips() == ()
-
-
-def test_nothing_a_pointer_can_ask_for_reaches_compose_as_an_invalid_width(
-    theme: Theme, measure: Any
-) -> None:
-    """
-    `with_columns` raises on a width under one unit or not finite; none may arrive.
-    """
-    board = _board(theme, measure, text=None, width_px=300.0)
-    wild = [-1e300, -1e9, -1.0, 0.0, 0.4, 1e9, 1e300, math.inf, -math.inf, math.nan]
-    for grip in board.grips():
-        for x in wild:
-            board.drag(grip.table, grip.edge, x)
-            _lay_out(board)
-            widths = board.columns(grip.table)
-            floors = board.floors(grip.table)
-            assert all(type(width) is int and width >= 1 for width in widths)
-            assert all(width >= floor for width, floor in zip(widths, floors, strict=True))
-    assert not board.drag(999, 0, 10.0), "a block that is not a table"
-    assert not board.drag(board.tables[0], 99, 10.0), "an edge that does not exist"
-
-
-def test_no_drag_before_the_first_layout_and_none_on_a_document_with_no_table(
-    theme: Theme, measure: Any
-) -> None:
-    fresh = Board(theme=theme, measure=measure, text=SMALL)
-    assert not fresh.drag(fresh.tables[0], 0, 100.0)
-    assert fresh.columns(fresh.tables[0]) == () and fresh.grips() == ()
-    assert len(readouts(fresh)) == 4
-
-    bare = _board(theme, measure, text="Only a paragraph.\n")
-    assert bare.tables == () and bare.focus is None and bare.grips() == ()
-    assert readouts(bare)[0] == "no table in this document"
-    assert not bare.reset()
-
-
-def test_reset_puts_back_the_very_blocks_the_document_was_converted_to(
-    theme: Theme, measure: Any
-) -> None:
-    board = _board(theme, measure, text=None)
-    automatic = {table: board.columns(table) for table in board.tables}
-    for table in board.tables[:3]:
-        assert board.drag(table, 1, -_px(2000.0))
-    _lay_out(board)
-    assert len(board.chosen) == 3
-
-    assert board.reset()
-    assert _lay_out(board) == 3, "the three tables that had been dragged, and nothing else"
-    assert board.chosen == {}
-    assert all(
-        shown is source
-        for shown, source in zip(board.view.document.blocks, board.source.blocks, strict=True)
-    )
-    assert {table: board.columns(table) for table in board.tables} == automatic
-    assert not board.reset()
-
-
-def test_chosen_widths_are_squeezed_by_a_narrow_measure_and_come_back(
-    theme: Theme, measure: Any
-) -> None:
-    board = _board(theme, measure, width_px=720.0)
-    (table,) = board.tables
-    assert board.drag(table, 1, _px(600.0))
-    _lay_out(board)
-    wide = board.columns(table)
-    assert sum(wide) == _px(600.0)
-
-    assert _lay_out(board, 300.0) is None, "a new measure is not a drag and is not counted"
-    narrow = board.columns(table)
-    assert sum(narrow) == _px(300.0) < sum(wide)
-    assert all(w >= f for w, f in zip(narrow, board.floors(table), strict=True))
-    assert board.view.document.blocks[table] == with_columns(board.block(table), widths=narrow)
-
-    _lay_out(board, 720.0)
-    assert board.columns(table) == wide
-
-
-def test_the_floors_option_sets_every_column_of_every_table_to_its_floor(
-    theme: Theme, measure: Any
-) -> None:
-    board = _board(theme, measure, text=None)
-    board.to_floors()
-    assert _lay_out(board) == len(board.tables)
-    for table in board.tables:
-        assert board.columns(table) == board.floors(table)
-
-
-def test_the_readouts_are_four_lines_of_counts_and_sizes(theme: Theme, measure: Any) -> None:
-    board = _board(theme, measure)
-    (table,) = board.tables
-    lines = readouts(board)
-    assert len(lines) == 4
-    assert lines[0].startswith("table 1 of 1  ·  automatic  ·  720 px wide in a 720 px measure")
-    assert "0 of 2 columns under natural width, 0 at the floor" in lines[0]
-    assert lines[2] == "last drag: none yet"
-    assert "clicked: 0" in lines[3]
-
-    board.drag(table, 1, 0.0)
-    _lay_out(board)
-    lines = readouts(board)
-    assert (
-        "dragged" in lines[0] and "1 of 2 columns under natural width, 1 at the floor" in lines[0]
-    )
-    shown = [tuple(int(n) for n in part.split("/")) for part in lines[1].split(":  ")[1].split("·")]
-    expected = [
-        tuple(round(px_from_sp(value, DENSITY)) for value in column)
-        for column in zip(
-            board.columns(table), board.natural(table), board.floors(table), strict=True
-        )
-    ]
-    assert shown == expected
-    assert lines[2].startswith("last drag: 1 of 3 units re-shipped")
-
-    # Change and cost, never quality (docs/visual-review.md).
-    banned = ("better", "worse", "good", "bad", "clean", "nice", "crisp", "ugly", "correct")
-    for line in lines:
-        assert not any(word in line.lower().split() for word in banned)
-
-
-def test_without_a_demo_directory_the_page_shows_its_built_in_table(
-    theme: Theme, measure: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(page, "demo_text", lambda name: None)
-    board = Board(theme=theme, measure=measure)
-    assert len(board.tables) == 1
-    _lay_out(board, 400.0)
-    assert len(board.grips()) == 2
-
-
-# ----------------------------------------------------------------------
-# 3. The page, in frames
+# 2. Without the library
 # ----------------------------------------------------------------------
 
 
@@ -500,11 +264,11 @@ def test_the_launch_options_set_the_measure_and_the_opening_state() -> None:
     assert page.TablesPage(_context("document:3")).pane_px == page.DEFAULT_PANE_PX
 
 
-def _frame(
-    app: App, *, mouse: tuple[float, float] | None = None, button: bool | None = None
-) -> None:
+def _frame(draw: Any) -> int:
     """
-    One frame of `App.gui` in a full-size window of a context with no backend.
+    One frame of a context with no backend, `draw()` in a full-size window.
+
+    Returns the vertices `draw` added to the window's draw list.
     """
     imgui = pytest.importorskip("imgui_bundle").imgui
     if imgui.get_current_context() is None:
@@ -513,6 +277,342 @@ def _frame(
     io.display_size = imgui.ImVec2(*SIZE)
     io.delta_time = 1.0 / 60.0
     io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+    io.add_mouse_pos_event(-1.0e6, -1.0e6)
+    added = 0
+    imgui.new_frame()
+    try:
+        imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
+        imgui.set_next_window_size(imgui.ImVec2(*SIZE))
+        imgui.begin("##advtext-tables-page-test", None, imgui.WindowFlags_.no_title_bar.value)
+        try:
+            vertices = imgui.get_window_draw_list().vtx_buffer
+            before = vertices.size()
+            draw()
+            added = vertices.size() - before
+        finally:
+            imgui.end()
+    finally:
+        imgui.render()
+    return added
+
+
+@pytest.fixture
+def unasked(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """
+    `advtext.typesetter` as at import, and a `module()` that fails the test if asked.
+    """
+    typesetter._forget()
+    monkeypatch.setattr(typesetter, "module", lambda: pytest.fail("the page asked for the library"))
+    yield
+    typesetter._forget()
+
+
+@pytest.mark.parametrize("spec", ["tables", "tables:floors,600"])
+def test_without_the_library_the_page_is_one_line_saying_why(
+    spec: str, monkeypatch: pytest.MonkeyPatch, unasked: None
+) -> None:
+    """
+    Through the app's shell. No board, no controls, no pane: the sentence and nothing else.
+    """
+    imgui = pytest.importorskip("imgui_bundle").imgui
+
+    for name in _VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    app = App(source="# t\n\nx\n", columns_source="x\n", open_tab=spec)
+    for _ in range(3):
+        _frame(app.gui)
+    assert app.page_errors == {}, app.page_errors
+    made = app.page("tables")
+    assert isinstance(made, page.TablesPage)
+    assert made.board is None and made.renderer == "none" and made.whole is None
+    assert made.reason == "IMTYPESET_LIBRARY is not set" and made.frames == 3
+    assert made.report() == ["frames=3 renderer=none reason='IMTYPESET_LIBRARY is not set'"]
+
+    # The page's own frame: exactly the vertices of its sentence.
+    sentence = f"{typeset_page.NOT_DRAWING}: {made.reason}"
+
+    def only_the_sentence() -> None:
+        imgui.text_wrapped(sentence)
+
+    assert _frame(made.draw) == _frame(only_the_sentence) > 0
+
+
+CLOSURE = r"""
+import json
+import sys
+
+from imgui_bundle import imgui
+
+from advtext.ui.pages import PageContext
+from advtext.ui.pages import tables as page
+
+at_import = sorted(name for name in sys.modules if name.startswith("advtext"))
+context = PageContext.build(request_page="tables", request_options=("floors",))
+before = set(sys.modules)
+made = page.TablesPage(context)
+imgui.create_context()
+io = imgui.get_io()
+io.display_size = imgui.ImVec2(1300.0, 800.0)
+io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+for _ in range(3):
+    io.delta_time = 1.0 / 60.0
+    imgui.new_frame()
+    imgui.begin("x")
+    made.draw()
+    imgui.end()
+    imgui.render()
+print(json.dumps({
+    "at_import": at_import,
+    "report": made.report(),
+    "added": sorted(name for name in set(sys.modules) - before if name.startswith("advtext")),
+    "loaded": sorted(name for name in sys.modules if name.startswith("advtext")),
+    "imtypeset": "imtypeset" in sys.modules,
+}))
+"""
+
+
+def test_without_the_library_importing_and_drawing_the_page_load_no_old_view(
+    tmp_path: Path,
+) -> None:
+    """
+    A fresh interpreter, the library's variables removed. Importing the page
+    loads nothing of the old core (two leaves until T5-B2) and three frames of it add no
+    `advtext` module to what a `PageContext` loaded: no `advtext.markdown`, no
+    `BareView`, no compositor, no draw backend.
+    """
+    pytest.importorskip("imgui_bundle")
+    script = tmp_path / "closure.py"
+    script.write_text(textwrap.dedent(CLOSURE), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k not in _VARIABLES}
+    done = subprocess.run(
+        [sys.executable, "-P", str(script)],
+        cwd=str(_ROOT),
+        env={**env, "PYTHONPATH": str(_ROOT)},
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    got = json.loads(done.stdout.strip().splitlines()[-1])
+    assert got["report"] == ["frames=3 renderer=none reason='IMTYPESET_LIBRARY is not set'"]
+    assert got["imtypeset"] is False and got["added"] == []
+    assert set(got["at_import"]) & closure.OLD_CORE == set()
+    assert set(got["loaded"]) & closure.REFERENCE_CORE == set()
+    loaded = set(got["loaded"])
+    for gone in (
+        "advtext.markdown",
+        "advtext.linebreak",
+        "advtext.shipout",
+        "advtext.selection",
+        "advtext.ui.composition",
+        "advtext.ui.bare_view",
+        "advtext.backends.imgui_draw",
+    ):
+        assert gone not in loaded
+
+
+class _View:
+    hovered_link: str | None = None
+
+
+class _StandIn:
+    """
+    The members `readouts` reads of a board, with one two-column table at block 3.
+    """
+
+    px_per_inch = DENSITY
+    tables: tuple[int, ...] = (3,)
+    focus: int | None = 3
+    width: Scaled | None = _px(720.0)
+    rows_set: int | None = None
+    cells_measured: int | None = None
+    relayouts = 0
+
+    def __init__(self) -> None:
+        self.view = _View()
+        self.followed: list[str] = []
+        self.chosen: dict[int, tuple[Scaled, ...]] = {}
+        self.widths = (_px(300.0), _px(420.0))
+
+    def columns(self, table: int) -> tuple[Scaled, ...]:
+        return self.widths
+
+    def natural(self, table: int) -> tuple[Scaled, ...]:
+        return (_px(110.0), _px(500.0))
+
+    def floors(self, table: int) -> tuple[Scaled, ...]:
+        return (_px(80.0), _px(70.0))
+
+    def available(self, table: int) -> Scaled:
+        return _px(720.0)
+
+
+def test_the_readouts_are_four_lines_of_counts_and_sizes() -> None:
+    board: Any = _StandIn()
+    lines = readouts(board)
+    assert lines == (
+        "table 1 of 1  ·  automatic  ·  720 px wide in a 720 px measure"
+        "  ·  1 of 2 columns under natural width, 0 at the floor",
+        "width / natural / floor, px:  300 / 110 / 80  ·  420 / 500 / 70",
+        "last drag: none yet",
+        "link under the pointer: none  ·  clicked: 0, last: none yet",
+    )
+
+    board.widths = (_px(650.0), _px(70.0))
+    board.chosen[3] = board.widths
+    board.rows_set, board.cells_measured, board.relayouts = 5, 0, 2
+    board.view.hovered_link = "https://example.org/a"
+    board.followed.append("https://example.org/b")
+    lines = readouts(board)
+    assert len(lines) == 4
+    assert lines[0].startswith("table 1 of 1  ·  dragged  ·  720 px wide")
+    assert "1 of 2 columns under natural width, 1 at the floor" in lines[0]
+    assert lines[1].endswith("650 / 110 / 80  ·  70 / 500 / 70")
+    assert lines[2] == (
+        "last drag: 5 table rows set again, 0 cells measured again (the library's own counts)"
+        "  ·  layouts caused by dragging so far: 2"
+    )
+    assert lines[3] == (
+        "link under the pointer: https://example.org/a"
+        "  ·  clicked: 1, last: https://example.org/b"
+    )
+
+    # Change and cost, never quality (docs/visual-review.md).
+    banned = ("better", "worse", "good", "bad", "clean", "nice", "crisp", "ugly", "correct")
+    for line in lines:
+        assert not any(word in line.lower().split() for word in banned)
+
+
+def test_the_readouts_stay_four_lines_with_no_table_and_before_a_layout() -> None:
+    board: Any = _StandIn()
+    board.width = None
+    assert readouts(board)[:2] == ("not laid out yet", "")
+    board.width, board.widths = _px(720.0), ()
+    assert readouts(board)[:2] == ("not laid out yet", "")
+    board.focus, board.tables = None, ()
+    lines = readouts(board)
+    assert lines[:2] == ("no table in this document", "") and len(lines) == 4
+
+
+class _Board(_StandIn):
+    """
+    A board whose view fails where `fail` says, as the views report a library switched off.
+    """
+
+    def __init__(self, fail: str, error: type[Exception] = TypesetUnavailable) -> None:
+        super().__init__()
+        self.fail = fail
+        self.error = error
+        self.calls: list[str] = []
+
+    def _maybe(self, name: str) -> None:
+        self.calls.append(name)
+        if self.fail == name:
+            raise self.error("imtypeset failed and is switched off: Error: no")
+
+    def columns(self, table: int) -> tuple[Scaled, ...]:
+        self._maybe("columns")
+        return self.widths
+
+    def settle(self, width: Scaled) -> None:
+        self._maybe("settle")
+
+
+@pytest.mark.parametrize("where", ["columns", "settle"])
+def test_a_library_that_fails_anywhere_in_the_frame_leaves_the_page_alive_saying_why(
+    where: str, unasked: None
+) -> None:
+    """
+    `columns` is asked by the readouts, outside the pane; `settle` is the
+    first thing inside it. Either way `TypesetUnavailable` does not leave
+    `draw`, the pane (if begun) is ended, and the next frame is the one line.
+    """
+    made = page.TablesPage(_context("tables"))
+    board: Any = _Board(where)
+    made.board = board
+    made.held = (3, 0)
+    assert made.renderer == "TypesetView"
+    _frame(made.draw)  # would raise "Missing EndChild" if the pane were left open
+    assert made.board is None and made.renderer == "none" and made.held is None
+    assert made.reason == "imtypeset failed and is switched off: Error: no"
+    calls = len(board.calls)
+    _frame(made.draw)
+    assert len(board.calls) == calls and made.frames == 2
+    assert made.report() == [f"frames=2 renderer=none reason={made.reason!r}"]
+
+
+def test_an_exception_that_is_not_typeset_unavailable_propagates(unasked: None) -> None:
+    made = page.TablesPage(_context("tables"))
+    board: Any = _Board("settle", ZeroDivisionError)
+    made.board = board
+    raised: list[BaseException] = []
+
+    def draw() -> None:
+        try:
+            made.draw()
+        except ZeroDivisionError as exc:
+            raised.append(exc)
+
+    _frame(draw)
+    assert len(raised) == 1 and made.board is board and made.renderer == "TypesetView"
+
+
+# ----------------------------------------------------------------------
+# 3. With the library: the page over `TypesetView`, in frames with no backend
+# ----------------------------------------------------------------------
+#
+# Everything above runs in this process, where the library is never ready.
+# What follows is ONE child process with the library loaded and its fonts
+# given, driving the page through real ImGui frames with mouse events queued;
+# each test reads its part of the report. Skipped, with the reason, when
+# `IMTYPESET_LIBRARY` is not set.
+
+_TYPESET = r"""
+import json, sys
+
+from imgui_bundle import imgui
+
+from advtext import typesetter
+from advtext.ui.pages import PageContext
+from advtext.ui.pages import tables as page
+from advtext.ui.typeset_view import TypesetUnavailable
+from advtext.primitives import px_from_sp, sp_from_px
+
+SIZE = (1300.0, 800.0)
+OFF = (-1.0e6, -1.0e6)
+def loaded():
+    return sorted(name for name in sys.modules if name.split(".")[0] == "advtext")
+
+report = {"module": typesetter.module() is not None, "loaded_at_import": loaded()}
+imgui.create_context()
+io = imgui.get_io()
+io.display_size = imgui.ImVec2(*SIZE)
+io.delta_time = 1.0 / 60.0
+io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+report["load_fonts"] = typesetter.load_fonts()
+report["ready"] = typesetter.ready()
+report["reason"] = typesetter.reason()
+ts = typesetter.module()
+calls = []
+
+class Counting:
+    def __init__(self, target):
+        object.__setattr__(self, "_target", target)
+    def __getattr__(self, name):
+        attr = getattr(self._target, name)
+        if not callable(attr):
+            return attr
+        def call(*args, **kwargs):
+            calls.append(name.replace("ImTypeset_", ""))
+            return attr(*args, **kwargs)
+        return call
+
+ts._lib = Counting(ts._lib)
+
+def frame(made, *, mouse=None, button=None):
+    # One frame of the page in a full-size window of a context with no backend.
+    io = imgui.get_io()
     if mouse is not None:
         io.add_mouse_pos_event(*mouse)
     if button is not None:
@@ -522,275 +622,618 @@ def _frame(
         imgui.set_next_window_pos(imgui.ImVec2(0.0, 0.0))
         imgui.set_next_window_size(imgui.ImVec2(*SIZE))
         imgui.begin("##advtext-tables-page-test", None, imgui.WindowFlags_.no_title_bar.value)
-        app.gui()
-        imgui.end()
+        try:
+            calls.clear()
+            made.draw()
+        finally:
+            imgui.end()
     finally:
         imgui.render()
+    return list(calls)
 
+def context(options=(), count=None):
+    # What `--tab tables:floors,600` makes of itself, without the app (which loads everything).
+    return PageContext.build(request_page="tables", request_options=options, request_count=count)
 
-@pytest.fixture
-def shown() -> Any:
-    """
-    The page in the shell after three frames, pointer off the window; released afterwards.
-    """
-    app = App(source="# t\n\nx\n", columns_source="x\n", open_tab="tables")
-    _frame(app, mouse=(-1.0e6, -1.0e6), button=False)
-    _frame(app)
-    _frame(app)
-    made = app.page("tables")
-    assert isinstance(made, page.TablesPage)
-    yield app, made
-    _frame(app, mouse=(-1.0e6, -1.0e6), button=False)
-    _frame(app)
-
-
-def _on_screen(made: page.TablesPage, table: int, edge: int) -> tuple[float, float]:
-    """
-    A point on a handle: on its column edge, a little below the table's top.
-    """
+def on_screen(made, table, edge):
     board = made.board
     origin = board.view.origin
-    assert origin is not None
     grip = next(g for g in board.grips() if (g.table, g.edge) == (table, edge))
-    x = origin[0] + px_from_sp(grip.x, DENSITY)
-    y = origin[1] + px_from_sp(grip.top, DENSITY) + 12.0
-    assert 0.0 < y < SIZE[1] - 20.0, "the handle is not in the window"
-    return x, y
+    return (origin[0] + px_from_sp(grip.x, board.px_per_inch),
+            origin[1] + px_from_sp(grip.top, board.px_per_inch) + 12.0)
 
+def px(values, board):
+    return [px_from_sp(value, board.px_per_inch) for value in values]
 
-def test_the_page_opens_at_its_measure_with_every_table_automatic(shown: Any) -> None:
-    _, made = shown
-    board = made.board
-    assert made.frames == 3 and board.chosen == {} and made.held is None
-    assert board.width == _px(page.DEFAULT_PANE_PX)
-    assert board.view.layout is not None and board.view.layout.width == board.width
-    assert made.stats is not None and made.stats.glyphs > 0
-    assert board.reshipped is None and board.relayouts == 0
-    assert len(board.grips()) == 17
-    # The handles left the cursor where the view had: nothing added to the content.
-    assert made.cursor_drift == 0.0
+def edges(board, table):
+    count = board.view.table_geometry(table).column_count
+    return [board.view.table_column(table, n) for n in range(count)]
 
+def park(made):
+    frame(made, mouse=OFF, button=False)
+    frame(made)
 
-def test_a_handle_hovered_pressed_and_moved_drags_its_column_and_selects_nothing(
-    shown: Any,
-) -> None:
-    app, made = shown
-    board = made.board
-    table = board.tables[0]
-    before = board.columns(table)
-    x, y = _on_screen(made, table, 0)
+# 1. The page as it opens.
+made = page.TablesPage(context())
+first = frame(made, mouse=OFF, button=False)
+frame(made)
+steady = [frame(made) for _ in range(3)]
+board = made.board
+report["loaded_after_five_frames"] = loaded()
+width_px = px_from_sp(board.width, board.px_per_inch)
+report["opening"] = {
+    "renderer": made.renderer, "board": type(board).__name__, "reason": made.reason,
+    "frames": made.frames, "chosen": dict(board.chosen), "held": made.held,
+    "width_px": width_px, "width_sp": board.width, "tables": list(board.tables),
+    "grips": len(board.grips()),
+    "drift": made.cursor_drift, "whole": made.whole,
+    "rows_set": board.rows_set, "relayouts": board.relayouts,
+    "first_calls": first, "steady_calls": steady,
+    "readouts": list(page.readouts(board)),
+    "report": made.report(),
+    "columns": [px(board.columns(t), board) for t in board.tables],
+    "natural": [px(board.natural(t), board) for t in board.tables],
+    "floors": [px(board.floors(t), board) for t in board.tables],
+    "available": [board.available(t) for t in board.tables],
+    "under_floor": [sum(w < f for w, f in zip(board.columns(t), board.floors(t)))
+                    for t in board.tables],
+    "grip_tops": [[g.table, g.edge, px_from_sp(g.x, board.px_per_inch)]
+                  for g in board.grips() if g.table == board.tables[0]],
+    "first_table_edges": [e.max for e in edges(board, board.tables[0])],
+}
 
-    _frame(app, mouse=(x + 2.0, y))  # the frame of hovering a mouse always has
-    assert made.held is None and board.chosen == {}
-    _frame(app, button=True)
-    assert made.held == (table, 0)
-    assert board.chosen == {}, "a press alone moves nothing"
-    assert board.view.selection.is_empty
+# 2. A handle hovered, pressed and moved.
+table = board.tables[0]
+before = board.columns(table)
+x, y = on_screen(made, table, 0)
+frame(made, mouse=(x + 2.0, y))
+hovered = {"held": made.held, "chosen": dict(board.chosen)}
+frame(made, button=True)
+pressed = {"held": made.held, "chosen": dict(board.chosen), "selection": board.view.selection}
+drag_calls = frame(made, mouse=(x + 2.0 - 100.0, y))
+moved = board.columns(table)
+geometry = board.view.table_geometry(table)
+gesture = {
+    "hovered": hovered, "pressed": pressed, "held": made.held,
+    "moved_sp": before[0] - moved[0], "hundred_sp": sp_from_px(100.0, board.px_per_inch),
+    "sums": [sum(before), sum(moved)], "relayouts": board.relayouts,
+    "rows_set": board.rows_set, "cells_measured": board.cells_measured,
+    "stated": geometry.stated, "calls": drag_calls,
+    "edges_px": [[e.min, e.max] for e in edges(board, table)], "moved_px": px(moved, board),
+    "grip_x": [board.grips()[0].x, moved[0]],
+    "others_stated": [board.view.table_geometry(t).stated for t in board.tables[1:]],
+}
+after_drag = frame(made)
+frame(made, mouse=(x + 2.0 - 130.0, y))
+gesture["second"] = [board.relayouts, before[0] - board.columns(table)[0],
+                     sp_from_px(130.0, board.px_per_inch)]
+frame(made, button=False)
+frame(made)
+gesture["released"] = [made.held, board.view.selection]
+settled = board.columns(table)
+frame(made, mouse=(x + 300.0, y))
+frame(made)
+gesture["button_up"] = [board.columns(table) == settled, board.relayouts]
+gesture["frame_after_a_drag"] = after_drag
+gesture["readouts"] = list(page.readouts(board))
+gesture["report"] = made.report()
+report["gesture"] = gesture
 
-    _frame(app, mouse=(x + 2.0 - 100.0, y))
-    assert made.held == (table, 0)
-    moved = board.columns(table)
-    # The edge kept its 2 px offset from the pointer: 100 px, to the scaled point's rounding.
-    assert abs((before[0] - moved[0]) - _px(100.0)) <= 1
-    assert sum(moved) == sum(before)
-    assert board.reshipped == 1 and board.relayouts == 1
-    # The layout the frame drew is the one with the new widths: no frame of lag.
-    assert board.view.layout is not None
-    assert board.view.document.blocks[table] == with_columns(board.block(table), widths=moved)
-    assert board.grips()[0].x == moved[0]
+# 3. Past everything: the floors. Then reset.
+x, y = on_screen(made, table, 0)
+total = sum(board.columns(table))
+frame(made, mouse=(x, y))
+frame(made, button=True)
+frame(made, mouse=(-50000.0, y))
+low = [board.columns(table)[0], board.floors(table)[0], sum(board.columns(table))]
+frame(made, mouse=(50000.0, y))
+high = [board.columns(table)[1], board.floors(table)[1], sum(board.columns(table))]
+frame(made, button=False)
+park(made)
+report["floors"] = {"total": total, "low": low, "high": high,
+                    "edges_px": [e.max - e.min for e in edges(board, table)],
+                    "floor_px": px(board.floors(table), board)}
+reset = board.reset()
+frame(made)
+frame(made)
+report["reset"] = {"changed": reset, "chosen": dict(board.chosen),
+                   "stated": board.view.table_geometry(table).stated,
+                   "back": board.columns(table) == before, "again": board.reset(),
+                   "rows_set": board.rows_set}
 
-    _frame(app, mouse=(x + 2.0 - 130.0, y))
-    assert board.relayouts == 2 and board.reshipped == 1
-    _frame(app, button=False)
-    _frame(app)
-    assert made.held is None
-    assert board.view.selection.is_empty
-    assert abs((before[0] - board.columns(table)[0]) - _px(130.0)) <= 1
+# 4. A press on text selects and drags no column; the selection outlives a drag.
+relayouts = board.relayouts
+rect = board.view.block_rect(1)
+frame(made, mouse=(rect[0] + 40.0, rect[1] + 30.0))
+frame(made, button=True)
+frame(made, mouse=(rect[0] + 200.0, rect[1] + 30.0))
+frame(made, button=False)
+frame(made)
+selection = board.view.selection
+x, y = on_screen(made, table, 0)
+frame(made, mouse=(x, y))
+frame(made, button=True)
+frame(made, mouse=(x - 60.0, y))
+frame(made, button=False)
+park(made)
+report["text"] = {"selection": selection, "text": board.view.selected_text(),
+                  "relayouts": [relayouts, board.relayouts],
+                  "after_a_drag": board.view.selection}
+board.reset()
+park(made)
 
-    # With the button up, moving the pointer moves nothing.
-    settled = board.columns(table)
-    _frame(app, mouse=(x + 300.0, y))
-    _frame(app)
-    assert board.columns(table) == settled and board.relayouts == 2
+# 5. A narrow measure squeezes chosen widths, and they come back.
+x, y = on_screen(made, table, 0)
+frame(made, mouse=(x, y))
+frame(made, button=True)
+frame(made, mouse=(x + 80.0, y))
+frame(made, button=False)
+park(made)
+chosen = board.columns(table)
+counted = board.relayouts
+made.pane_px = 300.0
+frame(made)
+frame(made)
+narrow = {"columns": board.columns(table), "available": board.available(table),
+          "floors": board.floors(table), "wish": board.chosen[table],
+          "edges_px": [e.max - e.min for e in edges(board, table)],
+          "relayouts": board.relayouts - counted}
+made.pane_px = page.DEFAULT_PANE_PX
+frame(made)
+frame(made)
+report["squeezed"] = {"chosen": chosen, "narrow": narrow, "back": board.columns(table) == chosen}
+board.reset()
+park(made)
 
-
-def test_a_handle_dragged_past_everything_stops_at_the_floors(shown: Any) -> None:
-    app, made = shown
-    board = made.board
-    table = board.tables[0]
-    x, y = _on_screen(made, table, 0)
-    total = sum(board.columns(table))
-    _frame(app, mouse=(x, y))
-    _frame(app, button=True)
-    _frame(app, mouse=(-50000.0, y))
-    assert board.columns(table)[0] == board.floors(table)[0]
-    _frame(app, mouse=(50000.0, y))
-    assert board.columns(table)[1] == board.floors(table)[1]
-    assert sum(board.columns(table)) == total
-    _frame(app, button=False)
-
-
-def test_a_press_on_text_selects_as_it_always_did_and_drags_no_column(shown: Any) -> None:
-    app, made = shown
-    board = made.board
-    origin = board.view.origin
-    assert origin is not None
-    # The first block is the heading; press inside its line and drag right.
-    layout = board.view.layout
-    assert layout is not None
-    y = origin[1] + px_from_sp(layout.placed[0].y + layout.placed[0].height // 2, DENSITY)
-    _frame(app, mouse=(origin[0] + 20.0, y))
-    _frame(app, button=True)
-    _frame(app, mouse=(origin[0] + 200.0, y))
-    _frame(app, button=False)
-    _frame(app)
-    assert not board.view.selection.is_empty
-    assert board.view.selected_text() in "Tables you can pull about"
-    assert board.chosen == {} and made.held is None and board.relayouts == 0
-
-
-def test_a_selection_made_before_a_drag_is_still_there_after_it(shown: Any) -> None:
-    app, made = shown
-    board = made.board
-    table = board.tables[0]
-    layout = board.view.layout
-    assert layout is not None
-    # Everything from the heading down to and including the first table.
-    stop = layout.units_of_block(table)[-1].index_range.stop
-    board.view.select(Selection(0, stop))
-    text = board.view.selected_text()
-    assert "flush right" in text
-
-    x, y = _on_screen(made, table, 0)
-    _frame(app, mouse=(x, y))
-    _frame(app, button=True)
-    _frame(app, mouse=(x - 60.0, y))
-    _frame(app, button=False)
-    _frame(app)
-    assert table in board.chosen
-    assert board.view.selected_text() == text
-
-
-def test_a_press_on_the_frame_the_pointer_arrives_is_the_handles(shown: Any) -> None:
-    """
-    The gesture the handles used to lose, and no longer do.
-
-    A mouse hovers for a frame before it can press. An injected event need
-    not: move and press queued together reach the page on one frame. While the
-    handles were submitted *after* the view, the view saw no item under the
-    pointer on that frame, took the press as a selection, and its own button
-    kept the handle from being clicked. They are submitted before it now
-    (`BareView.next_origin`, `layout_for`), so the handle is ImGui's hovered
-    item by the time the view looks: the column moves and nothing is selected.
-    """
-    app, made = shown
-    board = made.board
-    table = board.tables[0]
-    before = board.columns(table)
-    x, y = _on_screen(made, table, 0)
-    _frame(app, mouse=(x, y), button=True)
-    assert made.held == (table, 0)
-    _frame(app, mouse=(x - 80.0, y))
-    _frame(app, mouse=(x - 80.0, y))
-    after = board.columns(table)
-    assert table in board.chosen and after[0] < before[0]
-    assert board.view.selection.is_empty and not board.view.owns_selection
-    _frame(app, button=False)
-    _frame(app)
-    assert made.held is None
-
-
+# 6. A link in a cell, before and after its table is dragged.
 LINKED = (
-    "| Name | Where |\n"
-    "| --- | --- |\n"
-    "| The parser, described at some length so that the cell has words to wrap"
-    " | [the project](https://example.org/parser) |\n"
+    "Before.\n\n"
+    "| Rule | Where |\n| --- | --- |\n"
+    "| hpack | [the packer](https://example.org/pack) and some more words to wrap |\n"
+    "| vpack | [the stacker](https://example.org/stack) |\n\nAfter.\n"
 )
+linked = page.TablesPage(context())
+linked.board = page.TypesetBoard(theme=linked.context.theme,
+                                 px_per_inch=linked.context.px_per_inch, text=LINKED)
+park(linked)
+frame(linked)
+board2 = linked.board
+def link_point(number):
+    row = board2.view.links[number]
+    doc = board2.view.native_document
+    x0, y0, _, y1 = doc.caret_rect((row.block, row.start + 2))
+    x1 = doc.caret_rect((row.block, row.start + 3))[0]
+    ox, oy = board2.view.origin
+    return (ox + (x0 + x1) / 2.0, oy + (y0 + y1) / 2.0)
+def click(point):
+    frame(linked, mouse=point)
+    frame(linked)
+    hovered = board2.view.hovered_link
+    frame(linked, button=True)
+    frame(linked, button=False)
+    frame(linked)
+    return hovered
+links = {"targets": [row.target for row in board2.view.links]}
+links["first"] = [click(link_point(0)), list(board2.followed)]
+t2 = board2.tables[0]
+x, y = on_screen(linked, t2, 0)
+frame(linked, mouse=(x, y))
+frame(linked, button=True)
+frame(linked, mouse=(x + 90.0, y))
+frame(linked, button=False)
+park(linked)
+links["dragged"] = t2 in board2.chosen
+links["second"] = [click(link_point(1)), list(board2.followed)]
+links["readout"] = page.readouts(board2)[3]
+links["selection"] = board2.view.selection
+report["links"] = links
+park(linked)
+
+# 7. The floors option: the opening state is not a drag.
+opened = page.TablesPage(context(("floors",), 600))
+park(opened)
+frame(opened)
+board3 = opened.board
+report["option"] = {
+    "width_px": px_from_sp(board3.width, board3.px_per_inch),
+    "chosen": sorted(board3.chosen) == list(board3.tables),
+    "at_floors": [board3.columns(t) == board3.floors(t) for t in board3.tables],
+    "edges_at_floors": [
+        max(
+            abs((e.max - e.min) - f)
+            for e, f in zip(edges(board3, t), px(board3.floors(t), board3))
+        )
+        for t in board3.tables
+    ],
+    "rows_set": board3.rows_set, "relayouts": board3.relayouts,
+    "wrapped": [any(board3.view.table_row(t, r).wrapped
+                    for r in range(board3.view.table_geometry(t).row_count))
+                for t in board3.tables],
+}
+
+# 8. The library fails mid-run: the page stays alive and says why from the next frame.
+def failed(where, error=TypesetUnavailable):
+    failing = page.TablesPage(context())
+    park(failing)
+    target = failing.board.view
+    def broken(*args, **kwargs):
+        raise error("imtypeset failed and is switched off: Error: no")
+    setattr(target, where, broken)
+    raised = []
+    real_draw = failing.draw
+    def guarded():
+        try:
+            real_draw()
+        except ZeroDivisionError as exc:
+            raised.append(type(exc).__name__)
+    failing.draw = guarded
+    frame(failing)              # `frame` ends the window: a pane left open would assert
+    fallen = {"renderer": failing.renderer, "board": type(failing.board).__name__,
+              "reason": failing.reason, "whole": failing.whole, "held": failing.held,
+              "raised": raised}
+    if not raised:
+        fallen["later_calls"] = [frame(failing), frame(failing)]
+        fallen["later"] = [failing.renderer, failing.frames, failing.report()]
+    return fallen
+# `draw` is the view's own; `layout_for` is the page's first call inside the pane;
+# `block_under_mouse` is asked by the handles.
+report["fallen"] = {where: failed(where) for where in ("draw", "layout_for", "block_under_mouse")}
+report["not_caught"] = failed("draw", ZeroDivisionError)
+
+# 9. A press on the frame the pointer arrives is the handle's.
+arriving = page.TablesPage(context())
+park(arriving)
+frame(arriving)
+board4 = arriving.board
+t4 = board4.tables[0]
+before4 = board4.columns(t4)
+x, y = on_screen(arriving, t4, 0)
+frame(arriving, mouse=(x, y), button=True)
+arrival = {"held": arriving.held}
+frame(arriving, mouse=(x - 80.0, y))
+frame(arriving, mouse=(x - 80.0, y))
+arrival["chosen"] = t4 in board4.chosen
+arrival["narrower"] = board4.columns(t4)[0] < before4[0]
+arrival["selection"] = board4.view.selection
+frame(arriving, button=False)
+frame(arriving)
+arrival["released"] = arriving.held
+report["arrival"] = arrival
+park(arriving)
+
+# 10. No demo directory: the built-in table. And a document with no table in it.
+found = page.demo_text
+page.demo_text = lambda name: None
+try:
+    builtin = page.TablesPage(context(count=400))
+finally:
+    page.demo_text = found
+park(builtin)
+frame(builtin)
+report["builtin"] = {"tables": len(builtin.board.tables), "grips": len(builtin.board.grips()),
+                     "text": builtin.board.view.texts[0]}
+bare = page.TablesPage(context())
+bare.board = page.TypesetBoard(theme=bare.context.theme, px_per_inch=bare.context.px_per_inch,
+                               text="Only a paragraph, and no table.\n")
+before_layout = [bare.board.drag(0, 0, 100.0), list(bare.board.grips())]
+park(bare)
+frame(bare)
+report["no_table"] = {"tables": list(bare.board.tables), "focus": bare.board.focus,
+                      "before_layout": before_layout,
+                      "drag": bare.board.drag(0, 0, 100.0), "grips": len(bare.board.grips()),
+                      "reset": bare.board.reset(), "readouts": list(page.readouts(bare.board)),
+                      "whole": bare.whole}
+report["trouble"] = typesetter.trouble()
+report["module_at_end"] = typesetter.module() is not None
+print("REPORT " + json.dumps(report))
+"""
 
 
-def test_a_link_in_a_cell_is_hovered_and_clicked_before_and_after_its_table_is_dragged(
-    theme: Theme, measure: Any
+@pytest.fixture(scope="module")
+def typeset() -> dict[str, Any]:
+    if not os.environ.get(typesetter.LIBRARY_VARIABLE):
+        pytest.skip(
+            "IMTYPESET_LIBRARY is not set: run `make test TYPESET=1` (after `make typeset-lib`) "
+            "for the tests that need the imtypeset library"
+        )
+    done = subprocess.run(
+        [sys.executable, "-B", "-c", _TYPESET],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(_ROOT)},
+        cwd=str(_ROOT),
+    )
+    assert done.returncode == 0, done.stdout[-4000:] + done.stderr[-4000:]
+    (line,) = [line for line in done.stdout.splitlines() if line.startswith("REPORT ")]
+    got: dict[str, Any] = json.loads(line[len("REPORT ") :])
+    # In the child: this is the process that draws.
+    assert got["module"] is True, "IMTYPESET_LIBRARY is set and imtypeset is not in use"
+    assert got["load_fonts"] is True and got["ready"] is True, got["reason"]
+    assert got["trouble"] == "" and got["module_at_end"] is True
+    return got
+
+
+_FRAME = ["LayoutDocument", "DrawDocument", "GetDocumentSize"]
+_LAYOUT_FOR = ["LayoutDocument", "GetDocumentSize"]
+
+
+def test_with_the_library_the_page_opens_on_a_typeset_board_and_the_same_columns(
+    typeset: dict[str, Any],
 ) -> None:
     """
-    The page's `draw` on its own in a window, over a document that is one table with a link.
-
-    A press on a link is the link's (the view's rule) and a press on a handle
-    is the handle's (this page's): neither selects, and dragging the table
-    does not lose the link.
+    The library's widths, natural widths and floors for all five tables at
+    the page's 720 px are the old board's (`OLD_BOARD`, frozen) to a
+    ten-thousandth of a pixel, so the first two readout lines are the text
+    the old board gave, there are as many handles (17), and no automatic
+    column reads as under its floor.
     """
-    pytest.importorskip("imgui_bundle")
-    made = page.TablesPage(PageContext.build())
-    made.board = Board(theme=theme, measure=measure, text=LINKED)
-    board = made.board
-
-    class _Shell:
-        def gui(self) -> None:
-            made.draw()
-
-    shell: Any = _Shell()
-    _frame(shell, mouse=(-1.0e6, -1.0e6), button=False)
-    _frame(shell)
-    _frame(shell)
-
-    def on_the_link() -> tuple[float, float]:
-        origin = board.view.origin
-        assert origin is not None
-        (link,) = board.view.visible_links
-        rect = link.rects[0]
-        return (
-            origin[0] + px_from_sp(rect.x + rect.width // 2, DENSITY),
-            origin[1] + px_from_sp(rect.y + rect.height // 2, DENSITY),
-        )
-
-    def click(point: tuple[float, float]) -> None:
-        _frame(shell, mouse=point)
-        assert board.view.hovered_link == "https://example.org/parser"
-        assert "link under the pointer: https://example.org/parser" in readouts(board)[3]
-        _frame(shell, button=True)
-        _frame(shell, button=False)
-        _frame(shell)
-
-    click(on_the_link())
-    assert board.followed == ["https://example.org/parser"]
-    assert board.view.selection.is_empty and board.chosen == {}
-
-    (table,) = board.tables
-    x, y = _on_screen(made, table, 0)
-    _frame(shell, mouse=(x, y))
-    assert board.view.hovered_link is None
-    _frame(shell, button=True)
-    _frame(shell, mouse=(x - 150.0, y))
-    _frame(shell, button=False)
-    _frame(shell)
-    assert table in board.chosen and board.followed == ["https://example.org/parser"]
-
-    # The pointer comes straight off the handle. For that one frame the view
-    # still counts the handle as the item under the mouse -- ImGui's hovered
-    # ID is this frame's or, while nothing is hovered yet, the last frame's --
-    # so the link is not hovered until the frame after. This edge is the
-    # view's and submitting the handles before it does not remove it.
-    _frame(shell, mouse=on_the_link())
-    assert board.view.hovered_link is None
-    click(on_the_link())
-    assert board.followed == ["https://example.org/parser"] * 2
-    assert "clicked: 2" in readouts(board)[3]
-    assert board.view.selection.is_empty
-    _frame(shell, mouse=(-1.0e6, -1.0e6), button=False)
+    opening = typeset["opening"]
+    assert (opening["renderer"], opening["board"], opening["reason"]) == (
+        "TypesetView",
+        "TypesetBoard",
+        "",
+    )
+    assert opening["chosen"] == {} and opening["held"] is None
+    assert opening["whole"] is True
+    assert opening["rows_set"] is None and opening["relayouts"] == 0
+    assert opening["width_px"] == pytest.approx(page.DEFAULT_PANE_PX, abs=0.001)
+    assert opening["width_sp"] == OLD_BOARD["width_sp"]
+    assert opening["tables"] == OLD_BOARD["tables"] == [4, 7, 10, 13, 16]
+    assert opening["grips"] == OLD_BOARD["handles"] == 17
+    assert opening["drift"] == 0.0
+    for what in ("columns", "natural", "floors"):
+        assert len(opening[what]) == len(OLD_BOARD[what]) == 5
+        for ours, theirs in zip(opening[what], OLD_BOARD[what], strict=True):
+            assert ours == pytest.approx(theirs, abs=0.0001), what
+    assert opening["available"] == OLD_BOARD["available"]
+    assert opening["under_floor"] == [0] * 5
+    assert opening["readouts"][:2] == OLD_BOARD["readouts"]
+    assert opening["readouts"][2] == "last drag: none yet"
+    assert len(opening["readouts"]) == 4
+    # A handle is on the column's edge as the library laid the table out.
+    for (_, _, x), edge in zip(opening["grip_tops"], opening["first_table_edges"], strict=True):
+        assert x == pytest.approx(edge, abs=0.001)
+    total = dict(part.split("=", 1) for part in opening["report"][0].split() if "=" in part)
+    assert total["renderer"] == "TypesetView" and total["tables"] == "5"
+    assert int(total["vertices"]) > 1000 and total["whole"] == "1"
+    assert len(opening["report"]) == 6
 
 
-def test_the_floors_option_opens_the_page_with_every_table_at_its_floors() -> None:
-    app = App(source="# t\n\nx\n", columns_source="x\n", open_tab="tables:floors,600")
-    _frame(app, mouse=(-1.0e6, -1.0e6), button=False)
-    _frame(app)
-    made = app.page("tables")
-    assert isinstance(made, page.TablesPage)
-    board = made.board
-    assert board.width == _px(600.0)
-    assert set(board.chosen) == set(board.tables)
-    for table in board.tables:
-        assert board.columns(table) == board.floors(table)
+def test_with_the_library_a_frame_of_the_page_is_five_calls_and_the_handles_ask_once(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    A steady frame: the layout before the handles (`layout_for`: two calls)
+    and the view's own three. The handles' geometry is asked on the first
+    frame (a call a table and a call a column, the natural widths and the
+    floors with them) and again only when the measure, the document's height
+    or the chosen widths change. On a frame a column is dragged: the
+    library's counters before, one `SetDocumentTableColumns`, the layout
+    again, where each table is (a call each: the rows below the dragged
+    table moved), the draw, and the counters after.
+    """
+    opening = typeset["opening"]
+    assert opening["steady_calls"] == [[*_LAYOUT_FOR, *_FRAME]] * 3
+    first = opening["first_calls"]
+    assert first[:6] == [
+        "GetCurrentContext",
+        "CreateDocument",
+        "SetDocumentBlocks",
+        "SetDocumentOptions",
+        *_LAYOUT_FOR,
+    ]
+    assert first[-3:] == _FRAME
+    asked = first[6:-3]
+    assert set(asked) == {"GetDocumentTableGeometry", "GetDocumentTableColumn"}
+    gesture = typeset["gesture"]
+    assert gesture["calls"] == [
+        *_LAYOUT_FOR,
+        "GetDocumentStats",
+        "SetDocumentTableColumns",
+        *_LAYOUT_FOR,
+        *["GetDocumentTableGeometry"] * 5,
+        *_FRAME,
+        "GetDocumentStats",
+    ]
+    # The pointer held still on the handle: nothing is stated and nothing asked.
+    assert gesture["frame_after_a_drag"] == [*_LAYOUT_FOR, *_FRAME]
+
+
+def test_with_the_library_importing_the_page_and_opening_it_load_no_old_view(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    What is in `sys.modules` of the old core (`tests/test_typeset_closure.py`'s
+    list) at two moments of the child. Importing the page: nothing (two
+    leaves until T5-B2). After five frames drawn through the library:
+    `fontlib` and the `fontmetrics` it imports (`typesetter.load_fonts`
+    reads the font files from it), which is `closure.FONT_FILES`, and
+    nothing else (`Theme.build` loaded `nodes`, `pack` and `badness` until
+    T5-B2). **No line breaker, no ship-out, no selection model, no
+    compositor, no node, no draw backend.**
+    """
+    core = closure.REFERENCE_CORE
+    assert set(typeset["loaded_at_import"]) & core == set()
+    opened = set(typeset["loaded_after_five_frames"])
+    assert opened & core == closure.FONT_FILES
+    assert "advtext.markdown" not in opened and "advtext.ui.typeset_view" in opened
+
+
+def test_with_the_library_a_handle_hovered_pressed_and_moved_states_the_columns(
+    typeset: dict[str, Any],
+) -> None:
+    gesture = typeset["gesture"]
+    assert gesture["hovered"] == {"held": None, "chosen": {}}
+    # A press alone moves nothing and selects nothing.
+    assert gesture["pressed"] == {"held": [4, 0], "chosen": {}, "selection": None}
+    assert gesture["held"] == [4, 0]
+    # The edge kept its 2 px offset from the pointer: 100 px, to the scaled point's rounding.
+    assert abs(gesture["moved_sp"] - gesture["hundred_sp"]) <= 1
+    before, after = gesture["sums"]
+    assert before == after
+    assert gesture["relayouts"] == 1
+    # The library's own account of the drag: the dragged table's five rows
+    # set again, and not one cell measured again.
+    assert gesture["rows_set"] == 5 and gesture["cells_measured"] == 0
+    # The layout the frame drew is the one with the new widths: no frame of lag.
+    assert gesture["stated"] is True and gesture["others_stated"] == [False] * 4
+    (first_min, first_max), (second_min, second_max) = gesture["edges_px"]
+    assert first_min == 0.0 and first_max == second_min
+    assert [first_max - first_min, second_max - second_min] == pytest.approx(
+        gesture["moved_px"], abs=0.001
+    )
+    assert gesture["grip_x"][0] == gesture["grip_x"][1]
+    relayouts, moved, wanted = gesture["second"]
+    assert relayouts == 2 and abs(moved - wanted) <= 1
+    assert gesture["released"] == [None, None]
+    # With the button up, moving the pointer moves nothing.
+    assert gesture["button_up"] == [True, 2]
+    assert gesture["readouts"][0].startswith("table 1 of 5  ·  dragged")
+    assert gesture["readouts"][2] == (
+        "last drag: 5 table rows set again, 0 cells measured again (the library's own counts)"
+        "  ·  layouts caused by dragging so far: 2"
+    )
+
+
+def test_with_the_library_a_drag_stops_at_the_floors_and_reset_gives_the_table_back(
+    typeset: dict[str, Any],
+) -> None:
+    floors = typeset["floors"]
+    column, floor, total = floors["low"]
+    assert column == floor and total == floors["total"]
+    column, floor, total = floors["high"]
+    assert column == floor and total == floors["total"]
+    # As the library has it: the second column is its floor wide, to the pixel's fraction.
+    assert floors["edges_px"][1] == pytest.approx(floors["floor_px"][1], abs=0.001)
+    reset = typeset["reset"]
+    assert reset["changed"] is True and reset["chosen"] == {} and reset["again"] is False
+    # Fitted by the library again, to the very widths it had before any drag.
+    assert reset["stated"] is False and reset["back"] is True
+
+
+def test_with_the_library_a_press_on_text_selects_and_the_selection_outlives_a_drag(
+    typeset: dict[str, Any],
+) -> None:
+    text = typeset["text"]
+    (block, start), (same, end) = text["selection"]
+    assert block == same == 1 and end > start and len(text["text"]) == end - start
+    # The press on the text dragged nothing; the drag after it was one.
+    before, after = text["relayouts"]
+    assert after == before + 1
+    assert text["after_a_drag"] == text["selection"]
+
+
+def test_with_the_library_chosen_widths_are_squeezed_by_a_narrow_measure_and_come_back(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    The library uses stated widths as given, so the squeeze is the page's
+    (`fitted`), and the widths the library is given are the squeezed ones.
+    """
+    squeezed = typeset["squeezed"]
+    narrow = squeezed["narrow"]
+    assert narrow["wish"] == squeezed["chosen"] and sum(narrow["wish"]) > narrow["available"]
+    assert sum(narrow["columns"]) == narrow["available"]
+    assert all(
+        width >= floor for width, floor in zip(narrow["columns"], narrow["floors"], strict=True)
+    )
+    assert narrow["columns"] == list(fitted(narrow["wish"], narrow["floors"], narrow["available"]))
+    assert narrow["edges_px"] == pytest.approx(
+        [px_from_sp(width, DENSITY) for width in narrow["columns"]], abs=0.001
+    )
+    # A change of measure is not a drag.
+    assert narrow["relayouts"] == 0
+    assert squeezed["back"] is True
+
+
+def test_with_the_library_a_link_in_a_cell_is_clicked_before_and_after_its_table_is_dragged(
+    typeset: dict[str, Any],
+) -> None:
+    links = typeset["links"]
+    pack, stack = links["targets"]
+    assert links["first"] == [pack, [pack]]
+    assert links["dragged"] is True
+    assert links["second"] == [stack, [pack, stack]]
+    assert "clicked: 2" in links["readout"] and links["selection"] is None
+
+
+def test_with_the_library_the_floors_option_opens_every_table_at_its_floors(
+    typeset: dict[str, Any],
+) -> None:
+    option = typeset["option"]
+    assert option["width_px"] == pytest.approx(600.0, abs=0.001)
+    assert option["chosen"] is True and option["at_floors"] == [True] * 5
+    assert max(option["edges_at_floors"]) < 0.001
+    assert option["wrapped"] == [True] * 5
     # The opening state is the first layout, not a drag.
-    assert board.reshipped is None
+    assert option["rows_set"] is None and option["relayouts"] == 0
+
+
+def test_with_the_library_a_view_that_fails_mid_run_leaves_the_page_alive_saying_why(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    A view call raising `TypesetUnavailable` -- the draw, the layout before
+    it, or the question the handles ask -- does not leave `draw`: the board
+    is dropped, and every frame after it is the one line, with not one call
+    of the library's.
+    """
+    reason = "imtypeset failed and is switched off: Error: no"
+    assert sorted(typeset["fallen"]) == ["block_under_mouse", "draw", "layout_for"]
+    for where, fallen in typeset["fallen"].items():
+        assert (fallen["renderer"], fallen["board"], fallen["raised"]) == (
+            "none",
+            "NoneType",
+            [],
+        ), where
+        assert fallen["reason"] == reason
+        assert fallen["whole"] is None and fallen["held"] is None
+        assert fallen["later_calls"] == [[], []]
+        assert fallen["later"] == ["none", 5, [f"frames=5 renderer=none reason={reason!r}"]]
+
+
+def test_with_the_library_an_exception_that_is_not_typeset_unavailable_propagates(
+    typeset: dict[str, Any],
+) -> None:
+    kept = typeset["not_caught"]
+    assert kept["raised"] == ["ZeroDivisionError"]
+    assert (kept["renderer"], kept["board"], kept["reason"]) == ("TypesetView", "TypesetBoard", "")
+
+
+def test_with_the_library_a_press_on_the_frame_the_pointer_arrives_is_the_handles(
+    typeset: dict[str, Any],
+) -> None:
+    """
+    A mouse hovers for a frame before it can press. An injected event need
+    not: move and press queued together reach the page on one frame. The
+    handles are submitted before the view draws, so the handle is ImGui's
+    hovered item by the time the view judges the press: the column moves and
+    nothing is selected.
+    """
+    arrival = typeset["arrival"]
+    assert arrival["held"] == [4, 0]
+    assert arrival["chosen"] is True and arrival["narrower"] is True
+    assert arrival["selection"] is None and arrival["released"] is None
+
+
+def test_with_the_library_and_no_demo_directory_the_page_shows_its_built_in_table(
+    typeset: dict[str, Any],
+) -> None:
+    builtin = typeset["builtin"]
+    assert (builtin["tables"], builtin["grips"]) == (1, 2)
+    assert builtin["text"] == "No demo/ directory was found, so this is the only table."
+
+
+def test_with_the_library_a_document_with_no_table_has_no_handle_and_no_drag(
+    typeset: dict[str, Any],
+) -> None:
+    none = typeset["no_table"]
+    assert none["tables"] == [] and none["focus"] is None and none["grips"] == 0
+    assert none["before_layout"] == [False, []]
+    assert none["drag"] is False and none["reset"] is False and none["whole"] is True
+    assert none["readouts"][:3] == ["no table in this document", "", "last drag: none yet"]
 
 
 # ----------------------------------------------------------------------
@@ -798,11 +1241,15 @@ def test_the_floors_option_opens_the_page_with_every_table_at_its_floors() -> No
 # ----------------------------------------------------------------------
 
 GESTURE = """
+import sys
+
 from imgui_bundle import hello_imgui, imgui
 
+from advtext import typesetter
 from advtext.ui import app as advtext_app
-from advtext.units import px_from_sp
+from advtext.primitives import px_from_sp
 
+WANT_LIBRARY = sys.argv[1] == "with"
 state = {"frames": 0, "step": 0}
 real_gui = advtext_app.App.gui
 
@@ -816,10 +1263,26 @@ def watched_gui(self):
     made = self.page("tables")
     board = made.board
     io = imgui.get_io()
-    if state["frames"] < 6 or board.view.origin is None:
+    if state["frames"] < 6:
+        return
+    if not WANT_LIBRARY:
+        if state["frames"] == 12:
+            print(
+                f"alive=1 board={type(board).__name__} errors={len(self.page_errors)} "
+                f"current={self.current} imported={int('imtypeset' in sys.modules)}"
+            )
+            for line in made.report():
+                print(line)
+            hello_imgui.get_runner_params().app_shall_exit = True
+        return
+    if board.view.origin is None:
         return
     table = board.tables[0]
     if state["step"] == 0:
+        if WANT_LIBRARY:
+            # In the child, not in the test: this is the process that draws.
+            assert typesetter.module() is not None, "imtypeset is not in use: " + made.reason
+            assert typesetter.ready(), "imtypeset has no fonts: " + typesetter.trouble()
         grip = next(g for g in board.grips() if (g.table, g.edge) == (table, 0))
         origin = board.view.origin
         state["x"] = origin[0] + px_from_sp(grip.x, board.px_per_inch)
@@ -839,7 +1302,8 @@ def watched_gui(self):
             f"gesture held={int(state['held'] == (table, 0))} "
             f"released={int(made.held is None)} "
             f"moved_px={px_from_sp(moved, board.px_per_inch):.1f} "
-            f"sum_kept={int(sum(board.columns(table)) == sum(state['before']))}"
+            f"sum_kept={int(sum(board.columns(table)) == sum(state['before']))} "
+            f"renderer={made.renderer} imported={int('imtypeset' in sys.modules)}"
         )
         for line in made.report():
             print(line)
@@ -856,29 +1320,71 @@ def _fields(line: str) -> dict[str, str]:
     return dict(part.split("=", 1) for part in line.split() if "=" in part)
 
 
-def test_a_column_is_dragged_in_a_real_window(window: Window) -> None:
-    """
-    The real app on `--tab tables`: hover a handle, press, ten moves of 12 px, release.
-
-    Counts only: the handle was held and let go, the column narrowed by the
-    120 px the pointer travelled, the table kept its width, each move's
-    relayout re-shipped one unit, no text was selected, glyphs were drawn and
-    none was missing.
-    """
+def _gesture(window: Window, how: str, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, str]]:
     script = window.out / "tables_page_gesture.py"
     script.write_text(textwrap.dedent(GESTURE), encoding="utf-8")
-    done = window.run([str(script)])
-    assert done.returncode == 0, f"on {window.where}:\n{done.stdout}\n{done.stderr}"
+    with monkeypatch.context() as patch:
+        if how == "without":
+            for name in _VARIABLES:
+                patch.delenv(name, raising=False)
+        done = window.run([str(script), how])
+    assert done.returncode == 0, f"{how}, on {window.where}:\n{done.stdout}\n{done.stderr}"
     lines = [line for line in done.stdout.splitlines() if "=" in line]
-    assert len(lines) == 7, done.stdout
-    gesture, total = _fields(lines[0]), _fields(lines[1])
-    assert gesture["held"] == "1" and gesture["released"] == "1", done.stdout
-    assert abs(float(gesture["moved_px"]) - 120.0) < 0.5, done.stdout
+    assert len(lines) == (7 if how == "with" else 2), done.stdout
+    print(how, window.where, done.stdout)  # shown by pytest when the test fails
+    return [_fields(line) for line in lines]
+
+
+def test_in_a_real_window_without_the_library_the_page_says_why_not_and_stays_alive(
+    window: Window, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    The real app on `--tab tables`, the library's variables removed: twelve
+    frames, no board, no error page, the library not imported, and the
+    page's report is its reason.
+    """
+    alive, total = _gesture(window, "without", monkeypatch)
+    assert alive == {
+        "alive": "1",
+        "board": "NoneType",
+        "errors": "0",
+        "current": "Tables",
+        "imported": "0",
+    }
+    assert total["renderer"] == "none" and total["frames"] == "12"
+    assert total["reason"].startswith("'IMTYPESET_LIBRARY")
+
+
+def test_a_column_is_dragged_in_a_real_window_with_the_library(
+    window: Window, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    The same gesture with the library drawing: a `TypesetBoard`, in the child.
+
+    The child asserts `typesetter.module()` and `ready()` before the gesture,
+    so this cannot pass through the "why not" line. Hover a handle, press,
+    ten moves of 12 px, release. Counts only: held, let go, 120 px, the table
+    as wide as it was, one table dragged, nothing selected, no column under
+    its floor, and the library's own account: each of the ten moves
+    stated the columns once and a draw followed (`relayouts`), the last of
+    them set table rows again and measured no cell again, and vertices
+    reached the draw list. (That the page's module loads nothing of the old
+    core is measured where imports are, further up; the app around it does.)
+    """
+    if not os.environ.get(typesetter.LIBRARY_VARIABLE):
+        pytest.skip(
+            "IMTYPESET_LIBRARY is not set: run `make test TYPESET=1` (after `make typeset-lib`) "
+            "for the tests that need the imtypeset library"
+        )
+    gesture, total, *tables = _gesture(window, "with", monkeypatch)
+    assert gesture["renderer"] == "TypesetView" == total["renderer"]
+    assert gesture["imported"] == "1"
+    assert gesture["held"] == "1" and gesture["released"] == "1"
+    assert abs(float(gesture["moved_px"]) - 120.0) < 0.5
     assert gesture["sum_kept"] == "1"
     assert total["tables"] == "5" and total["dragged"] == "1"
-    assert total["reshipped"] == "1" and total["relayouts"] == "10", done.stdout
-    assert total["selected"] == "0"
-    assert int(total["glyphs"]) > 0 and total["missing"] == "0"
-    tables = [_fields(line) for line in lines[2:]]
+    assert total["relayouts"] == "10" and total["selected"] == "0"
+    assert 0 < int(total["rows_set"]) <= 5 and total["cells_measured"] == "0"
+    assert int(total["vertices"]) > 1000 and total["whole"] == "1"
     assert [entry["state"] for entry in tables] == ["dragged"] + ["automatic"] * 4
     assert all(entry["under_floor"] == "0" for entry in tables)

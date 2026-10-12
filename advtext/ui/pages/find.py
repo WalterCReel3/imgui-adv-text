@@ -3,54 +3,77 @@ The Find page: a search box over a long document, every match marked where it
 is set, and next/previous that scroll the current one into view.
 
 The document is `demo/sample.md` repeated (five times as the page opens;
-`--tab find:20` asks for twenty), set once by an `advtext.ui.bare_view.BareView`
-and never set again by anything this page does. Typing searches the text of the
-blocks, not the glyphs on screen, and hands the view *colour spans*: a mark
-behind each match, a stronger one behind the current match. The view applies
-them when it draws; no line is re-broken and no unit re-shipped.
+`--tab find:20` asks for twenty).
 
-## Where the answers come from (all of it the library's)
+## What draws
 
-This page first restated each of these over lower-level calls, because the
-library had no call for it; what it needed is now `advtext.spans.FindIndex`
-and three methods of the view, and the restatements are gone.
+An `advtext.ui.typeset_view.TypesetView` over the markdown SOURCE, read by
+`advtext.typeset_markdown` with no node material. There is no other renderer.
 
-- **The search** is `FindIndex.of(document.blocks).find(needle, ...)`: every
-  block's text built once, a `str.find` per block per keystroke, with the
-  rules `advtext.spans.find_spans` states (a space finds a hard break in
-  prose and not a line end in code).
-- **A match** is an `advtext.spans.TextMatch`: a block number and a half-open
-  range of that block's material, which is exactly a `ColourSpan`.
-  `BareView.set_colours(block, spans)` marks it.
-- **Where a match is**, on or off screen, is `BareView.span_rects`: one
-  rectangle per line the match is on, so a match across a line break is one
-  match with two rectangles.
-- **Showing it** is `BareView.scroll_to(rect, align=1/3)`: nothing moves if
-  the match is already in view with a margin, else its top goes a third of
-  the way down the pane.
+The view is made once, when the page is built, if `advtext.typesetter.ready()`
+(the app's font callback loaded the library's fonts). When it is not, the
+page draws ONE wrapped line saying why (`advtext.ui.pages.typeset.why_not`,
+drawn by that module's `say_why_not`) and nothing else: no box, no pane. A
+view call that raises `TypesetUnavailable` anywhere in a frame (the library
+failed and was switched off) has drawn no text: the page drops the view,
+keeps the sentence, and is that one line from the next frame on. The
+exception does not leave `draw`, so the app's traceback page is not reached;
+any other exception is a bug and is not caught.
 
-## What is found and not marked, and what is not searched
+**The search needs no library and exists without it.** The index is built
+from block descriptions (`MarkdownConverter.describe`), so `finder` holds the
+needle, the matches and the current one whether or not anything is drawn;
+only the marks and the scrolling are the view's.
 
-**A match inside a table cell is counted and not marked.** The index finds it
-(`TextMatch.cell`) and `span_rects(..., cell=)` could say where it is, but a
-colour span carries one block number and one range, so
-`BareView.set_colours` has no way to mark a cell. The page says how many
-matches it found and how many it marked rather than letting the count quietly
-be short. Next/previous visits marked matches only.
+`FindPage.renderer` is `"TypesetView"` while there is a view and `"none"`
+when there is not; `reason` is then why.
 
-**An inline formula is not searched**: the index leaves out what is inside a
-box.
+Nothing of the old layout core or the old views is imported by this module,
+at import or later (`tests/test_page_document.py` holds the first,
+`tests/test_page_find.py` the second).
+
+## How it works
+
+- **The search** is `advtext.typeset_find.FindIndex` over the block
+  descriptions (`MarkdownConverter.describe` of the view's own blocks; the
+  page checks that their texts ARE the view's, and marks nothing if they are
+  not) and `advtext.typeset_find.Finder`, wrapped here as `TypesetFinder` for
+  the timings the readout shows.
+- **A match** is `(block, start, end)` into the block's `str`. The marks are
+  plain tuples (`Finder.marks()`), handed to `TypesetView.set_marks` when the
+  finder's `revision` moved and never per frame.
+- **Showing it** is `TypesetView.scroll_to(block, start, align=1/3)`: the
+  view asks the library for the caret rectangle at that offset, so the LINE
+  holding the match is what is brought into view, however long the block
+  (`tests/test_page_find.py` steps to a match 400 lines into one code block).
+  A block's place is an estimate until what is above it has been laid out, so
+  the view corrects itself over the next few frames (`scrolls` counts the
+  frames in which the pane was moved, not the requests).
+- **Where a match is** is `TypesetView.span_rects`, pixels from the
+  document's corner: `shown()` reads it.
+
+## What is searched, and what is marked
+
+Whatever `advtext.typeset_find.FindIndex.of` indexes. That includes table
+cells, and **a match in a cell is marked** like any other. An inline
+formula's source is not searched.
+
+**At most `advtext.typeset_find.MARK_LIMIT` marks are handed over** (the
+first of them and the current one); the readout says "marked N of M found".
+
+The totals are the ones the old page's index (`advtext.spans.FindIndex`)
+found in the same document, measured for nine needles on 2026-10-11 before
+that page body was removed; `tests/test_page_find.py` holds them as literals.
 
 ## Cost
 
-`find_spans` rebuilds a block's text on every call (about 14 ms a needle on
-the sample twenty times over); the index is built once (about 13 ms for the
-same document) and a keystroke is a fraction of a millisecond to two. The
+The index is built once and a keystroke is a `str.find` per block. The
 readout under the search box shows what the last keystroke cost, split into
-the search and the handing over of marks, and counts the layouts rebuilt and
-units built at an unchanged width since the page opened -- from
-`UnitLayout.stats`, the layout's own account. A change of width re-breaks the
-document and is not typing; it is counted apart.
+the search and the handing over of marks (making the tuples and `set_marks`
+checking their shape; the view packs them for the library at its next draw,
+which is not in the number), then the view's own counts: edits of the
+document (typing should leave it at zero) and blocks laid out so far. One
+more call into the library a frame, for that readout.
 
 **None of the readouts is a measure of quality** (`docs/visual-review.md`).
 The two mark colours are this page's own chrome and nobody has judged them.
@@ -63,17 +86,18 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any, Final
 
-from advtext.backends.imgui_draw import DARK_PALETTE, DrawStats, rgba
-from advtext.markdown import Document, build_document
-from advtext.selection import Rect
-from advtext.spans import ColourSpan, FindIndex, TextMatch
-from advtext.ui.bare_view import MIN_WIDTH_PX, BareView
+from advtext import typesetter
+from advtext.typeset_find import MARK_LIMIT
+from advtext.typeset_find import Finder as _TextFinder
+from advtext.typeset_find import FindIndex as _TextIndex
+from advtext.typeset_find import Match as TextRange
+from advtext.typeset_markdown import MarkdownConverter, parse_markdown
+from advtext.ui.ownership import MIN_WIDTH_PX
 from advtext.ui.pages import PageContext, PageSpec, caption, debug_toggle, demo_text
-from advtext.ui.units import UnitLayout
-from advtext.units import px_from_sp, sp_from_px
+from advtext.ui.palette import DARK_PALETTE, rgba
+from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
 
 __all__ = [
     "CURRENT_MARK",
@@ -84,13 +108,10 @@ __all__ = [
     "PAGE",
     "TEXT_WIDTH_PX",
     "FindPage",
-    "Finder",
-    "Found",
-    "Index",
-    "Match",
-    "document_of",
-    "readouts",
-    "search",
+    "TextRange",
+    "TypesetFinder",
+    "source_of",
+    "typeset_readouts",
 ]
 
 HIT_MARK: Final = rgba(0xE8, 0xB3, 0x39, 0x59)
@@ -121,50 +142,6 @@ FALLBACK: Final = (
 )
 
 
-# ----------------------------------------------------------------------
-# The search: pure, no ImGui, no view
-# ----------------------------------------------------------------------
-
-
-Match = TextMatch
-"""One occurrence: `advtext.spans.TextMatch`. The name this page's tests know it by."""
-
-Index = FindIndex
-"""Every block's text, built once: `advtext.spans.FindIndex`."""
-
-
-@dataclass(frozen=True, slots=True)
-class Found:
-    """
-    What one search found: the matches that can be marked, and the ones that cannot.
-
-    `matches` is in reading order. `cells` are the occurrences inside table
-    cells, which are found and cannot be marked (the module docstring).
-    """
-
-    matches: tuple[TextMatch, ...] = ()
-    cells: tuple[TextMatch, ...] = ()
-
-    @property
-    def in_cells(self) -> int:
-        return len(self.cells)
-
-    @property
-    def total(self) -> int:
-        return len(self.matches) + len(self.cells)
-
-
-def search(index: FindIndex, needle: str, *, ignore_case: bool = True) -> Found:
-    """
-    `index.find`, parted into what the view can mark and what it cannot.
-    """
-    hits = index.find(needle, ignore_case=ignore_case)
-    return Found(
-        tuple(hit for hit in hits if hit.cell is None),
-        tuple(hit for hit in hits if hit.cell is not None),
-    )
-
-
 SHOW_AT: Final = 1.0 / 3.0
 """
 How far down the pane the top of a match is put when the pane has to move for it.
@@ -172,234 +149,210 @@ How far down the pane the top of a match is put when the pane has to move for it
 
 
 # ----------------------------------------------------------------------
-# The state: a view, a needle, the matches and which one is current
+# The document, and the finder over it
 # ----------------------------------------------------------------------
 
 
-def document_of(context: PageContext, copies: int, text: str | None = None) -> Document:
+def source_of(copies: int, text: str | None = None) -> str:
     """
-    The page's document: `demo/sample.md` (or `text`) `copies` times over.
+    The page's markdown: `demo/sample.md` (or `text`) `copies` times over.
     """
     if text is None:
         text = demo_text("sample.md")
     if text is None:
         text = FALLBACK
-    source = "\n\n".join([text] * max(copies, 1))
-    return build_document(source, context.theme, context.metrics)
+    return "\n\n".join([text] * max(copies, 1))
 
 
-@dataclass(slots=True)
-class Finder:
+def _why_not() -> str:
     """
-    A search over one view's document: the needle, what it found, the current match.
+    Why imtypeset is not drawing, as one sentence; empty when `typesetter.ready()`.
 
-    No ImGui. `search` and `step` are what a keystroke and a press of
-    next/previous do; `observe` is called once a frame after the view has drawn
-    and keeps the two counters the module docstring describes.
+    `advtext.ui.pages.typeset.why_not`, which never asks `typesetter.module()`
+    (a page is built in the pytest process by every page-enumerating test,
+    and the library is kept out of that process). Imported when it is needed,
+    so that importing this page imports no other page.
+    """
+    if typesetter.ready():
+        return ""
+    from advtext.ui.pages.typeset import why_not
+
+    return why_not()
+
+
+def _not_drawing(reason: str) -> str:
+    """
+    The one line a page shows instead of its content: `advtext.ui.pages.typeset.not_drawing`.
+    """
+    from advtext.ui.pages.typeset import not_drawing
+
+    return not_drawing(reason)
+
+
+def _say_why_not(reason: str) -> None:
+    """
+    The whole of a frame without the library: one wrapped line, `say_why_not`'s.
+    """
+    from advtext.ui.pages.typeset import say_why_not
+
+    say_why_not(reason)
+
+
+class TypesetFinder:
+    """
+    A search over a `TypesetView`'s document: `advtext.typeset_find.Finder`, with the timings.
+
+    What the controls read: `needle`, `ignore_case`, `current`, `match`,
+    `label`, `keystrokes`, `search_ms`, `mark_ms`, `search`, `step`.
+    `matches` are `(block, start, end)` into the view's `texts`.
+
+    **`view` may be `None`** (the library is not drawing): the search, the
+    current match and the label are all there, nothing is handed over,
+    `marked` is zero and `rects()` is empty.
+
+    `mark_ms` is what handing the marks to the view took: making the tuples
+    and `set_marks` checking their shape. The view packs them for the library
+    at its next draw, which is not in this number.
+
+    `aligned` is whether the texts the index was built from are the view's
+    own. When they are not, nothing is marked (a mark is an offset into the
+    view's text) and the page says so.
     """
 
-    view: BareView
-    timer: Callable[[], float] = time.perf_counter
-    needle: str = ""
-    ignore_case: bool = True
-    found: Found = field(default_factory=Found)
-    current: int | None = None
-    """Index into `found.matches` of the current match, or `None` when there is none."""
-    keystrokes: int = 0
-    """Searches run: one for each edit of the box and each flip of the case checkbox."""
-    search_ms: float = 0.0
-    """What the last `search` took to find its matches."""
-    mark_ms: float = 0.0
-    """What the last `search` took to hand the marks to the view."""
-    rebuilt: int = 0
-    """Layouts built at an unchanged width since the first. Typing should leave this at zero."""
-    reshipped: int = 0
-    """Units those layouts composed and shipped (`UnitLayout.stats.built`)."""
-    resized: int = 0
-    """Layouts built because the width changed. Not typing's doing; counted apart."""
-    index: Index = field(init=False)
-    _spans: dict[int, tuple[int, int]] = field(default_factory=dict, init=False)
-    _seen: UnitLayout | None = field(default=None, init=False)
+    def __init__(
+        self,
+        view: Any,
+        index: _TextIndex,
+        *,
+        aligned: bool = True,
+        ignore_case: bool = True,
+        timer: Callable[[], float] = time.perf_counter,
+    ) -> None:
+        self.view = view
+        self.aligned = aligned
+        self.timer = timer
+        self.finder = _TextFinder(
+            index, color=int(HIT_MARK), current_color=int(CURRENT_MARK), limit=MARK_LIMIT
+        )
+        self.finder.ignore_case = ignore_case
+        self.keystrokes = 0
+        self.search_ms = 0.0
+        self.mark_ms = 0.0
+        self._handed: int | None = None
 
-    def __post_init__(self) -> None:
-        self.index = Index.of(self.view.document.blocks)
+    # -- what the controls read -----------------------------------------
 
-    # -- searching ------------------------------------------------------
+    @property
+    def needle(self) -> str:
+        return self.finder.needle
 
-    def search(self, needle: str, *, ignore_case: bool | None = None) -> Found:
+    @property
+    def ignore_case(self) -> bool:
+        return self.finder.ignore_case
+
+    @property
+    def current(self) -> int | None:
+        return self.finder.current
+
+    @property
+    def matches(self) -> tuple[TextRange, ...]:
+        return self.finder.matches
+
+    @property
+    def match(self) -> TextRange | None:
+        return self.finder.match
+
+    @property
+    def marked(self) -> int:
+        """How many marks the view has been handed: zero with no view, or texts that are not its."""
+        return len(self.finder.marks()) if self.aligned and self.view is not None else 0
+
+    @property
+    def label(self) -> str:
+        """`3 of 17`, `no matches`, or nothing for an empty needle."""
+        if not self.needle:
+            return ""
+        return self.finder.status() or "no matches"
+
+    def search(self, needle: str, *, ignore_case: bool | None = None) -> tuple[TextRange, ...]:
         """
-        Search for `needle`, mark every match, and keep the current one near where it was.
-
-        The current match becomes the first at or after the place the previous
-        current match started, so typing another letter of a word does not
-        throw the reader back to the top. With no previous one it is the first.
+        Search for `needle`, hand the marks over, keep the current match near where it was.
         """
         began = self.timer()
-        if ignore_case is not None:
-            self.ignore_case = ignore_case
-        before = None if self.current is None else self.found.matches[self.current]
-        self.needle = needle
-        self.found = found = search(self.index, needle, ignore_case=self.ignore_case)
-        self.current = None
-        if found.matches:
-            self.current = 0
-            if before is not None:
-                place = (before.block, before.start)
-                self.current = next(
-                    (
-                        number
-                        for number, match in enumerate(found.matches)
-                        if (match.block, match.start) >= place
-                    ),
-                    0,
-                )
+        found = self.finder.search(needle, ignore_case=ignore_case)
         searched = self.timer()
-        self._mark_all()
+        self.hand_over()
         self.search_ms = (searched - began) * 1000.0
         self.mark_ms = (self.timer() - searched) * 1000.0
         self.keystrokes += 1
         return found
 
-    def step(self, delta: int) -> Match | None:
+    def step(self, delta: int) -> TextRange | None:
         """
         Move the current match by `delta`, wrapping at both ends. Returns it, or `None`.
         """
-        matches = self.found.matches
-        if not matches or self.current is None:
-            return None
-        old = matches[self.current]
-        self.current = (self.current + delta) % len(matches)
-        new = matches[self.current]
-        for block in {old.block, new.block}:
-            self._mark(block)
-        return new
+        moved = self.finder.step(delta)
+        self.hand_over()
+        return moved
 
-    @property
-    def match(self) -> Match | None:
+    def hand_over(self) -> None:
         """
-        The current match, or `None`.
+        Give the view the marks if the finder changed since it was last given them.
         """
-        return None if self.current is None else self.found.matches[self.current]
+        if self.view is None or self._handed == self.finder.revision:
+            return
+        self._handed = self.finder.revision
+        self.view.set_marks(self.finder.marks() if self.aligned else None)
 
-    def _mark_all(self) -> None:
-        self.view.clear_colours()
-        self._spans = {}
-        matches = self.found.matches
-        start = 0
-        while start < len(matches):
-            block = matches[start].block
-            stop = start
-            while stop < len(matches) and matches[stop].block == block:
-                stop += 1
-            self._spans[block] = (start, stop)
-            self._mark(block)
-            start = stop
-
-    def _mark(self, block: int) -> None:
-        start, stop = self._spans[block]
-        matches = self.found.matches
-        self.view.set_colours(
-            block,
-            [
-                ColourSpan(
-                    matches[number].start,
-                    matches[number].end,
-                    mark=CURRENT_MARK if number == self.current else HIT_MARK,
-                )
-                for number in range(start, stop)
-            ],
-        )
-
-    # -- where the current match is --------------------------------------
-
-    def rects(self) -> list[Rect]:
+    def rects(self) -> list[tuple[float, float, float, float]]:
         """
-        The current match's rectangles in the view's layout; empty with no match or no layout.
+        The current match's rectangles, pixels from the document's corner; empty with none.
+
+        One call into the library (`TypesetView.span_rects`), and empty before
+        the first draw.
         """
         match = self.match
-        if match is None:
+        if match is None or self.view is None:
             return []
-        return self.view.span_rects(match.block, match.start, match.end)
-
-    def place(self) -> Rect | None:
-        """
-        One rectangle to bring into view for the current match, in document scaled points.
-
-        The extent of its rectangles; its block's, if it has none (its
-        material could not be matched to what was shipped). `None` with no
-        match or no layout.
-        """
-        match = self.match
-        if match is None:
-            return None
-        rects = self.rects()
-        if not rects:
-            return self.view.block_rect(match.block)
-        top = min(rect.y for rect in rects)
-        bottom = max(rect.y + rect.height for rect in rects)
-        return Rect(0, top, 0, bottom - top)
+        found: list[tuple[float, float, float, float]] = self.view.span_rects(
+            match.block, match.start, match.end
+        )
+        return found
 
     def span_px(self) -> tuple[float, float] | None:
         """
         The current match's top and bottom in pixels below the document's top, or `None`.
-
-        `place`, in pixels.
         """
-        place = self.place()
-        if place is None:
+        rects = self.rects()
+        if not rects:
             return None
-        ppi = self.view.px_per_inch
-        return px_from_sp(place.y, ppi), px_from_sp(place.y + place.height, ppi)
-
-    # -- what it cost ----------------------------------------------------
-
-    def observe(self) -> None:
-        """
-        Compare the view's layout with the one seen last time. Call once a frame, after `draw`.
-        """
-        layout, seen = self.view.layout, self._seen
-        if layout is None or layout is seen:
-            return
-        if seen is not None:
-            if layout.width != seen.width:
-                self.resized += 1
-            else:
-                self.rebuilt += 1
-                # The layout's own account of what it built. A document
-                # parsed again is given new `Unit` objects around the
-                # commands it already had, and that is not shipping.
-                self.reshipped += len(layout.stats.built)
-        self._seen = layout
-
-    @property
-    def label(self) -> str:
-        """
-        `3 of 17`, `no matches`, or nothing for an empty needle.
-        """
-        if not self.needle:
-            return ""
-        if self.current is None:
-            return "no matches"
-        return f"{self.current + 1} of {len(self.found.matches)}"
+        return min(rect[1] for rect in rects), max(rect[3] for rect in rects)
 
 
-def readouts(finder: Finder) -> tuple[str, ...]:
+def typeset_readouts(finder: TypesetFinder, edits: int, stats: Any) -> tuple[str, ...]:
     """
-    The lines under the search box: found against marked, then cost. Counts, no judgement.
+    The lines under the search box: found against marked, then cost.
+
+    `edits` is how many times the view's document changed since the page
+    opened (typing should leave it at zero) and `stats` the view's
+    `ViewStats`, or `None` before the first draw. Counts, no judgement.
     """
-    found = finder.found
-    marked = len(found.matches)
-    cells = (
-        f"{found.in_cells} more in table cells, found and not marked"
-        if found.in_cells
-        else "none in table cells"
+    found = len(finder.matches)
+    marked = (
+        f"marked {finder.marked} of {found} found"
+        if finder.aligned
+        else f"{found} found, not marked: the view's texts differ from the find index's"
+    )
+    laid = (
+        "nothing drawn yet"
+        if stats is None
+        else f"blocks laid out so far {stats.blocks_laid_out} "
+        f"({stats.blocks} in the document, {stats.blocks_deferred} not reached yet)"
     )
     return (
-        f"marked {marked} of {found.total} found  ·  {cells} "
-        "(a colour span cannot name a cell)  ·  formulae are not searched",
+        f"{marked}  ·  table cells are searched and marked  ·  formula source is not searched",
         f"last keystroke: search {finder.search_ms:.2f} ms, marks {finder.mark_ms:.2f} ms"
-        f"  ·  {finder.keystrokes} keystrokes: {finder.rebuilt} layouts rebuilt, "
-        f"{finder.reshipped} units re-shipped  ·  {finder.resized} resizes (not counted)",
+        f"  ·  {finder.keystrokes} keystrokes: {edits} edits of the document  ·  {laid}",
     )
 
 
@@ -410,31 +363,66 @@ def readouts(finder: Finder) -> tuple[str, ...]:
 
 class FindPage:
     """
-    The page: a `Finder` over a `BareView`, the search row, and the scrolling pane.
+    The page: a finder over a view, the search row, and the scrolling pane.
+
+    `typeset` is the `TypesetView`, or `None` when the library is not drawing
+    (`reason` says why, and the page is that one line). `finder` is a
+    `TypesetFinder` either way: the search needs no library.
     """
 
-    def __init__(self, context: PageContext) -> None:
+    def __init__(self, context: PageContext, text: str | None = None) -> None:
         self.context = context
         count = context.count_for(PAGE.name)
         self.copies = DEFAULT_COPIES if count is None else max(count, 1)
-        self.view = BareView(
-            document=document_of(context, self.copies),
-            theme=context.theme,
-            measure=context.measure,
-            px_per_inch=context.px_per_inch,
+        self.text = text
+        self.source = source_of(self.copies, text)
+        """The markdown on show."""
+        self.typeset: TypesetView | None = None
+        self.reason = _why_not()
+        """Why nothing is drawn, when nothing is; empty while the view draws."""
+        if not self.reason:
+            try:
+                self.typeset = TypesetView(self.source, theme=context.theme, palette=DARK_PALETTE)
+            except TypesetUnavailable as exc:
+                self.reason = str(exc)
+        view = self.typeset
+        self._revision = 0 if view is None else view.revision
+        # Described here as well as by the view: the find index wants the
+        # block descriptions and the view does not hand its own out. The
+        # texts are compared, so an index that is not the view's marks
+        # nothing. With no view the markdown is read here, by the reader the
+        # view uses, so that the search is the same search.
+        blocks = (
+            view.blocks if view is not None else parse_markdown(self.source, context.theme).blocks
         )
-        self.finder = Finder(self.view, ignore_case="case" not in context.options_for(PAGE.name))
+        described = MarkdownConverter(context.theme).describe(blocks)
+        self.blocks = len(described.blocks)
+        """How many blocks the document has, as the index counts them."""
+        self.finder = TypesetFinder(
+            view,
+            _TextIndex.of(described.blocks),
+            aligned=view is None or tuple(described.texts) == tuple(view.texts),
+            ignore_case="case" not in context.options_for(PAGE.name),
+        )
         self.finder.search(DEFAULT_NEEDLE)
         self.finder.keystrokes = 0
         self.frames = 0
         self.scrolls = 0
-        """How many times a step or a search asked the pane to scroll."""
-        self.stats: DrawStats | None = None
+        """How many frames moved the pane for a step or a search."""
+        self.view_stats: Any = None
+        """The view's `ViewStats` as of the last frame, or `None`."""
+        self.vertices = 0
+        """Vertices the view added to the pane's draw list in the last frame."""
         self.pane: tuple[float, float] | None = None
         """The scrolling pane's top and bottom on screen at the last frame, in pixels."""
         self._reveal = False
         self._refocus = False
         self._rearming = 0
+
+    @property
+    def renderer(self) -> str:
+        """`"TypesetView"` while the library draws this page, `"none"` when nothing does."""
+        return "TypesetView" if self.typeset is not None else "none"
 
     # -- what the controls do --------------------------------------------
 
@@ -469,29 +457,48 @@ class FindPage:
         """
         Whether the current match lay wholly inside the pane as of the last frame drawn.
         """
-        origin, span, pane = self.view.origin, self.finder.span_px(), self.pane
-        if origin is None or span is None or pane is None:
+        view = self.typeset
+        if view is None or view.origin is None or self.pane is None:
             return False
-        return pane[0] <= origin[1] + span[0] and origin[1] + span[1] <= pane[1]
+        if not typesetter.ready():
+            return False
+        origin, span, pane = view.origin, self.finder.span_px(), self.pane
+        if span is None:
+            return False
+        return bool(pane[0] <= origin[1] + span[0] and origin[1] + span[1] <= pane[1])
+
+    @property
+    def edits(self) -> int:
+        """
+        How many times the view's document changed since the page opened; 0 with no view.
+        """
+        return 0 if self.typeset is None else self.typeset.revision - self._revision
+
+    def lines(self) -> tuple[str, ...]:
+        """
+        The captions under the search row; the one "why not" line when nothing draws.
+        """
+        if self.typeset is None:
+            return (_not_drawing(self.reason),)
+        return typeset_readouts(self.finder, self.edits, self.view_stats)
 
     def report(self) -> list[str]:
         """
         What an unattended run prints: counts.
         """
-        finder, stats = self.finder, self.stats
-        layout = self.view.layout
+        finder = self.finder
+        stats = self.view_stats
         return [
-            f"frames={self.frames} copies={self.copies} blocks={len(self.view.document.blocks)} "
-            f"units={0 if layout is None else len(layout.placed)} "
-            f"needle={finder.needle!r} marked={len(finder.found.matches)} "
-            f"found={finder.found.total} cells={finder.found.in_cells} "
+            f"frames={self.frames} renderer={self.renderer} copies={self.copies} "
+            f"blocks={self.blocks} needle={finder.needle!r} "
+            f"marked={finder.marked} found={len(finder.matches)} "
+            f"aligned={int(finder.aligned)} "
             f"current={-1 if finder.current is None else finder.current + 1} "
-            f"rects={len(finder.rects())} shown={int(self.shown())} scrolls={self.scrolls} "
-            f"keystrokes={finder.keystrokes} rebuilt={finder.rebuilt} "
-            f"reshipped={finder.reshipped} resized={finder.resized} "
-            f"unmapped={self.view.unmapped_blocks} "
-            f"glyphs={0 if stats is None else stats.glyphs} "
-            f"missing={0 if stats is None else stats.missing}"
+            f"shown={int(self.shown())} scrolls={self.scrolls} "
+            f"keystrokes={finder.keystrokes} edits={self.edits} "
+            f"laid_out={0 if stats is None else stats.blocks_laid_out} "
+            f"deferred={0 if stats is None else stats.blocks_deferred} "
+            f"whole={1 if stats is None else int(stats.whole)} vertices={self.vertices}"
         ]
 
     # -- the frame ---------------------------------------------------------
@@ -500,8 +507,31 @@ class FindPage:
         from imgui_bundle import imgui
 
         self.frames += 1
+        view = self.typeset
+        if view is None:
+            self.vertices, self.pane = 0, None
+            _say_why_not(self.reason)
+            return
+        try:
+            self._frame(imgui, view)
+        except TypesetUnavailable as exc:
+            # Whatever raised drew no text: the search row and an empty pane
+            # are this frame, and the page is the one line from the next.
+            # The finder keeps the needle and the matches; it has no view.
+            self.typeset = None
+            self.finder.view = None
+            self.view_stats = None
+            self.reason = str(exc)
+
+    def _frame(self, imgui: Any, view: TypesetView) -> None:
+        """
+        The frame through imtypeset. `TypesetUnavailable` is the caller's to catch.
+
+        Every pair opened here is closed on the way out of an exception, so
+        the caller's handler leaves ImGui's stacks as it found them.
+        """
         self._controls(imgui)
-        for line in readouts(self.finder):
+        for line in self.lines():
             caption(line)
         imgui.separator()
 
@@ -520,23 +550,31 @@ class FindPage:
             imgui.ChildFlags_.borders.value | imgui.ChildFlags_.always_use_window_padding.value,
             imgui.WindowFlags_.always_vertical_scrollbar.value,
         )
-        view = self.view
-        self.pane = (imgui.get_window_pos().y, imgui.get_window_pos().y + imgui.get_window_height())
-        width_px = max(min(imgui.get_content_region_avail().x, TEXT_WIDTH_PX), MIN_WIDTH_PX)
-        # Laid out before the scroll is decided, at the width `draw` is about
-        # to choose: the match's place is asked of this layout.
-        view.layout_for(sp_from_px(width_px, view.px_per_inch))
-        if self._reveal:
-            self._reveal = False
-            place = self.finder.place()
-            if place is not None:
-                view.scroll_to(place, align=SHOW_AT)
-        view.debug = self.context.debug
-        self.stats = view.draw(fonts=self.context.fonts, palette=DARK_PALETTE, width_px=width_px)
-        if view.scrolled:
-            self.scrolls += 1
-        self.finder.observe()
-        imgui.end_child()
+        try:
+            self.pane = (
+                imgui.get_window_pos().y,
+                imgui.get_window_pos().y + imgui.get_window_height(),
+            )
+            width_px = max(min(imgui.get_content_region_avail().x, TEXT_WIDTH_PX), MIN_WIDTH_PX)
+            vertices = imgui.get_window_draw_list().vtx_buffer
+            before = vertices.size()
+            self.vertices = 0
+            reveal, self._reveal = self._reveal, False
+            finder = self.finder
+            finder.hand_over()
+            match = finder.match if reveal else None
+            if match is not None:
+                # The line holding the match's first character, not the block.
+                view.scroll_to(match.block, match.start, align=SHOW_AT)
+            view.debug = self.context.debug
+            view.draw(palette=DARK_PALETTE, width_px=width_px)
+            # One more call into the library a frame, for the readout.
+            self.view_stats = view.stats
+            if view.scrolled:
+                self.scrolls += 1
+            self.vertices = vertices.size() - before
+        finally:
+            imgui.end_child()
 
     def _controls(self, imgui: Any) -> None:
         finder = self.finder

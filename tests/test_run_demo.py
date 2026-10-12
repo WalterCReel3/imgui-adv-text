@@ -276,7 +276,7 @@ _TAB_SPECS = [
     "columns",
     "specimen",
     "formula",
-    "blocks",
+    "typeset",
     "Columns",
     "columns:3",
     "columns:3,debug",
@@ -451,3 +451,87 @@ def test_giving_the_file_twice_is_refused_rather_than_silently_preferring_one(
     assert exit_info.value.code == 2
     assert not stub_run
     assert "not both" in capsys.readouterr().err
+
+
+def test_the_page_count_in_the_docstring_is_the_count_of_pages() -> None:
+    """
+    The docstring spells out how many pages the sidebar has, and a page was
+    added (2026-10-10) without it: "fourteen" for fifteen.
+    """
+    app = pytest.importorskip("advtext.ui.app")
+    words = "zero one two three four five six seven eight nine ten eleven twelve".split()
+    words += "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split()
+    said = re.search(r"page of the sidebar since 2026-10-07: (\w+) of them", run_demo.__doc__)
+    assert said is not None, "the docstring no longer counts the pages"
+    assert said.group(1) == words[len(app.page_names())]
+
+
+# ----------------------------------------------------------------------
+# No library asked for: said, and the window still opens
+
+
+def test_without_the_library_the_launcher_says_so_and_still_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_run: list[tuple[str | None, str | None]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Since tranche 5 no page falls back to advtext's own layout, so a demo
+    opened with no `IMTYPESET_LIBRARY` shows one line a page. That is said on
+    stderr before the window opens, with the command that has the text, and
+    the app is run all the same: exit 0, one call. With the variable set
+    nothing is said. Only the variable is read here; whether the library then
+    loads is the app's to say.
+    """
+    monkeypatch.delenv("IMTYPESET_LIBRARY", raising=False)
+    assert run_demo.main(["--tab", "document"]) == 0
+    said = capsys.readouterr().err
+    assert said.strip() == run_demo.NO_LIBRARY.strip()
+    assert "make run TYPESET=1" in said and "make typeset-lib" in said
+    assert stub_run == [(None, "document")]
+
+    monkeypatch.setenv("IMTYPESET_LIBRARY", "/some/where/libimtypeset.so")
+    assert run_demo.main(["--tab", "document"]) == 0
+    assert capsys.readouterr().err == ""
+    assert len(stub_run) == 2
+
+    assert run_demo.library_note({}) == run_demo.NO_LIBRARY
+    assert run_demo.library_note({"IMTYPESET_LIBRARY": ""}) == run_demo.NO_LIBRARY
+    assert run_demo.library_note({"IMTYPESET_LIBRARY": "x.so"}) is None
+
+
+def test_a_library_that_was_asked_for_and_was_not_drawing_is_said_at_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_run: list[tuple[str | None, str | None]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    A1 (T5-R #2). With `IMTYPESET_LIBRARY` set the launcher said nothing at
+    all, whether or not the library then drew: a library that was refused, or
+    that failed in the middle of the run, was told only by the one line on
+    each page. It is now said on stderr when the window has closed, with the
+    reason the pages showed (`advtext.ui.app.not_drawing_at_exit`). The exit
+    status stays 0: the window was opened and was looked at, which is what
+    this script is for; `scripts/shot.py` is the one that fails.
+
+    Without the variable nothing more is said than before, whatever the app
+    reports: one-line pages are what was asked for.
+    """
+    app = pytest.importorskip("advtext.ui.app")
+    monkeypatch.setattr(app, "not_drawing_at_exit", lambda: "Error: add_font: no such file")
+
+    monkeypatch.setenv("IMTYPESET_LIBRARY", "/some/where/libimtypeset.so")
+    assert run_demo.main(["--tab", "document"]) == 0
+    said = capsys.readouterr().err
+    assert "Error: add_font: no such file" in said
+    assert "/some/where/libimtypeset.so" in said and "imtypeset was not drawing" in said
+
+    monkeypatch.delenv("IMTYPESET_LIBRARY")
+    assert run_demo.main(["--tab", "document"]) == 0
+    assert capsys.readouterr().err.strip() == run_demo.NO_LIBRARY.strip()
+
+    monkeypatch.setenv("IMTYPESET_LIBRARY", "/some/where/libimtypeset.so")
+    monkeypatch.setattr(app, "not_drawing_at_exit", lambda: "")
+    assert run_demo.main(["--tab", "document"]) == 0
+    assert capsys.readouterr().err == "", "a library that drew is not remarked on"
+    assert len(stub_run) == 3

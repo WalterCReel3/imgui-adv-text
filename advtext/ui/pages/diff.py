@@ -1,12 +1,48 @@
 r"""
-The Diff page: every `DiffView` feature, on the diffs a coding agent's host is handed.
+The Diff page: every feature of the diff view, on the diffs a coding agent's host is handed.
 
-`advtext.diff` is the model and `advtext.ui.diff_view.DiffView` draws it. This
-page is the host: it picks a diff, owns the window the view is drawn in, and
-turns each of the view's switches from a control. Unified and side by side are
-both here -- one or the other, or **both at once on the same diff** when the
-body is at least `BOTH_MIN_PX` wide, so the two layouts can be compared row for
-row.
+`advtext.diff` is the model. It is drawn by
+`advtext.ui.typeset_diff_view.TypesetDiffView` (text set and drawn by the
+imtypeset library), and by nothing else: "When the library is not drawing",
+below. This page is the
+host: it picks a diff, owns the window the view is drawn in, and turns each of
+the view's switches from a control. Unified and side by side are both here --
+one or the other, or **both at once on the same diff** when the body is at
+least `BOTH_MIN_PX` wide, so the two layouts can be compared row for row.
+
+## When the library is not drawing
+
+Decided when the page is built, as `advtext.ui.pages.typeset` decides it:
+`advtext.typesetter.ready()` true (the app's font callback loaded the
+library's fonts) is two `TypesetDiffView`s. Anything else is NO views
+(`DiffPage.views` is empty, `renderer` is `"none"`), and the page draws one
+wrapped line saying why (`pages.typeset.say_why_not`) and nothing else. A
+view call anywhere in the frame that raises
+`advtext.ui.typeset_view.TypesetUnavailable` (the library failed and was
+switched off, or its fonts went) drops BOTH views; whatever that frame had
+drawn stays, and from the next frame the page is the one line. Nothing else is
+caught: an error of the view's own Python is a bug to see.
+
+**The page's state does not need a view.** The case, the mode, the context,
+the diff shown (`expand`, `set_context`), the switches and the replay are the
+page's and move with no views at all; what is a view's (the current hunk,
+which rows are on screen) is then absent: `next_hunk()` answers `None` and
+`follow` False. Nothing of the old diff view or the old layout core is
+imported by this module, at import or later.
+
+What the view does not report, and what the page says instead:
+
+- **No glyph count in the cost line.** `draw` answers a `bool` (everything
+  in view was set as asked) and the library counts no glyphs. The line says
+  how many edits the views have made in the library (`edits`: it stands still
+  while scrolling and moves by one a document when a line of a replay
+  arrives), and `not answered` if a draw said False.
+- **No `metrics=`.** The library measures.
+- **The cell is the code face's own advance**: 8.0 px at the theme's 16 px,
+  which is what this page draws at (`advtext/ui/typeset_diff_view.py`).
+- A character the code face lacks is set from another face at that face's
+  advance (the `unseen` case's Greek), and one no face has is whatever the
+  library draws.
 
 ## The cases, and where they come from
 
@@ -44,23 +80,23 @@ not raise.
 
 ## The controls, and which switch of the view each one is
 
-- **layout** -- `DiffView.set_layout` on one view, or two views side by side.
+- **layout** -- `TypesetDiffView.set_layout` on one view, or two views side by side.
 - **context** -- `Diff.from_texts(..., context=n)` again. Only for cases built
   from texts; a parsed diff has the context its author gave it.
 - **expand** -- `Diff.expand` on every gap that can be: `expand_step` lines at a
   time, or all of them. A click on a collapsed-context row in the view does the
   same for that one gap (Shift+click from the other end), and the page adopts
   what the view then shows so that two views do not drift apart.
-- **previous / next hunk** -- `DiffView.previous_hunk` / `next_hunk`, by button
+- **previous / next hunk** -- `TypesetDiffView.previous_hunk` / `next_hunk`, by button
   and by `k` / `j` (pptmstr's review keys) while the page has the keyboard and
   no text box does. The readout names the hunk the view is on.
-- **syntax** -- `DiffView.syntax`, the demo's tokeniser
+- **syntax** -- `TypesetDiffView.syntax`, the demo's tokeniser
   (`advtext.ui.pages._syntax.line_colours`) or `None`.
 - **dark** -- another `Palette` to `draw`, and its ground as the pane's colour.
-- **cap** -- `DiffView.height_cap`: the view opens its own child no taller than
+- **cap** -- `TypesetDiffView.height_cap`: the view opens its own child no taller than
   `CAP_PX` and scrolls inside it, which is how it sits in a chat transcript.
 - **replay** -- the case's unified text fed to a `UnifiedDiffStream` a line at
-  a time, `DiffView.set_diff(stream.diff)` each frame.
+  a time, `TypesetDiffView.set_diff(stream.diff)` each frame.
 
 The readouts are counts: `+n -m`, files and hunks, display rows in each layout
 and how many are on screen, the cost of drawing the views this frame, and what
@@ -88,21 +124,23 @@ each kept as a case so that what the library now does with it is on screen.
 
 ## Two views of one diff
 
-In "both" the two panes are two `DiffView`s on the same `Diff`. They step
+In "both" the two panes are two `TypesetDiffView`s on the same `Diff`. They step
 hunks together (the page steps one and walks the other), take a scheme change
 as one assignment each (`view.syntax = ...`; the views are never rebuilt, so
 the current hunk and the selection survive it), and scroll together
 vertically: the pane under the mouse leads, and `follow` puts the other on the
-row that shows the same line (`DiffView.top_row`, `row_info`, `row_of`). The
+row that shows the same line (`top_row`, `row_info`, `row_of`). The
 follower lands a frame or two behind, because a scroll asked for in one frame
 is ImGui's to apply in the next.
 
 ## What has and has not been run
 
 `tests/test_page_diff.py` drives the state without ImGui and the page inside
-real ImGui frames with no backend; one run in a real window under Xvfb reports
-counts for both layouts. Nobody has looked at it, and nothing here says how any
-of it looks.
+real ImGui frames with no backend -- where the library has no fonts, so those
+frames are the one line, or the page over a stand-in view with the real rows
+-- and runs the application in a real window with and without the library,
+where it reports which view drew, counts for both layouts, a replay and a
+copy. Nobody has looked at it, and nothing here says how any of it looks.
 
 Deliberately not here: applying a diff, editing one, a three-way merge, and any
 network -- the cases are canned.
@@ -115,20 +153,22 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from functools import cache
-from pathlib import Path
-from typing import Final
+from functools import cache, partial
+from typing import Any, Final
 
-from advtext.backends.imgui_draw import DARK_PALETTE, DEFAULT_PALETTE, DrawStats, Palette
 from advtext.diff import ContextUnavailable, Diff, FileDiff, UnifiedDiffStream
-from advtext.ui.diff_view import DiffLayout, DiffView, SyntaxColour
 from advtext.ui.pages import PageContext, PageSpec, caption, debug_toggle, demo_text
 from advtext.ui.pages._syntax import line_colours
 from advtext.ui.pages.themes import COLOURS
+from advtext.ui.pages.typeset import not_drawing, say_why_not, why_not
+from advtext.ui.palette import DARK_PALETTE, DEFAULT_PALETTE, Palette
+from advtext.ui.typeset_diff_view import DiffLayout, SyntaxColour, TypesetDiffView
+from advtext.ui.typeset_view import TypesetUnavailable
 
 __all__ = [
     "BOTH_MIN_PX",
     "CAP_PX",
+    "EXPAND_STEP",
     "PAGE",
     "Case",
     "DiffPage",
@@ -158,6 +198,12 @@ UNIFIED_SHARE: Final = 0.4
 """
 How much of the width the unified view takes when both are shown. Side by side
 is two columns of code and gets the rest.
+"""
+
+EXPAND_STEP: Final = 20
+"""
+How many lines "expand" reveals in a gap when there is no view to ask:
+`TypesetDiffView.expand_step`'s default.
 """
 
 CAP_PX: Final = 220.0
@@ -271,55 +317,90 @@ def unified_as_pptmstr(before: str | None, after: str, label: str) -> str:
     return "".join(lines)
 
 
-_LONG_SOURCES: Final = (
-    "linebreak.py",
-    "pack.py",
-    "style.py",
-    "shipout.py",
-    "nodes.py",
-    "selection.py",
-    "markdown.py",
-)
+class _Sequence:
+    """
+    A fixed sequence of numbers (Knuth's 64-bit linear congruence), so that
+    the corpus and the selections are the same in every interpreter: what
+    `random.Random` gives for a seed is not promised across versions.
+    """
+
+    def __init__(self, seed: int) -> None:
+        self._state = seed & (2**64 - 1)
+
+    def below(self, limit: int) -> int:
+        self._state = (self._state * 6364136223846793005 + 1442695040888963407) % 2**64
+        return (self._state >> 33) % max(1, limit)
 
 
 def long_texts(lines: int = 4000) -> tuple[str, str]:
     """
-    A file of at least `lines` lines and a rewrite of it: the culling case.
+    A file of `lines` lines of made-up Python and a rewrite of it: the culling case.
 
-    The text is several of this package's own modules end to end -- real code,
-    so the tokeniser has something to colour, and different modules rather than
-    one repeated, because a text that repeats itself gives a line-matching diff
-    a thousand equally good wrong alignments (measured: one module repeated
-    came out at +1012 -1027 for the same forty edits). Numbered filler stands
-    in if the sources are not readable.
+    Generated, the same every time, and read from nowhere. (Until 2026-10-11
+    it was seven of this package's own modules end to end, every one of them
+    the old layout core's: the text moved when one was edited and would have
+    become its numbered filler when they are deleted.) It is
+    `tests/test_typeset_diff_view.py`'s `fixed_long_texts`, statement for
+    statement, and `tests/test_page_diff.py` holds the two equal.
+
+    Code, so the tokeniser has something to colour. No two lines of a function
+    are the same text and every function is named by its number, because a
+    text that repeats itself gives a line-matching diff a thousand equally
+    good wrong alignments (measured: one module repeated came out at +1012
+    -1027 for the same forty edits). About one line in twenty-five holds a
+    character outside ASCII: U+2192 and U+2502, which the bundled code face
+    has, and U+03C0, which it lacks. One line in a hundred is 150 columns or
+    more.
 
     The rewrite touches one line in every ninety-seven, drops a block of forty
     a third of the way down and inserts twenty-five two thirds of the way
     down: many small hunks, a pure removal and a pure addition, with long
     unchanged stretches between them.
     """
+    words = ("alpha", "beta", "gamma", "delta", "width", "height", "total", "scale", "items")
+    pick = _Sequence(4000)
     before: list[str] = []
-    package = Path(__file__).resolve().parents[2]
-    for name in _LONG_SOURCES:
-        if len(before) >= lines:
-            break
-        try:
-            before.extend((package / name).read_text(encoding="utf-8").splitlines())
-        except OSError:  # pragma: no cover - only without the package source
-            continue
     number = 0
     while len(before) < lines:
-        before.append(f"value_{number} = compute({number}, scale={number % 7})")
         number += 1
+        word = words[pick.below(len(words))]
+        other = words[pick.below(len(words))]
+        mark = ("→", "│", "π")[number % 3]
+        body = [
+            f"def step_{number}({word}, {other}_limit={number % 7}):",
+            (
+                f'    """Step {number}: {word} {mark} {other}, scaled."""'
+                if number % 2 == 0
+                else f'    """Step {number}: {word} to {other}, scaled."""'
+            ),
+            f"    {word}_{number} = compute({word}, {number}) * {other}_limit",
+            f"    if {word}_{number} > {pick.below(900) + 100}:",
+            f"        {word}_{number} -= adjust({other}_limit, by={pick.below(50)})",
+            f"    for index_{number} in range({pick.below(40) + 2}):",
+            f"        {word}_{number} += index_{number} % {pick.below(9) + 2}",
+            (
+                f"    settings_{number} = dict("
+                + ", ".join(f"field_{number}_{n}={pick.below(97)}" for n in range(9))
+                + ")"
+                if number % 9 == 0
+                else f"    settings_{number} = dict(kind={word!r}, other={other!r})"
+            ),
+            f"    record({number}, {word}_{number}, settings_{number})",
+            f"    return {word}_{number}",
+            "",
+            "",
+        ]
+        before.extend(body)
+    del before[lines:]
     after: list[str] = []
     cut = len(before) // 3
     add = 2 * len(before) // 3
-    for number, line in enumerate(before):
-        if cut <= number < cut + 40:
+    for at, line in enumerate(before):
+        if cut <= at < cut + 40:
             continue
-        if number == add:
+        if at == add:
             after.extend(f"# inserted line {extra + 1} of 25" for extra in range(25))
-        if number % 97 == 50 and line.strip():
+        if at % 97 == 50 and line.strip():
             line = f"{line}  # touched"
         after.append(line)
     return "\n".join(before) + "\n", "\n".join(after) + "\n"
@@ -708,10 +789,14 @@ class DiffPage:
         self.draw_ms = 0.0
         self.mean_ms = 0.0
         self.frames = 0
-        self.stats: dict[DiffLayout, DrawStats] = {}
+        self.stats: dict[DiffLayout, bool] = {}
+        """What each view drawn in the last frame answered: everything in view was set as asked."""
         self.error = ""
         self.diff = self.case.diff(self.context_lines)
-        self.views: dict[DiffLayout, DiffView] = {}
+        self.views: dict[DiffLayout, Any] = {}
+        """The two `TypesetDiffView`s, by layout; EMPTY while the library is not drawing."""
+        self.reason = ""
+        """Why there are no views, when there are none."""
         self._colour: SyntaxColour = self._syntax()
         self._asked: dict[DiffLayout, int] = {}
         self._make_views()
@@ -727,39 +812,72 @@ class DiffPage:
     def _syntax(self) -> SyntaxColour:
         return line_colours(COLOURS[1 if self.dark else 0].syntax)
 
-    def _record_copy(self, view: DiffView) -> str:
+    def _record_copy(self, view: Any) -> str:
         """
-        `DiffView.copy_as`: what Ctrl+C is about to write, kept for the readout.
+        `copy_as` of a view: what Ctrl+C is about to write, kept for the readout.
         """
         self.copied = view.selected_text()
         self.copies += 1
         return self.copied
 
+    @property
+    def renderer(self) -> str:
+        """`"TypesetDiffView"` while the library draws this page, `"none"` when nothing does."""
+        return "TypesetDiffView" if self.views else "none"
+
     def _make_views(self) -> None:
         """
         Make the two views, once. Every switch after that is an attribute of a view.
+
+        None at all, and the reason, when the library cannot draw (the module
+        docstring, "When the library is not drawing").
         """
         colour = self._syntax()
-        fresh: dict[DiffLayout, DiffView] = {}
-        for layout in DiffLayout:
-            view = DiffView(
-                self.diff,
-                self.context.theme,
-                layout=layout,
-                px_per_inch=self.context.px_per_inch,
-                metrics=self.context.metrics,
-                syntax=colour if self.syntax_on else None,
-                height_cap=CAP_PX if self.capped else None,
-                copy_as=self._record_copy,
-            )
-            fresh[layout] = view
-        self.views = fresh
         self._colour = colour
+        self.reason = why_not()
+        if self.reason:
+            return
+        try:
+            self.views = {
+                layout: TypesetDiffView(
+                    self.diff,
+                    self.context.theme,
+                    layout=layout,
+                    px_per_inch=self.context.px_per_inch,
+                    syntax=colour if self.syntax_on else None,
+                    height_cap=CAP_PX if self.capped else None,
+                    copy_as=self._record_copy,
+                )
+                for layout in DiffLayout
+            }
+        except TypesetUnavailable as exc:
+            self.views = {}
+            self.reason = str(exc) or "the typeset views could not be made"
 
-    def shown(self, width_px: float) -> tuple[DiffView, ...]:
+    def _give_up(self, exc: TypesetUnavailable) -> None:
+        """
+        The library cannot draw any more: the views go, and the reason stays.
+
+        The page's own state (the case, the diff shown, the mode, the
+        switches, a replay) is untouched.
+        """
+        self.reason = str(exc) or "imtypeset is not ready"
+        for view in self.views.values():
+            close = getattr(view, "close", None)
+            if close is not None:
+                close()
+        self.views = {}
+        self.stats = {}
+        self._asked = {}
+
+    def shown(self, width_px: float) -> tuple[Any, ...]:
         """
         The views drawn at this body width: one, or both when asked for and it fits.
+
+        None when there are no views.
         """
+        if not self.views:
+            return ()
         if self.mode is Mode.BOTH and width_px >= BOTH_MIN_PX:
             return (self.views[DiffLayout.UNIFIED], self.views[DiffLayout.SIDE_BY_SIDE])
         return (self.views[self.single],)
@@ -837,7 +955,8 @@ class DiffPage:
         return widened
 
     def _step(self) -> int:
-        return self.views[DiffLayout.UNIFIED].expand_step
+        view = self.views.get(DiffLayout.UNIFIED)
+        return EXPAND_STEP if view is None else int(view.expand_step)
 
     def adopt(self) -> bool:
         """
@@ -873,12 +992,16 @@ class DiffPage:
         # The first view decides and the second is walked to the same hunk, so
         # two views that started apart end on one hunk and not one step apart.
         views = list(self.views.values())
-        target = views[0].next_hunk() if forward else views[0].previous_hunk()
+        if not views:
+            return None
+        target: tuple[int, int] | None = (
+            views[0].next_hunk() if forward else views[0].previous_hunk()
+        )
         for view in views[1:]:
             self._walk(view, target)
         return target
 
-    def _walk(self, view: DiffView, target: tuple[int, int] | None) -> None:
+    def _walk(self, view: Any, target: tuple[int, int] | None) -> None:
         if target is None:
             return
         keys = self.hunks()
@@ -897,7 +1020,7 @@ class DiffPage:
         """
         Bring the other view to the line at the top of `leader`'s window.
 
-        `DiffView.top_row` is the display row at the top; the two layouts
+        `top_row` is the display row at the top; the two layouts
         number their rows differently, so the row is carried as *what it
         shows* (`row_info`) and found again in the other layout (`row_of`).
         True if the other view was asked to scroll. Asked once per target: a
@@ -905,6 +1028,8 @@ class DiffPage:
         every frame.
         """
         other = next(layout for layout in DiffLayout if layout is not leader)
+        if leader not in self.views or other not in self.views:
+            return False
         source, target = self.views[leader], self.views[other]
         if not source.row_count or not target.row_count:
             return False
@@ -922,7 +1047,8 @@ class DiffPage:
         keys = self.hunks()
         if not keys:
             return "no hunks"
-        current = self.views[DiffLayout.UNIFIED].current_hunk
+        view = self.views.get(DiffLayout.UNIFIED)
+        current = None if view is None else view.current_hunk
         if current is None or current not in keys:
             return f"{len(keys)} hunk(s); j / k or the buttons step through them"
         file = self.diff.files[current[0]]
@@ -1034,14 +1160,23 @@ class DiffPage:
 
     def readouts(self) -> tuple[str, ...]:
         """
-        The lines under the controls. Counts only.
+        The lines under the controls: which view draws, then counts only.
+
+        With no views, the one line the page draws instead of everything.
         """
+        if not self.views:
+            return (not_drawing(self.reason),)
         diff = self.diff
         unified = self.views[DiffLayout.UNIFIED]
         side = self.views[DiffLayout.SIDE_BY_SIDE]
         hunks = sum(len(file.hunks) for file in diff.files)
-        glyphs = sum(stats.glyphs for stats in self.stats.values())
         on_screen = " / ".join(str(len(self.views[layout].visible_rows)) for layout in self.stats)
+        # The library counts no glyphs. What there is to count is what the
+        # views have asked it to change, and whether a draw said no.
+        edits = sum(sum(self.views[layout].edits.values()) for layout in self.views)
+        drawn = f"library edits {edits}"
+        if any(answered is False for answered in self.stats.values()):
+            drawn += " (not answered: something in view was not set as asked)"
         counts = (
             f"+{diff.added} -{diff.removed} in {len(diff.files)} file(s), {hunks} hunk(s); "
             f"rows: unified {unified.row_count}, side by side {side.row_count}; "
@@ -1049,18 +1184,40 @@ class DiffPage:
         )
         cost = (
             f"drawing the view(s): {self.draw_ms:.2f} ms this frame, {self.mean_ms:.2f} mean; "
-            f"glyphs {glyphs}; expandable gaps {self.expandable}"
+            f"{drawn}; expandable gaps {self.expandable}"
         )
         if self.stream is not None:
             state = "done" if self.replay_done else ("paused" if self.paused else "running")
             cost += f"; replay {state}: line {self.fed} of {len(self._lines)}"
-        return (counts, cost, self.hunk_line(), self.copied_line())
+        return (
+            "renderer: TypesetDiffView (imtypeset)",
+            counts,
+            cost,
+            self.hunk_line(),
+            self.copied_line(),
+        )
 
     # -- the frame ---------------------------------------------------------
 
     def draw(self) -> None:
         from imgui_bundle import imgui
 
+        if not self.views:
+            self.frames += 1
+            say_why_not(self.reason)
+            return
+        try:
+            self._frame(imgui)
+        except TypesetUnavailable as exc:
+            # A view said the library cannot draw (any more). Every child and
+            # every pushed colour of this frame has been closed on the way
+            # out; the page is the one line from the next frame on.
+            self._give_up(exc)
+
+    def _frame(self, imgui: Any) -> None:
+        """
+        The controls, the readouts and the panes. Every call of a view's is under here.
+        """
         self.advance(imgui.get_io().delta_time)
         self._controls()
         caption(self.case.note)
@@ -1072,11 +1229,11 @@ class DiffPage:
         self._keys()
 
         available = imgui.get_content_region_avail().x
-        views = self.shown(available)
+        layouts = [view.layout for view in self.shown(available)]
         spacing = imgui.get_style().item_spacing.x
         widths = (
             (available,)
-            if len(views) == 1
+            if len(layouts) == 1
             else (
                 (available - spacing) * UNIFIED_SHARE,
                 (available - spacing) * (1.0 - UNIFIED_SHARE),
@@ -1086,25 +1243,29 @@ class DiffPage:
         self.stats = {}
         hovered: DiffLayout | None = None
         started = self.timer()
-        for number, (view, width) in enumerate(zip(views, widths, strict=True)):
+        for number, (layout, width) in enumerate(zip(layouts, widths, strict=True)):
             if number:
                 imgui.same_line()
             imgui.push_style_color(imgui.Col_.child_bg, palette.page)
             imgui.begin_child(
-                f"##advtext-diff-pane-{view.layout.value}",
+                f"##advtext-diff-pane-{layout.value}",
                 imgui.ImVec2(max(width, 1.0), 0.0),
                 imgui.ChildFlags_.borders.value,
             )
-            self.stats[view.layout] = view.draw(fonts=self.context.fonts, palette=palette)
-            if imgui.is_window_hovered(imgui.HoveredFlags_.child_windows.value):
-                hovered = view.layout
-            imgui.end_child()
-            imgui.pop_style_color()
+            try:
+                self.stats[layout] = self.views[layout].draw(
+                    fonts=self.context.fonts, palette=palette
+                )
+                if imgui.is_window_hovered(imgui.HoveredFlags_.child_windows.value):
+                    hovered = layout
+            finally:
+                imgui.end_child()
+                imgui.pop_style_color()
         self.draw_ms = (self.timer() - started) * 1000.0
         self.frames += 1
         self.mean_ms += (self.draw_ms - self.mean_ms) / min(self.frames, 60)
         self.adopt()
-        if len(views) == 2 and hovered is not None:
+        if len(layouts) == 2 and hovered is not None:
             # The pane under the mouse is the one being scrolled: the other
             # follows it. (Stepping hunks moves both by itself.)
             self.follow(hovered)
@@ -1125,8 +1286,14 @@ class DiffPage:
             self.previous_hunk()
 
     def _controls(self) -> None:
+        """
+        The two rows of widgets. What a click asks of a view is done after
+        every widget is closed (`asked`), so a view that raises
+        `TypesetUnavailable` leaves no combo and no disabled block open.
+        """
         from imgui_bundle import imgui
 
+        asked: list[Callable[[], object]] = []
         debug_toggle(self.context)
         imgui.same_line()
         imgui.set_next_item_width(300.0)
@@ -1137,7 +1304,7 @@ class DiffPage:
                     imgui.separator_text("hard cases")
                     heading = True
                 if imgui.selectable(case.label, case is self.case)[0]:
-                    self.choose(case)
+                    asked.append(partial(self.choose, case))
             imgui.end_combo()
         for mode in Mode:
             imgui.same_line()
@@ -1146,55 +1313,57 @@ class DiffPage:
         imgui.same_line()
         changed, on = imgui.checkbox("syntax", self.syntax_on)
         if changed:
-            self.set_syntax(on)
+            asked.append(lambda: self.set_syntax(on))
         imgui.same_line()
         changed, dark = imgui.checkbox("dark", self.dark)
         if changed:
-            self.set_dark(dark)
+            asked.append(lambda: self.set_dark(dark))
         imgui.same_line()
         changed, capped = imgui.checkbox("cap", self.capped)
         if changed:
-            self.set_capped(capped)
+            asked.append(lambda: self.set_capped(capped))
 
         if imgui.button("previous hunk (k)"):
-            self.previous_hunk()
+            asked.append(self.previous_hunk)
         imgui.same_line()
         if imgui.button("next hunk (j)"):
-            self.next_hunk()
+            asked.append(self.next_hunk)
         imgui.same_line()
         can_context = self.case.from_texts and self.stream is None
         imgui.begin_disabled(not can_context)
         imgui.set_next_item_width(120.0)
         changed, lines = imgui.slider_int("context", self.context_lines, 0, MAX_CONTEXT, "%d lines")
         if changed:
-            self.set_context(lines)
+            asked.append(lambda: self.set_context(lines))
         imgui.end_disabled()
         imgui.same_line()
         imgui.begin_disabled(not self.expandable)
         if imgui.button(f"expand +{self._step()}"):
-            self.expand()
+            asked.append(self.expand)
         imgui.same_line()
         if imgui.button("expand all"):
-            self.expand(everything=True)
+            asked.append(lambda: self.expand(everything=True))
         imgui.end_disabled()
         imgui.same_line()
         if self.stream is None:
             if imgui.button("replay as a stream"):
-                self.start_replay()
+                asked.append(self.start_replay)
         else:
             if imgui.button("show whole"):
-                self.stop_replay()
+                asked.append(self.stop_replay)
             imgui.same_line()
             if imgui.button("resume" if self.paused else "pause"):
                 self.paused = not self.paused
             imgui.same_line()
             if imgui.button("restart"):
-                self.start_replay()
+                asked.append(self.start_replay)
             imgui.same_line()
             imgui.set_next_item_width(120.0)
             _, self.rate = imgui.slider_float(
                 "##advtext-diff-rate", self.rate, 1.0, 400.0, "%.0f lines/s"
             )
+        for action in asked:
+            action()
 
 
 PAGE = PageSpec(

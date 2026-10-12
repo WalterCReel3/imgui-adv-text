@@ -62,7 +62,6 @@ from advtext.ui import (
     table_natural_widths,
     with_columns,
 )
-from advtext.ui.units import layout_units
 from advtext.units import UNITY, Scaled, sp_from_pt, sp_from_px
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -819,18 +818,14 @@ def test_copying_a_wrapped_table_reads_each_cell_whole_a_row_at_a_time(
     # column order, a wrapped cell's lines run together -- never a line of one
     # cell followed by a line of its neighbour. The string itself and not its
     # words: this compared `.split()` while the flat text had doubled spaces
-    # in it (review 2, item 4), which A6-copy has since removed. The copy a
-    # *view* makes, with tabs and newlines, is `UnitModel.copy_text` and is
-    # pinned in `tests/test_units_layout.py`.
+    # in it (review 2, item 4), which A6-copy has since removed. (The copy the old
+    # views made, with tabs and newlines, was `advtext.ui.units.UnitModel.copy_text`,
+    # deleted with them in tranche 5, as is the per-unit layout this test also
+    # compared with.)
     assert (
         model.text(Selection(0, model.length))
         == "k v one alpha bravo charlie delta echo foxtrot two golf hotel"
     )
-
-    # The same through the per-unit layout the views use.
-    layout = layout_units((block,), theme, width, measure)
-    assert layout.cmds == tuple(cmds)
-    assert layout.model.text(Selection(0, layout.length)) == model.text(Selection(0, model.length))
 
 
 def test_selecting_inside_one_wrapped_cell_copies_only_that_cell(
@@ -887,27 +882,6 @@ def test_a_click_in_the_second_column_of_a_wrapped_row_lands_in_that_column(
     assert model.fragment_at(Point(gutter + 1, middle.y)) == target
     first = model.fragment_at(Point(spans[0].start + 1, middle.y))
     assert first is not None and first.line.x in spans[0]
-
-
-def test_every_point_in_a_wrapped_table_resolves_the_same_through_the_unit_model(
-    prose: TableBlock, theme: Theme, measure: Any
-) -> None:
-    # The per-unit model narrows the search before applying the rule; over a
-    # table of side-by-side lines it must still give the flat model's answer.
-    width = sp_from_px(330.0)
-    flat = SelectionModel.from_commands(shipped(prose, theme, width, measure))
-    layout = layout_units((prose, prose), theme, width, measure)
-    box = compose_blocks((prose, prose), theme, width, measure)
-    oracle = SelectionModel.from_commands(ship(box, Point(0, box.height), measure=measure))
-    assert len(oracle.fragments) == 2 * len(flat.fragments)
-    checked = 0
-    for y in range(-sp_from_px(20.0), layout.height + sp_from_px(20.0), sp_from_px(4.7)):
-        for x in range(-sp_from_px(15.0), width + sp_from_px(30.0), sp_from_px(23.0)):
-            point = Point(x, y)
-            assert layout.model.fragment_at(point) == oracle.fragment_at(point), point
-            assert layout.model.hit(point) == oracle.hit(point)
-            checked += 1
-    assert checked > 1000
 
 
 def test_a_point_below_a_wrapped_row_goes_to_the_cell_it_is_under(

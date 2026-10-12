@@ -3,11 +3,11 @@ The Themes page: one document, and the three things a host changes about how it 
 
 `examples/theme_gallery.py` answers "can it look like my application?" with four
 fixed panes. This page lets the three answers be turned separately, on one
-document in a `BareView`, and counts what each turn costs:
+document, and counts what each turn costs:
 
 - **the palette** -- four colour schemes, two of them light ink on a dark ground.
-  Colours only: `BareView.draw(palette=...)` and, for the code blocks, a new set
-  of `ColourSpan`s in the scheme's syntax inks;
+  `TypesetView.set_palette` and, for the code blocks, new inks in the scheme's
+  syntax colours (`set_colours`);
 - **the face set** -- which face plays which role, and the alignment that goes
   with it: Roboto justified, everything monospace and ragged, and a mix;
 - **the size**, stated the way a host states it: the *pixel height* of its own
@@ -18,48 +18,81 @@ document in a `BareView`, and counts what each turn costs:
 A **split** shows the document twice at one scroll position in two palettes.
 Links are live and open nothing: the status line shows the target clicked.
 
-## What a change rebuilds, and how this page knows
+## What draws
 
-A page should rebuild what a change forces and nothing else, so each change is
-handled by the least that is true of it:
+Each pane is an `advtext.ui.typeset_view.TypesetView`. There is no other
+renderer. The views are made once, when the page is built, if
+`advtext.typesetter.ready()` (the app's font callback loaded the library's
+fonts). When it is not, the page draws ONE wrapped line saying why
+(`advtext.ui.pages.typeset.why_not`, drawn by that module's `say_why_not`) and
+nothing else: no controls, no panes. A view call that raises
+`TypesetUnavailable` anywhere in a frame (the library failed and was switched
+off) has drawn no text: both panes lose their views, the page keeps the
+sentence and is that one line from the next frame on. The exception does not
+leave `draw`, so the app's traceback page is not reached; any other exception
+is a bug and is not caught. A combo's choice is applied after the combo is
+closed, so that a view failing in a setter leaves no ImGui pair open.
 
-| change | what is done | what it forces |
-|---|---|---|
-| palette | the pane's scheme is replaced; code blocks get new spans | nothing is laid out |
-| faces, size | a new `Theme`, one `build_document`, both views invalidated | all of it |
-| split on | the first pane narrows; the second view is drawn | all of it, in both |
-| split off | the first pane widens; the second view is kept, undrawn | all of the first |
+**The page's state needs no library and exists without it**: the scheme of
+each pane, the face set, the size, the theme, the split and the parsed
+markdown (`ThemesPage.parsed`) are all there with no view, and the four
+setters work on them.
 
-A theme change forces everything because a block holds its glyphs' font keys and
-the kerns between them: the same markdown under two themes is two documents. A
-width change forces everything because every line is broken to the width.
-**Coming straight back is free**: the view's unit cache keeps the last two
-passes, so turning the split off again, or returning to the face set just left,
-re-ships nothing (measured; `tests/test_page_themes.py` pins both). A third
-state in between pushes the first out and the return is paid in full. The
-hidden second pane is not laid out at all while hidden.
+`ThemesPage.renderer` is `"TypesetView"` while the panes have views and
+`"none"` when they do not; `reason` is then why.
 
-The last frame's bill is on the page (`ThemesPage.last`, a `Rebuild`) and the
-most recent one of each cause is kept (`ThemesPage.bills`).
+Nothing of the old views is imported by this module, at import or later.
+**One thing of the old core is reached, and only when a theme is made**:
+`Theme.at_pixel_height` measures the regular face (ascent, descent, the
+widest list marker) to turn a pixel height into an em, and its measuring
+source is `PageContext.metrics` -- by default
+`advtext.ui.pages.face_metrics`, which is `advtext.style.fontlib_metrics`
+asked at the call, and that loads `advtext.style` and `advtext.fontlib`. It
+stays until the library has a metrics query
+(`.concerns/lead--for-imtypeset-team.md`, item 5); `face_metrics` is where
+the change then goes.
 
-**The counts are the layout's own.** `BareView.layout.stats`
-(`advtext.ui.units.LayoutStats`) says which units `layout_units` composed and
-shipped for that layout and how many blocks were broken into lines again, and
-the page adds them up over the panes that were drawn. It used to work the
-first out itself, by comparing each unit's composed box with those of the
-pane's last four layouts by identity, and could only bound the second from
-above; a test held that count equal to the unit cache's private miss counter
-and still does, now for the library's figure.
+## What a change is, and what it costs
 
-## The size, and what "the same size" can mean
+- **palette**: `set_palette`, and the code blocks get new inks. The link ink
+  is in the runs, so every block is described again (not parsed) and the
+  library is given a new document.
+- **faces, size**: a new `Theme`, ONE `parse_markdown`, and
+  `set_theme(theme, parsed)` on both views: a new library document in each.
+- **split on**: the first pane narrows and the second view is drawn; the
+  library lays out again what each window shows.
+- **split off**: the first pane widens and the second view is kept, undrawn;
+  the same, in the first.
 
-`Theme.at_pixel_height(h)` sizes the running text so that ImGui rasters the
-theme's regular face at `h` pixels -- `h` being ascent plus descent, the number
-ImGui calls a font size. The reference line is `imgui.push_font(face, h)` and
-`imgui.text`. Both are then the same face from the same raster, so their glyphs
-are the same height **when the regular face is the one the atlas loaded for
-it**. Only the running text lands there: the page's docstring for
+So **a palette change is not free and coming straight back is not either**:
+the library keeps no second layout, and nothing here caches one. The last
+frame's bill is on the page (`ThemesPage.last`, a `Retypeset`, counted from
+the views) and the most recent one of each cause is kept
+(`ThemesPage.bills`). What a bill counts is the frame of the change only: the
+library lays a block out when a window first reaches it, so the rest of the
+cost is paid as the reader scrolls and is on no bill. The hidden second pane
+has no library document at all until it is first shown.
+
+The markdown is parsed once per theme and the result handed to both views.
+
+## The face sets, the size, and the reference line
+
+**The face sets are roles rearranged, and that is all that is served.** The
+library draws each role from the file `typesetter.load_fonts()` registered
+for it; a theme whose `Faces` put `Face.CODE` in the regular role is
+described with the code role and drawn in the code file. A theme that named
+another font FILE would not be.
+
+`Theme.at_pixel_height(h)` sizes the running text so that the theme's regular
+face is rastered `h` pixels tall -- `h` being ascent plus descent, the number
+ImGui calls a font size. Only the running text lands there: the docstring of
 `Theme.at_pixel_height` says why code in a mixed theme does not.
+
+**The reference line** is pushed in the LIBRARY's font for the regular role
+(`imtypeset.font_atlas_index`) when it has one, so it is the same raster the
+pane's text is drawn from; `PageContext.fonts`' answer otherwise. Whether the two then
+stand at one height is not asserted: `tests/test_page_themes.py` compares the
+widths the two give one string.
 
 The slider moves in half pixels. Each stop is a new theme and a new document,
 and a continuous slider would build one per frame of a drag for sizes nobody
@@ -82,22 +115,25 @@ bundled faces rearranged), and more than two panes -- the example has four.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Final
+from typing import TYPE_CHECKING, Any, Final
 
-from advtext.backends.imgui_draw import (
+from advtext import typesetter
+from advtext.description import FACE_ROLES
+from advtext.primitives import Face
+from advtext.theme import Align, BlockKind, Faces, Theme
+from advtext.typeset_markdown import MarkdownCode, MarkdownDocument, parse_markdown
+from advtext.ui.pages import PageContext, PageSpec, caption, debug_toggle, demo_text
+from advtext.ui.pages._syntax import SyntaxInks, plain_spans
+from advtext.ui.palette import (
     DARK_PALETTE,
     DEFAULT_PALETTE,
-    DrawStats,
     Palette,
     rgba,
 )
-from advtext.fontmetrics import Face
-from advtext.markdown import CodeBlock, Document, build_document
-from advtext.style import Align, BlockKind, Faces, MetricsResolver, Theme
-from advtext.ui.bare_view import BareView
-from advtext.ui.pages import PageContext, PageSpec, caption, debug_toggle, demo_text
-from advtext.ui.pages._syntax import SyntaxInks, colour_spans
-from advtext.ui.units import UnitLayout
+from advtext.ui.typeset_view import TypesetUnavailable, TypesetView
+
+if TYPE_CHECKING:  # pragma: no cover - imported for types only
+    from advtext.style import MetricsResolver
 
 __all__ = [
     "COLOURS",
@@ -110,7 +146,7 @@ __all__ = [
     "Colours",
     "FaceSet",
     "Pane",
-    "Rebuild",
+    "Retypeset",
     "ThemesPage",
     "snap_height",
 ]
@@ -132,13 +168,6 @@ MIN_HEIGHT_PX: Final = 10.0
 MAX_HEIGHT_PX: Final = 28.0
 SIZE_STEP_PX: Final = 0.5
 DEFAULT_HEIGHT_PX: Final = 16.0
-
-"""
-How many of a pane's past layouts a new one is compared with to find surviving units.
-
-The view's unit cache keeps two passes; four is that with room, and bounds what
-this page holds alive to four layouts of one small document per pane.
-"""
 
 CATCH_UP_FRAMES: Final = 4
 """
@@ -195,7 +224,7 @@ COLOURS: Final[tuple[Colours, ...]] = (
                 BlockKind.HEADING_1: rgba(0x1F, 0x3A, 0x5F),
                 BlockKind.HEADING_2: rgba(0x1F, 0x3A, 0x5F),
                 BlockKind.QUOTE: rgba(0x55, 0x55, 0x55),
-            }
+            },
         ),
         background=DEFAULT_PALETTE.page,
         syntax=SyntaxInks(
@@ -213,7 +242,7 @@ COLOURS: Final[tuple[Colours, ...]] = (
                 BlockKind.HEADING_2: rgba(0x9C, 0xDC, 0xFE),
                 BlockKind.QUOTE: rgba(0xA8, 0xA8, 0xA8),
                 BlockKind.CODE: rgba(0xD4, 0xD4, 0xD4),
-            }
+            },
         ),
         background=DARK_PALETTE.page,
         syntax=SyntaxInks(
@@ -279,9 +308,15 @@ class FaceSet:
     faces: Faces
     align: Align
 
-    def theme(self, height_px: float, px_per_inch: float, metrics: MetricsResolver) -> Theme:
+    def theme(
+        self, height_px: float, px_per_inch: float, metrics: MetricsResolver | None = None
+    ) -> Theme:
         """
-        The theme whose running text ImGui rasters `height_px` tall in `faces.regular`.
+        The theme whose running text is rastered `height_px` tall in `faces.regular`.
+
+        `metrics` is `Theme.at_pixel_height`'s, and the page passes its
+        context's: it measures the face, which is the one use of the old core
+        this page has (the module docstring).
         """
         return Theme.at_pixel_height(
             height_px, px_per_inch, faces=self.faces, align=self.align, metrics=metrics
@@ -307,32 +342,34 @@ FACE_SETS: Final[tuple[FaceSet, ...]] = (
 
 
 @dataclass(frozen=True, slots=True)
-class Rebuild:
+class Retypeset:
     """
-    What one change cost, counted from the layouts. The module docstring has the method.
+    What one change cost, counted from the views that were drawn.
 
     `cause` is `"open"`, `"palette"`, `"faces"`, `"size"`, `"split"`, or
-    `"width"` for a relayout nothing on this page asked for (the window was
-    resized). `documents` is how many times `build_document` ran. `units` is how
-    many units the panes that were drawn hold between them; `reshipped` is how
-    many of those were composed and shipped again, and `blocks` how many blocks
-    were broken into lines again (`advtext.ui.units.LayoutStats`).
+    `"width"` for a layout nothing on this page asked for (the window was
+    resized). `documents` is how many times the markdown was
+    parsed; `handed` how many times a view gave the library a whole document
+    (`TypesetView.edits["set"]`); `blocks` how many blocks the drawn panes
+    hold between them, and `laid_out` how many the library laid out in the
+    frame of the change (`ViewStats.blocks_laid_out`: the ones a window
+    showed; the rest are laid out when one reaches them, on no bill).
     """
 
     cause: str
     documents: int
-    units: int
-    reshipped: int
+    handed: int
     blocks: int
+    laid_out: int
 
     def line(self) -> str:
         """
         The readout: one line, counts only.
         """
         return (
-            f"last change: {self.cause} -- documents built {self.documents}, "
-            f"units re-shipped {self.reshipped} of {self.units}, "
-            f"blocks re-broken {self.blocks}"
+            f"last change: {self.cause} -- markdown parsed {self.documents}, "
+            f"documents handed to the library {self.handed}, "
+            f"blocks laid out in that frame {self.laid_out} of {self.blocks}"
         )
 
 
@@ -340,48 +377,94 @@ class Rebuild:
 class Pane:
     """
     One view of the document, the scheme it is drawn in, and what it last laid out.
+
+    `view` is a `TypesetView`, or `None` when the library is not drawing: the
+    pane then still holds its scheme and its scroll position.
     """
 
-    view: BareView
+    view: Any
     colours: Colours
-    stats: DrawStats | None = None
+    whole: bool = True
+    """What the view's last `draw` answered."""
+    width: float = 0.0
+    """The width of the pane's content region at the last frame it was drawn, in pixels."""
     scroll: float = 0.0
     """Where the page expects this pane's scroll to be: where it last found or sent it."""
     catching_up: int = 0
     """Frames left in which a scroll the page asked for may still be on its way."""
-    _seen: UnitLayout | None = field(default=None, repr=False)
+    _counted: tuple[object, int, int, float] | None = field(default=None, repr=False)
 
     def colour_code(self) -> int:
         """
         Hand the view this pane's syntax inks for every code block. Returns the span count.
 
         Replaces whatever the blocks had, so it serves a new document and a new
-        scheme alike. A document with no code block clears nothing and sets nothing.
+        scheme alike. A document with no code block clears nothing and sets
+        nothing. The spans are plain offsets into the block's text
+        (`_syntax.plain_spans`). Zero with no view.
         """
+        if self.view is None:
+            return 0
         self.view.clear_colours()
         count = 0
-        for number, block in enumerate(self.view.document.blocks):
-            if isinstance(block, CodeBlock):
-                spans = colour_spans(block, self.colours.syntax)
-                self.view.set_colours(number, spans)
-                count += len(spans)
+        for number, block in enumerate(self.view.blocks):
+            if isinstance(block, MarkdownCode):
+                inks = plain_spans(block.text, self.colours.syntax, block.language)
+                self.view.set_colours(number, inks)
+                count += len(inks)
         return count
 
-    def settle(self) -> tuple[int, int, int]:
+    def counted(self) -> tuple[int, int, int, bool]:
         """
-        `(units, re-shipped, blocks broken again)` since this was last called.
+        `(blocks, laid out, documents handed over, resized)` since this was last called.
 
-        The layout's own account (`UnitLayout.stats`), counted once per
-        layout: a frame that drew the layout it already had built nothing.
+        Read from the view after it has drawn: one call into the library
+        (`TypesetView.stats`). The library's counter
+        of blocks laid out belongs to one document and starts again with a
+        new one, so a view that was given a new document counts from zero.
+        `resized` is whether the pane's width is not the one counted last.
         """
-        layout = self.view.layout
-        if layout is None:
-            return (0, 0, 0)
-        if layout is self._seen:
-            return (len(layout.placed), 0, 0)
-        self._seen = layout
-        stats = layout.stats
-        return (stats.units, len(stats.built), stats.blocks_broken)
+        view = self.view
+        stats = view.stats
+        document = view.native_document
+        handed = int(view.edits["set"])
+        laid = int(stats.blocks_laid_out)
+        before = self._counted
+        self._counted = (document, laid, handed, self.width)
+        if before is None:
+            return (len(view.texts), laid, handed, False)
+        was_document, was_laid, was_handed, was_width = before
+        return (
+            len(view.texts),
+            laid - was_laid if document is was_document else laid,
+            handed - was_handed,
+            was_width != self.width,
+        )
+
+
+def _why_not() -> str:
+    """
+    Why imtypeset is not drawing, as one sentence; empty when `typesetter.ready()`.
+
+    `advtext.ui.pages.typeset.why_not`, which never asks `typesetter.module()`
+    (a page is built in the pytest process by every page-enumerating test,
+    and the library is kept out of that process). Imported when it is needed,
+    so that importing this page imports no other page.
+    """
+    if typesetter.ready():
+        return ""
+    from advtext.ui.pages.typeset import why_not
+
+    return why_not()
+
+
+def _say_why_not(reason: str) -> None:
+    """
+    The whole of a frame without the library: one wrapped line, `say_why_not`'s.
+    """
+    from advtext.ui.pages.typeset import say_why_not
+
+    say_why_not(reason)
 
 
 class ThemesPage:
@@ -403,36 +486,61 @@ class ThemesPage:
         self.split = "split" in context.options_for("Themes")
         self.followed: list[str] = []
         self.documents_built = 0
-        self.last: Rebuild | None = None
-        self.bills: dict[str, Rebuild] = {}
+        """How many times the markdown was read (`parse_markdown`)."""
+        self.last: Retypeset | None = None
+        self.bills: dict[str, Retypeset] = {}
         self._cause: str | None = "open"
         self._built_now = 0
         self._agreed = 0.0
         self.theme = self._theme()
-        self.document = self._build()
-        self.panes = [self._pane(COLOURS[0]), self._pane(COLOURS[1])]
+        self.parsed: MarkdownDocument = self._parse()
+        """The markdown as read with the theme in use, shared by both panes."""
+        self.panes: list[Pane] = [Pane(None, COLOURS[0]), Pane(None, COLOURS[1])]
+        self.reason = _why_not()
+        """Why nothing is drawn, when nothing is; empty while the views draw."""
+        if not self.reason:
+            try:
+                for pane in self.panes:
+                    pane.view = TypesetView(
+                        self.parsed,
+                        theme=self.theme,
+                        palette=pane.colours.palette,
+                        on_link=self.followed.append,
+                    )
+                    pane.colour_code()
+            except TypesetUnavailable as exc:
+                self._lose(str(exc))
+
+    @property
+    def typeset(self) -> bool:
+        """Whether the panes have views: the library is drawing this page."""
+        return self.panes[0].view is not None
+
+    @property
+    def renderer(self) -> str:
+        """`"TypesetView"` while the library draws this page, `"none"` when nothing does."""
+        return "TypesetView" if self.typeset else "none"
 
     # -- building ----------------------------------------------------------
 
     def _theme(self) -> Theme:
         return self.face_set.theme(self.height_px, self.context.px_per_inch, self.context.metrics)
 
-    def _build(self) -> Document:
+    def _parse(self) -> MarkdownDocument:
         self.documents_built += 1
         self._built_now += 1
-        return build_document(self.source, self.theme, self.context.metrics)
+        return parse_markdown(self.source, self.theme)
 
-    def _pane(self, colours: Colours) -> Pane:
-        view = BareView(
-            document=self.document,
-            theme=self.theme,
-            measure=self.context.measure,
-            px_per_inch=self.context.px_per_inch,
-            on_link=self.followed.append,
-        )
-        pane = Pane(view=view, colours=colours)
-        pane.colour_code()
-        return pane
+    def _lose(self, reason: str) -> None:
+        """
+        imtypeset stopped drawing: no pane has a view any more, and `reason` says why.
+
+        The `Pane` objects are kept, with their schemes: the page's state is
+        what it was, and it is drawn as one line.
+        """
+        for pane in self.panes:
+            pane.view = None
+        self.reason = reason
 
     @property
     def shown(self) -> tuple[Pane, ...]:
@@ -445,12 +553,15 @@ class ThemesPage:
 
     def set_colours(self, pane: int, colours: Colours) -> None:
         """
-        Give a pane another scheme. Nothing is laid out; the code blocks are re-inked.
+        Give a pane another scheme: the view's palette, and new inks for the code blocks.
         """
         target = self.panes[pane]
         if target.colours is colours:
             return
         target.colours = colours
+        if target.view is not None:
+            # Now and not at the next draw, so that a hidden pane is ready too.
+            target.view.set_palette(colours.palette)
         target.colour_code()
         self._cause = "palette"
 
@@ -475,14 +586,13 @@ class ThemesPage:
 
     def _retheme(self, cause: str) -> None:
         self.theme = self._theme()
-        self.document = self._build()
+        # One parse for both views; a view given a document holds no source
+        # to read again, and gives up its inks with its blocks.
+        self.parsed = self._parse()
         for pane in self.panes:
-            # The hidden pane too: it is one assignment now, against a view
-            # that would otherwise open on a document the page no longer has.
-            pane.view.theme = self.theme
-            pane.view.document = self.document
-            pane.view.invalidate()
-            pane.colour_code()
+            if pane.view is not None:
+                pane.view.set_theme(self.theme, self.parsed)
+                pane.colour_code()
         self._cause = cause
 
     def set_split(self, split: bool) -> None:
@@ -503,28 +613,36 @@ class ThemesPage:
 
     # -- accounting --------------------------------------------------------
 
-    def account(self) -> Rebuild | None:
+    def account(self) -> Retypeset | None:
         """
         Close the books on a frame: what the panes laid out, and why.
 
         Call once after the panes have been drawn. Returns the frame's
-        `Rebuild` if anything changed or was laid out, else `None`; either way
-        `last` is the most recent one.
+        `Retypeset` if a change was made or the width changed, else `None`;
+        either way `last` is the most recent one. `None` with no views:
+        nothing was laid out, and the cause waits.
+
+        Blocks the library lays out because a window reached them for the
+        first time are the reader's scrolling and are on no bill.
         """
-        units = reshipped = blocks = 0
-        for pane in self.shown:
-            pane_units, pane_fresh, pane_blocks = pane.settle()
-            units += pane_units
-            reshipped += pane_fresh
-            blocks += pane_blocks
-        if self._cause is None and not reshipped:
+        if not self.typeset:
             return None
-        bill = Rebuild(
+        blocks = laid = handed = 0
+        resized = False
+        for pane in self.shown:
+            pane_blocks, pane_laid, pane_handed, pane_resized = pane.counted()
+            blocks += pane_blocks
+            laid += pane_laid
+            handed += pane_handed
+            resized = resized or pane_resized
+        if self._cause is None and not resized:
+            return None
+        bill = Retypeset(
             cause=self._cause or "width",
             documents=self._built_now,
-            units=units,
-            reshipped=reshipped,
+            handed=handed,
             blocks=blocks,
+            laid_out=laid,
         )
         self._cause = None
         self._built_now = 0
@@ -543,6 +661,23 @@ class ThemesPage:
     # -- the frame ---------------------------------------------------------
 
     def draw(self) -> None:
+        if not self.typeset:
+            _say_why_not(self.reason)
+            return
+        try:
+            self._frame()
+        except TypesetUnavailable as exc:
+            # Whatever raised drew no text: what was drawn before it is this
+            # frame, and the page is the one line from the next.
+            self._lose(str(exc))
+
+    def _frame(self) -> None:
+        """
+        The frame through imtypeset. `TypesetUnavailable` is the caller's to catch.
+
+        Every pair opened here is closed on the way out of an exception, so
+        the caller's handler leaves ImGui's stacks as it found them.
+        """
         from imgui_bundle import imgui
 
         self._controls()
@@ -565,11 +700,14 @@ class ThemesPage:
                 imgui.ChildFlags_.borders.value,
                 imgui.WindowFlags_.always_vertical_scrollbar.value,
             )
-            self._follow_scroll(pane, leader)
-            pane.view.debug = self.context.debug
-            pane.stats = pane.view.draw(fonts=self.context.fonts, palette=pane.colours.palette)
-            imgui.end_child()
-            imgui.pop_style_color()
+            try:
+                self._follow_scroll(pane, leader)
+                pane.width = float(imgui.get_content_region_avail().x)
+                pane.view.debug = self.context.debug
+                pane.whole = pane.view.draw(palette=pane.colours.palette)
+            finally:
+                imgui.end_child()
+                imgui.pop_style_color()
         self.account()
 
     def _leader(self, panes: tuple[Pane, ...]) -> float:
@@ -632,11 +770,15 @@ class ThemesPage:
         self._colours_combo("##advtext-themes-palette-0", 0)
         imgui.same_line()
         imgui.set_next_item_width(280.0)
+        picked: FaceSet | None = None
         if imgui.begin_combo("##advtext-themes-faces", self.face_set.label):
             for face_set in FACE_SETS:
                 if imgui.selectable(face_set.label, face_set is self.face_set)[0]:
-                    self.set_face_set(face_set)
+                    picked = face_set
             imgui.end_combo()
+        if picked is not None:
+            # After the combo is closed: a setter reaches the views.
+            self.set_face_set(picked)
         imgui.same_line()
         _, split = imgui.checkbox("split", self.split)
         self.set_split(split)
@@ -659,10 +801,34 @@ class ThemesPage:
             imgui.ChildFlags_.none.value,
             imgui.WindowFlags_.no_scrollbar.value | imgui.WindowFlags_.no_background.value,
         )
-        imgui.push_font(self.context.fonts(self.face_set.faces.regular), self.height_px)
+        imgui.push_font(self.sample_font(), self.height_px)
         imgui.text_unformatted(self.sample())
         imgui.pop_font()
         imgui.end_child()
+
+    def sample_font(self) -> Any:
+        """
+        The font the reference line is pushed in: the regular face's, or `None` for ImGui's own.
+
+        The LIBRARY's font for that role, by its place in the atlas, so the
+        reference is the raster the pane's text comes from; what the context
+        has for the face when the library has none, and when it is not
+        drawing (it is not asked then).
+        """
+        face = self.face_set.faces.regular
+        if not self.typeset:
+            return self.context.fonts(face)
+        from imgui_bundle import imgui
+
+        module = typesetter.module()
+        try:
+            index = None if module is None else module.font_atlas_index(FACE_ROLES[face.name])
+        except Exception:  # noqa: BLE001 -- no font from the library is ImGui's own
+            index = None
+        fonts = imgui.get_io().fonts.fonts
+        if index is not None and 0 <= index < len(fonts):
+            return fonts[index]
+        return self.context.fonts(face)
 
     def sample(self) -> str:
         """
@@ -675,11 +841,15 @@ class ThemesPage:
 
         current = self.panes[pane].colours
         imgui.set_next_item_width(120.0)
+        picked: Colours | None = None
         if imgui.begin_combo(label, current.name):
             for colours in COLOURS:
                 if imgui.selectable(colours.name, colours is current)[0]:
-                    self.set_colours(pane, colours)
+                    picked = colours
             imgui.end_combo()
+        if picked is not None:
+            # After the combo is closed: a setter reaches the view.
+            self.set_colours(pane, picked)
 
 
 PAGE = PageSpec(

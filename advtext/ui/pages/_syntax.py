@@ -1,29 +1,36 @@
 r"""
-The demo's syntax colouring: two small tokenisers and the three shapes pages want them in.
+The demo's syntax colouring: two small tokenisers and the shapes pages want them in.
 
 **This is demo code, not library API.** `advtext` ships no tokeniser and takes no
 dependency to get one (`docs/decisions.md`); a view is handed *ranges with inks*
 and never sees a token. What is here is the least that makes a code block, a diff
 and a chat reply in the demo look coloured, so that the hand-off can be shown. A
 host uses its own highlighter -- Pygments, tree-sitter, whatever its editor has --
-and produces the same three shapes. Nothing outside `advtext.ui.pages` imports
+and produces the same shapes. Nothing outside `advtext.ui.pages` imports
 this module, it is not in the facade, and its name starts with an underscore so
 the page scan never mistakes it for a page.
 
 `examples/theme_gallery.py` keeps its own twenty-line `highlight`, on purpose: an
 example must run on the facade alone, and this module is not in it.
 
-## The three shapes
+## The shapes
 
     tokens(text, language)        -> ((start, end, kind), ...)       offsets into `text`
     line_tokens(lines, language)  -> one such tuple per line         offsets into that line
-    colour_spans(block, inks)     -> [ColourSpan, ...]               for BareView.set_colours
-    line_colours(inks)            -> the callable DiffView(syntax=...) takes
+    plain_spans(text, inks, lang) -> [(start, end, ink), ...]        for TypesetView.set_colours
+    line_colours(inks)            -> the callable a diff view's `syntax=` takes
 
 `tokens` is the tokeniser. The other three are it, cut to the coordinates a
-consumer counts in: a `CodeBlock` is coloured by ranges of its *material*
-(`advtext.spans.colour_text` does that conversion), and a diff is coloured a line
-at a time in character offsets of each line.
+consumer counts in. A code block (`advtext.typeset_markdown.MarkdownCode`) is
+coloured by plain offsets into its `text`, which is the text the typeset view
+holds for it: `plain_spans`. A diff is coloured a line at a time in character
+offsets of each line.
+
+**What importing or calling this module loads: nothing of the layout core.**
+It had a fourth shape, `colour_spans`, which coloured the old core's
+`CodeBlock` by ranges of its node material through `advtext.spans`; its last
+caller went on 2026-10-11 and the function with it. What it inked is held as
+literals in `tests/test_page_themes.py` (`OLD_SPANS`), against `plain_spans`.
 
 **Lines are tokenised together and then cut apart**, never one at a time, because
 a triple-quoted string or a block comment that opens on one line colours the lines
@@ -63,18 +70,15 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from advtext.markdown import CodeBlock
-from advtext.spans import ColourSpan, colour_text, material_text
-
 __all__ = [
     "KINDS",
     "PYTHON_KEYWORDS",
     "SyntaxInks",
     "Token",
-    "colour_spans",
     "is_python",
     "line_colours",
     "line_tokens",
+    "plain_spans",
     "tokens",
 ]
 
@@ -211,30 +215,28 @@ class SyntaxInks:
         return int(getattr(self, kind))
 
 
-def colour_spans(
-    block: CodeBlock, inks: SyntaxInks, language: str | None = None
-) -> list[ColourSpan]:
+def plain_spans(text: str, inks: SyntaxInks, language: str = "") -> list[tuple[int, int, int]]:
     """
-    Colour spans for one code block, to hand to `BareView.set_colours`.
+    `(start, end, ink)` for every token of `text`: plain offsets, in order, never overlapping.
 
-    `language` defaults to the block's own (its fence's info string). The text
-    tokenised is `material_text(block).text` -- the block as it is *set*, tabs
-    already expanded -- because that is the text `colour_text` counts in.
+    The shape `advtext.ui.typeset_view.TypesetView.set_colours(block, spans)`
+    takes for a code block of the direct path, whose text in the view IS the
+    block's `text`:
+
+        view.set_colours(number, plain_spans(block.text, inks, block.language))
+
+    Nothing is converted and nothing of the layout core is asked: the offsets
+    are `tokens`' own. `text` must be the text the view holds (tabs already
+    expanded), since an offset into any other string is another place.
     """
-    spans: list[ColourSpan] = []
-    name = block.language if language is None else language
-    for start, end, kind in tokens(material_text(block).text, name):
-        span = colour_text(block, start, end, ink=inks.ink(kind))
-        if span is not None:
-            spans.append(span)
-    return spans
+    return [(start, end, inks.ink(kind)) for start, end, kind in tokens(text, language)]
 
 
 def line_colours(
     inks: SyntaxInks,
 ) -> Callable[[Sequence[str], str], tuple[tuple[tuple[int, int, int], ...], ...]]:
     """
-    A highlighter in the shape `advtext.ui.diff_view.DiffView(syntax=...)` takes.
+    A highlighter in the shape a diff view's `syntax=` takes.
 
     `(lines, language)` to, for each line, `(start, end, colour)` in character
     offsets of that line. Bound to one set of inks, so a page changing scheme

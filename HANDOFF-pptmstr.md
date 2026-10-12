@@ -1439,7 +1439,7 @@ built here with stand-in headers). Your `imtypeset.ref` should move with it.
 ### P31, and what a packager holds together (2026-10-12)
 
 By the builder of advtext's task O-REL, an agent. **In advtext's working
-tree and not a commit when this was written; the lead commits and names it.**
+tree and not a commit when this was written; it is commit `fda4670` on `experimental/imtypeset-adoption`, not pushed when this was written.**
 The same facts, at more length and for a packager who has not read this
 file, are in advtext's `README.md`, "Packaging".
 

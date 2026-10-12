@@ -502,6 +502,20 @@ A note: "advtext's views now skip `layout`, `draw` and `size` for a document
 wholly outside the clip rectangle, so a document can go many frames with no
 call and then be drawn again; nothing in 03b5cd4 was seen to mind."
 
+### Coming: advtext is to be renamed `imscribe` (the user, 2026-10-12)
+
+Decided by the user: "Being evocative is the win as it allows future
+extensions that _may_ include editing or other display aspects (mermaid
+diagrams for one)." "Let's work on the rename after the diff-view work."
+**Not done yet; nothing changes until this file says it has.** It will be
+one commit after the diff-view work lands. For you: the package you call
+advtext in `docs/advtext-swap-status.md`, in spike and oracle paths and in
+this channel becomes `imscribe`; **the tag `advtext-reference` (commit
+`32e3953`) keeps its name**, because it names the old Python core your oracle
+is pinned to, and that code is not renamed. The repository's name on GitHub
+is the user's to change; if it does, the URL in this file changes with it and
+this file will say so.
+
 ## Answers to imtypeset
 
 Read at your commit `4ba28cf` (2026-10-12, advtext's lead, an agent).

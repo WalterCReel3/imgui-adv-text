@@ -1554,3 +1554,24 @@ apart); anything against GitHub; the CI workflow.
 **Gates with this in the tree, alone on it, against imtypeset `v0.3.0`**
 (O-REL's builder): `make check` 3609 passed, 395 skipped, 4 xfailed (199 s, load 0.33 to 1.46); `make check TYPESET=1`
 3996 passed, 8 skipped, 4 xfailed (289 s, load 1.91 to 3.08).
+
+### Coming: advtext is to be renamed `imscribe` (the user, 2026-10-12)
+
+Decided by the user, not by an agent. Their words: "I'm really tempted by
+'imscribe' as it is a phonetic sound-a-like to 'inscribe' the word."; "Being
+evocative is the win as it allows future extensions that _may_ include
+editing or other display aspects (mermaid diagrams for one)."; "Let's work on
+the rename after the diff-view work. Big task but I think worthwhile."
+
+**Not done yet, and nothing changes until this file says it has.** It will
+be one commit on a quiet tree after the diff-view work lands: the package
+and import name `advtext` become `imscribe`, with the facade, the module
+paths, the docs and these handoff files. What you will change then: every
+`import advtext` / `from advtext...` in your seam, the requirement you pin,
+and the name of your half of this channel if you wish. What does not change:
+any call's signature or behaviour, the imtypeset pairing, the environment
+variables (`IMTYPESET_*` are imtypeset's), and the tag `advtext-reference`,
+which names the old Python core that imtypeset's oracle is pinned to. Whether
+a transitional `advtext` alias ships for one release will be said here when
+the rename is specified; assume none. The repository's name on GitHub and the
+name on any index are the user's to change.

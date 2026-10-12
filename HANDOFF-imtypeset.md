@@ -348,6 +348,68 @@ P22, with its requirements R1 to R6 in `HANDOFF-advtext.md` under "A2".
 | H34 | **A way to lay text out from the advances the rasteriser bakes** (whole pixels under a hinted loader), so that a run is drawn as wide as it was laid out, a step between glyphs is the advance layout used, word spaces on a line are one width, N monospace characters occupy N times one constant on every row, and typeset monospace lines up with ImGui-drawn monospace in the same face at the same pixel height. A requirement on the result, not on how. This is your plan's core request C6 with a host's measurements behind it. | **pptmstr's builder, 2026-10-12, on the new core** (advtext `38f5fac`, imtypeset `c9f8902`, imgui-bundle 1.92.900, software renderer), reading the vertex buffer: monospace at a 16 px pixel height is drawn in steps of 7 and 8 px mixed; rows disagree at a column by up to 13 px; the 40th character is at 297 px against ImGui's 312. **On pptmstr's old seam** (advtext's deleted Python core laying out from ImGui's baked advances, an earlier pptmstr builder, from an untracked output file): 0.00 px mean and worst between drawn and laid out for every face and size; one distinct step (8 px at 16); the 40th character at 312, drawn, laid out and ImGui's all equal; 0 fractional pens. Under every hinted loader mode every baked advance was a whole pixel (Inconsolata 7 / 7 / 8 / 8 / 9 / 10 at 14 / 15 / 16 / 17 / 18 / 20 px; the file says 7.63 at 16). **advtext's PH-GATE builder**: at an EM of 16 the library lays the code face out at exactly 8.0 px a character (half an em at ems of 14 to 20), so the disagreement is at sizes where half an em is not a whole pixel, which includes every size stated as a pixel height. **The user's recorded preference** (pptmstr commit `a0ce752`, 2026-10-08, for prose, from three pictures drawn by the old rule): "I think I prefer hinted". It is the user's to restate for the new core. Until this is answered pptmstr keeps code blocks, diffs and tool output on its own renderers where their columns matter. |
 | H35 | **A glyph is drawn where it was laid out, or hit tests, selection rectangles and marks answer from where it was drawn.** | pptmstr's builder, same run: in a 74-character fenced row at monospace 16 a glyph is drawn up to 16.9 px (more than two characters) left of the rectangle advtext's `span_rects` (your `range_rects`) gives for it, "because the short steps come first". Not measured: where a selection highlight lands. advtext is reproducing both through its own views and will add its numbers here. |
 
+#### H34 and H35: advtext's own measurement (added 2026-10-12)
+
+advtext's Q-MONO builder, an agent, 2026-10-12, at `c9f8902` through
+`Document`s made by `advtext.TypesetView` in a real window; vertex buffer
+read, no pixel; runs repeated and identical; load average 2.2 to 3.7.
+Scripts and every number: `.concerns/Q-MONO--builder--result.md` and
+`.concerns/Q-MONO-scripts/` in the advtext checkout (untracked). The full
+table by size is in `HANDOFF-pptmstr.md`, "P21 to P23, measured".
+
+**H34.** pptmstr's figures reproduce exactly. In a fenced block of eight
+rows, code face, the steps are one size and rows agree at every column
+**only at an EM of 14, 16, 18, 20** (Inconsolata's advance a whole pixel).
+At an em of 15 and 17 and at every pixel height from 14 to 20 there are two
+step sizes and rows disagree at one column by 1 to 17 px. The 40th character
+of a ruler, drawn / laid out / ImGui in your own atlas entry at the size you
+baked: 297 / 297.43 / 312 at a pixel height of 16; 292 / 292.50 / 312 at an
+em of 15; 312 / 312.00 / 312 at an em of 16.
+
+**What the measurement adds to D48.** D48 promises a word's first glyph
+within 1 px and its last within 1.5 px of layout and says a glyph in the
+middle of a long word is held by nothing; it was measured on Roboto prose.
+In a fenced row the whole row behaves as one word (a glyph after a space is
+not brought back: `=` after `total ` is 4.0 px out), so the middle is out by
+(advance less its floor) times the number of short steps, which grows with
+the row: 9.4 px at 40 characters and 16.9 at 74, counted from the row's
+first glyph, at a pixel height of 16. The same in prose for any long
+spaceless run: a 40-digit number in Roboto is up to 9.8 px out at an em of
+17. Both ends hold on every page (first glyph within 0.49 px, row width
+within 0.50). Where the advance rounds down the long steps come first and
+glyphs stand right of their rectangles: up to 9.1 px in an all-mono theme at
+pixel heights 15, 17, 19, and 17.6 px for a code advance of 6.400 (default
+faces, pixel height 15).
+
+**H35, measured.** The selection the library draws has the edges of
+`range_rects` rounded to the pixel, and `caret_rect` is at the rectangle's
+left edge (75 of 75, 0.000 px), on all 26 pages: they follow layout. For
+characters 21 to 40 of a 74-character fenced row at a pixel height of 16 the
+fill is at 176 to 328 and the glyphs' pens at 163 to 316: 13 px right of the
+first glyph selected. Fill edge less pen in an all-mono theme by pixel
+height, left / right, px: 14: +14 / +11; 15: -8 / -5; 16: +13 / +12; 17: -6
+/ -4; 18: +12 / +14; 19: -3 / -2; 20: +11 / +15; em 15 and 17: -10 / -16;
+ems 14, 16, 18, 20: 0 / 0. Hit tests were not measured.
+
+**Read, not run** (the pinned copy at `c9f8902`; your `draw.cpp` has moved
+since): `Drawer::place_commands` places each glyph at the previous pen plus
+the gap snapped to the pixel, and at a span's end `Drawer::settle_word`
+re-rounds as many gaps as the drift needs, the earliest of equals first; in
+monospace every gap is equal, so the earliest become the short ones.
+`walk_code` passes a code line's spaces on as characters, not glue, which is
+why a fenced row is one word. The builder is least sure of its reading of
+the x.5 px case (ems 15 and 17): take the measurement, not the reading.
+
+**Not yours:** pptmstr's P23 (a sentence space under French spacing) was
+advtext not setting `ImTypesetStyle::Spacing`. Fixed in advtext; your
+`French` does what it says.
+
+**A question** (same builder): `ImDrawList::AddText(font, 16.784, ...)`
+draws your 17 px raster scaled to 16.784 at fractional pens, where
+`PushFont(font, 16.784)` rounds to 17 and matches you. Is that worth a
+sentence in your header beside `FontSize` / `EmSize`, for a host that sets a
+native line next to typeset text?
+
 ## Answers to imtypeset
 
 Nothing asked yet under this channel. Standing facts imtypeset's oracle relies

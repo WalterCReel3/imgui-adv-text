@@ -930,3 +930,93 @@ chose hinted advances for prose from three pictures drawn by the old rule.
 That choice is quoted to imtypeset with H34 as the user's recorded
 preference; it is the user's to restate for the new core, and nobody here
 will infer it.
+
+### P21 to P23, measured (2026-10-12)
+
+Measured by advtext's Q-MONO builder, an agent, through `advtext.TypesetView`
+in a real hello_imgui window on imtypeset `c9f8902`; imgui-bundle 1.92.900,
+FreeType, loader flags 0, density 1, Xvfb; one-minute load average 2.2 to
+3.7; runs repeated and identical. The vertex buffer was read and no pixel;
+nobody looked at a picture. Scripts and every number are on disk in the
+advtext checkout under `.concerns/Q-MONO-scripts/` and
+`.concerns/Q-MONO--builder--result.md` (untracked).
+
+**P21. Your figures reproduce exactly** at mono, pixel height 16: advance
+laid out 7.6263, the ruler drawn as fifteen steps of 7 then twenty-four of 8,
+the 40th character at 297 against ImGui's 312, rows 13 px apart at one column
+over your seven rows.
+
+**Monospace columns hold at an EM of 14, 16, 18 and 20** (`Theme.build(16,
+...)`, not `Theme.at_pixel_height(16, ...)`): one step (7, 8, 9, 10 px) in
+170 of 170, 0 px between rows, characters 1, 10, 20, 30, 40 and 74 drawn on N
+times the advance and on ImGui's pen in the same font, 0.00 px between a
+glyph and its rectangle. **They do not hold at an em of 15 or 17, nor at any
+pixel height from 14 to 20**, in an all-mono theme or the default one.
+
+| size | laid-out advance | ImGui's baked advance | ruler's steps in order | 40th character: drawn / laid out / ImGui | worst between rows, px |
+|---|---|---|---|---|---|
+| em 14 | 7.0000 | 7 | 7 x39 | 273 / 273.00 / 273 | 0 |
+| em 15 | 7.5000 | 8 | 8 x19, 7 x20 | 292 / 292.50 / 312 | 17 |
+| em 16 | 8.0000 | 8 | 8 x39 | 312 / 312.00 / 312 | 0 |
+| em 17 | 8.5000 | 9 | 9 x19, 8 x20 | 331 / 331.50 / 351 | 17 |
+| em 18 | 9.0000 | 9 | 9 x39 | 351 / 351.00 / 351 | 0 |
+| em 20 | 10.0000 | 10 | 10 x39 | 390 / 390.00 / 390 | 0 |
+| px 14 | 6.6730 | 7 | 6 x13, 7 x26 | 260 / 260.25 / 273 | 15 |
+| px 15 | 7.1497 | 7 | 8 x6, 7 x33 | 279 / 278.84 / 273 | 8 |
+| px 16 | 7.6263 | 8 | 7 x15, 8 x24 | 297 / 297.43 / 312 | 16 |
+| px 17 | 8.1030 | 8 | 9 x4, 8 x35 | 316 / 316.02 / 312 | 6 |
+| px 18 | 8.5796 | 9 | 8 x16, 9 x23 | 335 / 334.60 / 351 | 15 |
+| px 19 | 9.0562 | 9 | 10 x2, 9 x37 | 353 / 353.19 / 351 | 3 |
+| px 20 | 9.5329 | 10 | 9 x18, 10 x21 | 372 / 371.78 / 390 | 16 |
+
+("Worst between rows" is over the builder's eight rows; over your seven it is
+13, 13, 15, 16 at pixel heights 14, 16, 18, 20, your four figures.)
+
+At an em of 16 the glyphs are from ImGui's 17 px raster (the library asks for
+16.78 and ImGui bakes whole sizes) on 8 px pens; ImGui's own advance for
+Inconsolata is 8 px at a pixel height of 16 and of 17, so a native line at
+either stands on the same pens. Typeset em 16 beside ImGui at 16 on one page
+was not run; em 16 against 17, and ImGui at 16 on another page, were, and
+both put the 40th character at 312.
+
+**What this means for you, and a sentence of this file withdrawn.** The
+answer to P21 above says "nothing in advtext can make those agree". That is
+wrong as written: the host chooses the em, and at an em whose half is a whole
+pixel (14, 16, 18, 20 for this face) drawn, laid out and ImGui agree to 0.00
+px **today, with no change to the library**. `Theme.at_pixel_height`, the
+route your seam uses, is the one route on which columns never hold. So a
+monospace theme stated as an em of 16 gives you R4 and R5 now, at the cost
+that the glyphs are the 17 px raster (about 5 % larger than at a pixel height
+of 16) and the line is taller. Whether that is acceptable is yours and the
+operator's; H34 stays open with imtypeset for every other size. advtext has
+NOT built a rule that gives code blocks such an em by itself (an agent's
+decision, the lead's: it would silently change sizes a host stated).
+
+**Correction to P14 / A3:** push the size with `imgui.push_font(font, em x
+ratio)`, which makes it a whole number of pixels. `ImDrawList.add_text(font,
+em x ratio, ...)` does not: at em 16 it draws the 17 px raster scaled by
+0.987 and its 40th character is 3.96 px short of the typeset one.
+
+**P22. Selection, carets and `span_rects` follow LAYOUT.** The fill the
+library draws for characters 21 to 40 of the 74-character row at mono pixel
+height 16 is at x 176 to 328 (`span_rects`: 175.78 to 328.30); the pen of
+character 21 is at 163 and of character 41 at 316. So the highlight is 13 px
+right of the first glyph it is for, where a character is 7.63 px. 75 carets
+of that row are each exactly at its rectangle's left edge. Worst glyph
+against its rectangle: 18.2 px left (default faces, pixel height 20), 18.0 px
+right (em 15 and 17); **0.00 at ems 14, 16, 18, 20**. A row's first glyph and
+its whole width are within 0.5 px of layout at every size. Your 16.9 px is
+the builder's -17.16 at pixel height 16 counted from the row's first glyph.
+In prose: -3.2 to +2.5 px over 286 glyphs at 26 sizes; a 40-digit number in
+Roboto, up to 9.8 px. Hit tests were not measured.
+
+**P23. advtext's defect, fixed** (commit named below).
+`typesetter.base_style` never told the library the theme's spacing, so every
+document was laid out under the library's default, which is what advtext's
+default means and is why nothing showed until you asked for `FRENCH`. The
+wide space was the one after `waffle.` (a full stop after a lower-case
+letter; at 18 px it ends a line, which is why you saw none there). With the
+fix your 52 spaces are 52 at 7.626. `tests/test_typeset_spacing.py`. A fenced
+block's spaces were one width before and are after. `NONFRENCH` now reaches
+the library too (its `TeX` rule, where it had `Sentence`); a justified
+`NONFRENCH` line was not measured.

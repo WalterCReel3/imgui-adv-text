@@ -70,6 +70,8 @@ _KEYS = {
     "accepted_by",
     "imtypeset_kind",
     "imtypeset_route",
+    "ignored_environment",
+    "named_by",
 }
 
 _REPORT = """
@@ -261,6 +263,8 @@ def test_an_installed_distribution_is_loaded_with_no_variable_set(tmp_path: Path
         "accepted_by": "imgui-check+probe",
         "imtypeset_kind": None,
         "imtypeset_route": None,
+        "ignored_environment": None,
+        "named_by": None,
     }
     assert report["again"] == report["pairing"]
     assert set(report["pairing"]) == _KEYS and report["trouble"] == ""
@@ -434,6 +438,8 @@ def test_a_package_that_carries_an_attestation_is_a_distribution_without_metadat
         "accepted_by": "imgui-check+probe",
         "imtypeset_kind": None,
         "imtypeset_route": "installed",
+        "ignored_environment": None,
+        "named_by": None,
     }
     assert report["again"] == report["pairing"]
 
@@ -523,6 +529,264 @@ def test_the_variable_wins_over_an_installed_distribution(tmp_path: Path) -> Non
     assert report["pairing"]["built_for"] is None
     assert report["pairing"]["distribution"] == "imtypeset 0.9.0"
     assert report["pairing"]["package"] == str(site / "imtypeset")
+
+
+def test_an_installed_package_that_ignores_the_variables_is_not_reported_as_the_environment(
+    tmp_path: Path,
+) -> None:
+    """
+    imtypeset's T8, from its v0.3.0 on: a package directory that holds a
+    library or an attestation reads neither variable, and says which were set
+    (`host_info()["ignored_environment"]`). The route is then the
+    distribution's, whatever the environment asked for, the names are in
+    `pairing()["ignored_environment"]`, and nothing is remembered as a pair
+    the environment named: the variables chose nothing.
+    """
+    ignoring = _INSTALLED.replace(
+        '"route": "installed",',
+        '"route": "installed",\n'
+        '        "ignored_environment": ["IMTYPESET_LIBRARY", "IMTYPESET_PYTHON"],',
+    )
+    site = _a_distribution(tmp_path, ignoring)
+    env = _without()
+    env[typesetter.LIBRARY_VARIABLE] = str(tmp_path / "dev" / "another-library")
+    env[typesetter.PACKAGE_VARIABLE] = str(tmp_path / "appended")
+    report = _child(
+        _REPORT + "print(json.dumps([typesetter.pairing(), typesetter._pair]))", env, site
+    )
+    found, remembered = report
+    assert found["kind"] == typesetter.Kind.READY.value
+    assert found["route"] == typesetter.ROUTE_DISTRIBUTION
+    assert found["imtypeset_route"] == "installed"
+    assert found["ignored_environment"] == "IMTYPESET_LIBRARY, IMTYPESET_PYTHON"
+    assert found["library"] == str(site / "imtypeset" / "the-library")
+    assert found["named_by"] is None and remembered is None
+    assert found["built_for"] == "imgui-bundle==1.92.900", "it IS the distribution's library"
+
+
+# ---------------------------------------------------------------------------
+# The pair the environment named, remembered (pptmstr's P33)
+# ---------------------------------------------------------------------------
+
+# A package that answers the library it was imported with, so that a test can
+# see which value of the variable an import met.
+_NAMED = """
+import os
+LOADED_WITH = os.environ.get("IMTYPESET_LIBRARY")
+def host_info():
+    return {"library": LOADED_WITH, "route": "IMTYPESET_LIBRARY", "ignored_environment": []}
+"""
+
+# pptmstr's sequence: the variables are set for the first `module()` and then
+# taken out of the process, so that what it launches does not inherit them.
+_REMOVED = """
+import json, os, sys
+from advtext import typesetter
+first = typesetter.module()
+report = {"first": typesetter.pairing()}
+for name in ("IMTYPESET_LIBRARY", "IMTYPESET_PYTHON"):
+    del os.environ[name]
+def state():
+    return {
+        "module": typesetter.module() is not None,
+        "same": typesetter.module() is first,
+        "pairing": typesetter.pairing(),
+        "trouble": typesetter.trouble(),
+        "environment": sorted(n for n in os.environ if n.startswith("IMTYPESET_")),
+        "with": getattr(sys.modules.get("imtypeset"), "LOADED_WITH", None),
+    }
+"""
+
+
+def _named(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
+    """
+    An environment that names a stand-in pair: (the environment, the library, the directory).
+    """
+    appended = tmp_path / "appended"
+    _a_package(appended, _NAMED)
+    library = tmp_path / "dev" / "libimtypeset_bundle.so"
+    env = _without()
+    env[typesetter.LIBRARY_VARIABLE] = str(library)
+    env[typesetter.PACKAGE_VARIABLE] = str(appended)
+    return env, library, appended
+
+
+def test_a_reset_after_the_variables_were_removed_finds_the_pair_the_first_load_found(
+    tmp_path: Path,
+) -> None:
+    """
+    P33 as pptmstr wrote it: it sets the two variables for its own process,
+    asks `module()` once, and removes them; a "try again" (`reset()`) then
+    found no library, because the variables were asked again. The pair the
+    first load found is remembered, the next `module()` uses it, and
+    `pairing()["named_by"]` says that it is remembered and not the
+    environment's. The variables are not put back.
+    """
+    env, library, appended = _named(tmp_path)
+    code = _REMOVED + (
+        "typesetter.reset()\n"
+        "report['reset'] = state()\n"
+        "typesetter.disable('a draw raised')\n"
+        "typesetter.reset()\n"
+        "report['disabled'] = state()\n"
+        "print(json.dumps(report))\n"
+    )
+    report = _child(code, env)
+    first = report["first"]
+    assert first["kind"] == typesetter.Kind.READY.value, first["reason"]
+    assert first["route"] == typesetter.ROUTE_ENVIRONMENT and first["named_by"] == "environment"
+    assert first["library"] == str(library) and first["package"] == str(appended / "imtypeset")
+    for step in ("reset", "disabled"):
+        after = report[step]
+        assert after["module"] is True and after["same"] is True, after["pairing"]["reason"]
+        assert after["pairing"] == {**first, "named_by": "remembered"}
+        assert after["environment"] == [], "the variables were put back into the process"
+        assert after["trouble"] == ""
+
+
+def test_the_remembered_pair_is_handed_to_an_import_that_has_to_happen_again(
+    tmp_path: Path,
+) -> None:
+    """
+    Where the package is no longer in `sys.modules`, the import is a real one
+    and the package reads the variable: it is given the remembered library
+    for the length of the import and no longer. `forget_pair()` is how a host
+    takes the memory back; the next `module()` after a `reset()` then asks
+    the environment alone, as it did before there was a memory.
+    """
+    env, library, _ = _named(tmp_path)
+    code = _REMOVED + (
+        "del sys.modules['imtypeset']\n"
+        "typesetter.reset()\n"
+        "report['again'] = state()\n"
+        "typesetter.forget_pair()\n"
+        "report['kept'] = state()\n"
+        "typesetter.reset()\n"
+        "report['forgotten'] = state()\n"
+        "print(json.dumps(report))\n"
+    )
+    report = _child(code, env)
+    again = report["again"]
+    assert again["module"] is True and again["same"] is False
+    assert again["with"] == str(library), "the import did not meet the remembered library"
+    assert again["pairing"]["named_by"] == "remembered" and again["environment"] == []
+    # Forgetting changes nothing that is loaded: only what the next attempt is given.
+    assert report["kept"]["module"] is True
+    assert report["kept"]["pairing"] == again["pairing"]
+    forgotten = report["forgotten"]
+    assert forgotten["module"] is False
+    assert forgotten["pairing"]["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert forgotten["pairing"]["kind"] == typesetter.Kind.NOT_INSTALLED.value
+    # As `route` does, it goes on describing the package that is in the process.
+    assert forgotten["pairing"]["route"] == typesetter.ROUTE_ENVIRONMENT
+    assert forgotten["pairing"]["named_by"] == "remembered"
+
+
+def test_an_environment_that_names_another_library_wins_over_the_remembered_pair(
+    tmp_path: Path,
+) -> None:
+    """
+    Decided: where `IMTYPESET_LIBRARY` is set, it is what is asked, and the
+    memory is not consulted. What it cannot do is replace a library that is
+    already in the process: Python unloads neither, so the package that was
+    imported answers again, `pairing()["library"]` is still its library, and
+    `trouble()` says that the one named was not loaded. With the package out
+    of `sys.modules` the import is a real one and meets the new value; that
+    pair is then the one remembered.
+    """
+    env, library, _ = _named(tmp_path)
+    other = tmp_path / "other" / "libimtypeset_bundle.so"
+    code = _REMOVED + (
+        f"os.environ['IMTYPESET_LIBRARY'] = {str(other)!r}\n"
+        "typesetter.reset()\n"
+        "report['held'] = state()\n"
+        "del sys.modules['imtypeset']\n"
+        "typesetter.reset()\n"
+        "report['imported'] = state()\n"
+        "del os.environ['IMTYPESET_LIBRARY']\n"
+        "typesetter.reset()\n"
+        "report['afterwards'] = state()\n"
+        "print(json.dumps(report))\n"
+    )
+    report = _child(code, env)
+    held = report["held"]
+    assert held["module"] is True and held["same"] is True
+    assert held["pairing"]["named_by"] == "environment"
+    assert held["pairing"]["library"] == str(library), "a process holds one library"
+    assert str(other) in held["trouble"] and str(library) in held["trouble"]
+    imported = report["imported"]
+    assert imported["with"] == str(other) and imported["pairing"]["library"] == str(other)
+    assert imported["pairing"]["named_by"] == "environment"
+    afterwards = report["afterwards"]
+    assert afterwards["pairing"]["library"] == str(other)
+    assert afterwards["pairing"]["named_by"] == "remembered"
+
+
+def test_a_verdict_with_no_arguments_asks_about_the_remembered_pair(tmp_path: Path) -> None:
+    """
+    `verdict()` is what a NEW process would say, and a new process started
+    after the variables were removed would find nothing. So with no library
+    given and none in the environment, the child is handed the remembered
+    pair explicitly. A library given, an empty string included, is asked as
+    given; and a library the environment names is the environment's, as it
+    was.
+    """
+    env, library, appended = _named(tmp_path)
+    other = tmp_path / "other" / "libimtypeset_bundle.so"
+    code = _REMOVED + (
+        "report['remembered'] = typesetter.verdict(timeout=120)\n"
+        "report['none'] = typesetter.verdict('', timeout=120)\n"
+        f"os.environ['IMTYPESET_LIBRARY'] = {str(other)!r}\n"
+        f"os.environ['IMTYPESET_PYTHON'] = {str(appended)!r}\n"
+        "report['environment'] = typesetter.verdict(timeout=120)\n"
+        "del os.environ['IMTYPESET_LIBRARY'], os.environ['IMTYPESET_PYTHON']\n"
+        "typesetter.forget_pair()\n"
+        "report['forgotten'] = typesetter.verdict(timeout=120)\n"
+        "report['state'] = state()\n"
+        "print(json.dumps(report))\n"
+    )
+    report = _child(code, env)
+    remembered = report["remembered"]
+    assert remembered["kind"] == typesetter.Kind.READY.value, remembered["reason"]
+    assert remembered["library"] == str(library)
+    assert remembered["package"] == str(appended / "imtypeset")
+    assert remembered["named_by"] == "environment", "the child was given it as variables"
+    assert report["none"]["kind"] == typesetter.Kind.NOT_INSTALLED.value
+    assert report["environment"]["library"] == str(other)
+    assert report["forgotten"]["kind"] == typesetter.Kind.NOT_INSTALLED.value
+    assert report["state"]["environment"] == [], "a verdict changed this process's environment"
+
+
+def test_forget_pair_is_refused_nothing_and_a_pair_is_not_remembered_from_a_refusal(
+    tmp_path: Path,
+) -> None:
+    """
+    Only a load that was accepted is remembered: a refused import leaves no
+    pair to come back to, and `forget_pair()` with nothing remembered is
+    nothing.
+    """
+    source = _REFUSES.format(kind="damaged", sentence=_SENTENCE, detail=_DETAIL)
+    package = tmp_path / "appended"
+    _a_package(package, source)
+    env = _without()
+    env[typesetter.LIBRARY_VARIABLE] = str(tmp_path / "a-library")
+    env[typesetter.PACKAGE_VARIABLE] = str(package)
+    code = (
+        "import json, os\n"
+        "from advtext import typesetter\n"
+        "typesetter.forget_pair()\n"
+        "report = {'first': typesetter.pairing(), 'pair': typesetter._pair}\n"
+        "for name in ('IMTYPESET_LIBRARY', 'IMTYPESET_PYTHON'):\n"
+        "    del os.environ[name]\n"
+        "typesetter.reset()\n"
+        "report['after'] = typesetter.pairing()\n"
+        "print(json.dumps(report))\n"
+    )
+    report = _child(code, env)
+    assert report["first"]["kind"] == typesetter.Kind.REFUSED.value and report["pair"] is None
+    assert report["first"]["named_by"] is None
+    assert report["after"]["kind"] == typesetter.Kind.NOT_INSTALLED.value
+    assert report["after"]["reason"] == "IMTYPESET_LIBRARY is not set"
 
 
 # ---------------------------------------------------------------------------
@@ -745,6 +1009,160 @@ def test_a_real_refusal_carries_the_packages_own_word_when_it_has_one(tmp_path: 
         assert report["pairing"]["imtypeset_kind"] is None
 
 
+def _as_a_wheel(tmp_path: Path, library: Path, real: Path) -> tuple[Path, Path]:
+    """
+    The pair given, laid out as imtypeset's wheel lays it out: (the site directory, the library).
+
+    The package's modules, the library and the attestation in ONE directory,
+    and no `dist-info`. Skips with a pair from before 03b5cd4, whose package
+    looks for a library nowhere but in the variable.
+    """
+    attestation = Path(f"{library}.attestation.json")
+    if not _says_kinds(real) or not attestation.is_file():
+        pytest.skip(
+            "the pair given is from before imtypeset 03b5cd4: its package carries no library "
+            "and finds none without IMTYPESET_LIBRARY"
+        )
+    site = tmp_path / "site"
+    (site / "imtypeset").mkdir(parents=True)
+    for module in real.glob("*.py"):
+        (site / "imtypeset" / module.name).write_bytes(module.read_bytes())
+    carried = site / "imtypeset" / library.name
+    carried.symlink_to(library)
+    (site / "imtypeset" / "_attestation.json").write_bytes(attestation.read_bytes())
+    return site, carried
+
+
+def _ignores_the_environment(package: Path) -> bool:
+    """Whether the package given is one that reads no variable once installed (v0.3.0 on)."""
+    return "def ignored_environment(" in (package / "_bundle.py").read_text(encoding="utf-8")
+
+
+def test_the_staged_package_is_a_directory_with_no_library_in_it() -> None:
+    """
+    imtypeset's T8: from its v0.3.0 on the environment route works only with
+    a package directory that holds neither a library nor `_attestation.json`
+    (a checkout's `python/`); one that holds either is an installed
+    distribution and reads no variable. `make typeset-lib` puts the library
+    BESIDE `pysnap`, not in the package, and this holds it to that.
+    """
+    library, package = _the_pair()
+    if package.parent.name != "pysnap":
+        pytest.skip(f"the package given is not one `make typeset-lib` staged: {package}")
+    assert library.parent == package.parent.parent, "the library is not beside pysnap"
+    held = sorted(entry.name for entry in package.iterdir() if entry.suffix != ".py")
+    assert [name for name in held if name != "__pycache__"] == [], held
+    assert not (package / "_attestation.json").exists()
+
+
+def test_an_installed_imtypeset_with_the_variables_set_says_which_of_the_two_it_loaded(
+    tmp_path: Path,
+) -> None:
+    """
+    imtypeset's T8 against the real package: the pair laid out as a wheel and
+    importable, AND both variables naming the staged pair. From v0.3.0 the
+    installed package reads neither: the route is the distribution's, the
+    library is the one it carries, and `ignored_environment` names both
+    variables. At 03b5cd4 the variable still won inside an installed
+    package: the route is the environment's and the library the one named.
+    """
+    library, real = _the_pair()
+    site, carried = _as_a_wheel(tmp_path, library, real)
+    report = _child(_REAL, dict(os.environ), site)
+    found = report["pairing"]
+    assert found["kind"] == typesetter.Kind.READY.value, found["reason"]
+    assert found["package"] == str(site / "imtypeset"), "the installed package comes first"
+    assert report["fonts"] is True and report["ready"] is True, report["reason"]
+    if _ignores_the_environment(real):
+        assert found["route"] == typesetter.ROUTE_DISTRIBUTION
+        assert found["imtypeset_route"] == "installed"
+        assert found["library"] == str(carried)
+        assert found["ignored_environment"] == "IMTYPESET_LIBRARY, IMTYPESET_PYTHON"
+        assert found["named_by"] is None
+        assert found["built_for"] == f"imgui-bundle=={metadata.version('imgui-bundle')}"
+    else:
+        assert found["route"] == typesetter.ROUTE_ENVIRONMENT
+        assert found["imtypeset_route"] == "IMTYPESET_LIBRARY"
+        assert found["library"] == str(library)
+        assert found["ignored_environment"] is None
+        assert found["named_by"] == "environment"
+
+
+def test_a_library_without_its_attestation_is_probed_in_a_child_and_accepted(
+    tmp_path: Path,
+) -> None:
+    """
+    imtypeset's T9 (and T3): a library the variable names that has no
+    `<library>.attestation.json` beside it is probed in a child interpreter
+    (from v0.3.0, before the importing process loads it) and accepted;
+    `route` is still `IMTYPESET_LIBRARY` for a sidecar. What `make
+    typeset-lib` installs carries the attestation so that this is not paid
+    at every import; this is the pair without it.
+    """
+    library, real = _the_pair()
+    if not _says_kinds(real):
+        pytest.skip("the pair given is from before imtypeset 03b5cd4: it has no attestation")
+    bare = tmp_path / "bare" / library.name
+    bare.parent.mkdir()
+    bare.symlink_to(library)
+    env = dict(os.environ)
+    env[typesetter.LIBRARY_VARIABLE] = str(bare)
+    report = _child(_GATED, env)
+    assert report["pairing"]["kind"] == typesetter.Kind.READY.value, report["pairing"]["reason"]
+    assert report["checked_in"] == "child"
+    assert report["pairing"]["library"] == str(bare)
+    assert report["pairing"]["imtypeset_route"] == "IMTYPESET_LIBRARY"
+    assert report["pairing"]["named_by"] == "environment"
+
+
+_REAL_REMOVED = """
+import json, os, subprocess, sys
+from imgui_bundle import imgui
+from advtext import typesetter
+report = {"first": typesetter.pairing()}
+for name in ("IMTYPESET_LIBRARY", "IMTYPESET_PYTHON"):
+    del os.environ[name]
+typesetter.reset()
+report["again"] = typesetter.pairing()
+context = imgui.create_context()
+imgui.get_io().backend_flags |= imgui.BackendFlags_.renderer_has_textures
+imgui.get_io().set_ini_filename(None)
+report["fonts"] = typesetter.load_fonts()
+report["ready"] = typesetter.ready()
+report["verdict"] = typesetter.verdict(timeout=120)
+report["inherited"] = subprocess.run(
+    [sys.executable, "-c", "import os; print(sorted(n for n in os.environ if 'IMTYPESET' in n))"],
+    capture_output=True, text=True, check=True,
+).stdout.strip()
+typesetter.forget_pair()
+report["forgotten"] = typesetter.verdict(timeout=120)
+typesetter.unload()
+imgui.destroy_context(context)
+print(json.dumps(report))
+"""
+
+
+def test_the_real_pair_is_come_back_to_after_the_variables_were_removed() -> None:
+    """
+    P33 against the library: pptmstr's sequence, then fonts, then a verdict
+    with no arguments. The second attempt is the package that is already in
+    the process; the child of `verdict()` is a new process, is handed the
+    remembered pair, and says of it what this process said the first time.
+    What this process launches inherits neither variable.
+    """
+    library, package = _the_pair()
+    report = _child(_REAL_REMOVED, dict(os.environ))
+    first = report["first"]
+    _held(first, library)
+    assert first["route"] == typesetter.ROUTE_ENVIRONMENT and first["named_by"] == "environment"
+    assert report["again"] == {**first, "named_by": "remembered"}
+    assert report["fonts"] is True and report["ready"] is True
+    assert report["verdict"] == first
+    assert report["inherited"] == "[]"
+    assert report["forgotten"]["kind"] == typesetter.Kind.NOT_INSTALLED.value
+    assert report["again"]["package"] == str(package)
+
+
 def test_the_pair_laid_out_as_a_wheel_lays_it_out_is_found_by_its_attestation_alone(
     tmp_path: Path,
 ) -> None:
@@ -761,20 +1179,7 @@ def test_the_pair_laid_out_as_a_wheel_lays_it_out_is_found_by_its_attestation_al
     is the test of this route.
     """
     library, real = _the_pair()
-    attestation = Path(f"{library}.attestation.json")
-    if not _says_kinds(real) or not attestation.is_file():
-        pytest.skip(
-            "the pair given is from before imtypeset 03b5cd4: its package carries no library "
-            "and finds none without IMTYPESET_LIBRARY"
-        )
-    site = tmp_path / "site"
-    (site / "imtypeset").mkdir(parents=True)
-    for module in real.glob("*.py"):
-        (site / "imtypeset" / module.name).write_bytes(module.read_bytes())
-    carried = site / "imtypeset" / library.name
-    carried.symlink_to(library)
-    (site / "imtypeset" / "_attestation.json").write_bytes(attestation.read_bytes())
-
+    site, carried = _as_a_wheel(tmp_path, library, real)
     asked = _REAL.replace(
         "print(json.dumps(report))",
         'report["checked_in"] = typesetter.module().host_info()["bundle"]["checked_in"]\n'

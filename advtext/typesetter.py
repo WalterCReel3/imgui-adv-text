@@ -27,6 +27,20 @@ this order, and `pairing()` says which was taken:
     `PYTHONPATH` because a child process that is given a `PYTHONPATH` of its
     own -- every script `tests/conftest.py`'s `window` runs -- would lose the
     package and keep the library, and then quietly draw the old way.
+    **The directory must hold the package's modules and no library** (a
+    checkout's `python/`, or the `pysnap` that `make typeset-lib` leaves
+    beside the library): from imtypeset's v0.3.0 on, a package directory
+    that carries a library or an `_attestation.json` is an installed
+    distribution to that package and reads neither variable. When such a
+    package is what the import finds -- it is installed, and so earlier on
+    the path than a directory added at the end -- the route reported is
+    `ROUTE_DISTRIBUTION` and `pairing()["ignored_environment"]` names the
+    variables that chose nothing. **A pair loaded this way is remembered**:
+    a host may take both variables out of its environment after the first
+    `module()`, so that what it launches does not inherit them, and
+    `reset()`, the next `module()` and `verdict()` still go by that pair
+    (`module` has the rule, and what wins when the environment names
+    another; `forget_pair()` ends it).
 2.  **An installed distribution** (`ROUTE_DISTRIBUTION`), when the variable is
     not set and an installed `imtypeset` is found: by `importlib.metadata`,
     or by the `_attestation.json` a wheel of imtypeset carries beside its
@@ -57,13 +71,15 @@ reached as `advtext.typesetter.<name>`:
 - `kind()`, a `Kind`: ready, not installed, refused, failed, unsupported.
   The sentence is still `reason()`; the kind is what to branch on.
 - `reset()`: the way back from `disable` or a refusal. `unsupported(why)`:
-  the host's word that this platform has no library.
+  the host's word that this platform has no library. `forget_pair()`: the
+  pair the environment named is no longer come back to.
 - `missing(package)` and `REQUIRED`: the names of imtypeset this advtext
   calls. `module()` refuses a package that lacks one, so that a partial
   update falls back at the gate and does not fail inside a draw. The
   package's `demo` is NOT one of them: only the Specimen page draws it.
 - `verdict(library, python_path)`: what a NEW process would say, asked of a
-  child, with nothing loaded here and nothing remembered. The same from a
+  child, with nothing loaded here and nothing remembered; with no arguments
+  and no variable in the environment, of the pair `module()` remembered. The same from a
   shell: `python -m advtext.typesetter` prints `pairing()` as one line of
   JSON and exits by the kind (`EXIT_CODES`), with no window.
 - `font(face)`: the `ImFont` the library draws a role with.
@@ -172,6 +188,8 @@ __all__ = [
     "EXIT_CODES",
     "Kind",
     "LIBRARY_VARIABLE",
+    "NAMED_BY_ENVIRONMENT",
+    "NAMED_BY_MEMORY",
     "PACKAGE_VARIABLE",
     "REQUIRED",
     "ROUTE_DISTRIBUTION",
@@ -189,6 +207,7 @@ __all__ = [
     "cell_spans",
     "disable",
     "font",
+    "forget_pair",
     "kind",
     "load_fonts",
     "missing",
@@ -229,6 +248,10 @@ theme's member becomes the number.
 ROUTE_ENVIRONMENT = "environment"
 ROUTE_DISTRIBUTION = "distribution"
 ROUTE_NONE = "none"
+
+# Who named the library under `ROUTE_ENVIRONMENT`: `pairing()["named_by"]`.
+NAMED_BY_ENVIRONMENT = "environment"
+NAMED_BY_MEMORY = "remembered"
 
 _DISTRIBUTION = "imtypeset"
 # What a wheel of imtypeset carries beside its modules (its `_bundle.py`,
@@ -443,6 +466,14 @@ _ts: Any = None
 _package: Any = None
 _tried = False
 _route = ROUTE_NONE
+# The pair the environment route last loaded and accepted, as (the library,
+# the directory the package was imported from or `None`): what `module()` and
+# `verdict()` go by once the variables are no longer in the environment
+# (`forget_pair`). `None` while there is none.
+_pair: tuple[str, str | None] | None = None
+# Who named the library of the package that is loaded, under
+# `ROUTE_ENVIRONMENT`; `None` under any other route.
+_named_by: str | None = None
 # The installed distribution as "imtypeset <version>", "" when there is none,
 # `None` until it has been looked for. Looked for once: a view asks `module()`
 # every frame, and the answer is a walk over `sys.path`.
@@ -505,28 +536,65 @@ def module() -> Any:
     The variable wins over an installed distribution; the module docstring
     has the order and why.
 
+    **The pair is remembered** (asked for by pptmstr, the first host, which
+    removes both variables after its first load so that what it launches
+    does not inherit them). Once a package found by the environment has been
+    accepted, the library it loaded and the directory it came from are kept,
+    and where `IMTYPESET_LIBRARY` is no longer set a later attempt (after
+    `reset()`) is made with them: `pairing()["named_by"]` is then
+    `NAMED_BY_MEMORY`. Nothing is written to the environment for that,
+    except that a package which has left `sys.modules` since (nothing of
+    advtext's removes it) is imported again with the two variables set for
+    the length of the import and taken out after it, because the variable is
+    where that package reads its library from. **Where the variable is set,
+    it is what is asked and the memory is not**: a different value wins. It
+    cannot replace a library already in the process (`reset` says why); the
+    package that is imported answers again and `trouble()` says which library
+    is loaded and which was named. `forget_pair()` takes the memory back.
+
     Not `None` means the package is imported and accepted. It does not mean
     there is a context or a font: `ready()` says that.
     """
-    global _ts, _package, _tried, _route, _reason, _why, _their_kind
+    global _ts, _package, _tried, _route, _reason, _why, _their_kind, _pair, _named_by
     if _ts is not None or _disabled or _tried:
         return _ts
-    named = bool(os.environ.get(LIBRARY_VARIABLE))
+    library = os.environ.get(LIBRARY_VARIABLE) or ""
+    where = (os.environ.get(PACKAGE_VARIABLE) or None) if library else None
+    by = NAMED_BY_ENVIRONMENT if library else None
+    if not library and _pair is not None:
+        library, where = _pair
+        by = NAMED_BY_MEMORY
+    named = bool(library)
     if not named and not _distribution():
         _reason = _unsupported or _NOT_SET
         _why = Kind.UNSUPPORTED if _unsupported else Kind.NOT_INSTALLED
         return None
     _tried = True
+    # Whether this is a real import. A package already in the process answers
+    # again without reading anything, and then nothing is lent to it.
+    fresh = "imtypeset" not in sys.modules
+    lent: list[str] = []
     try:
         # Last on the path, so the directory can add a package and can never
         # stand in front of one advtext or its host already imports.
-        where = os.environ.get(PACKAGE_VARIABLE) if named else None
         if where and where not in sys.path:
             sys.path.append(where)
+        if by == NAMED_BY_MEMORY and fresh:
+            # The package reads its library from the variable and from
+            # nowhere else: it is given the remembered pair for the length
+            # of the import, and the environment is as it was afterwards.
+            for variable, value in ((LIBRARY_VARIABLE, library), (PACKAGE_VARIABLE, where)):
+                if value and not os.environ.get(variable):
+                    os.environ[variable] = value
+                    lent.append(variable)
         # By name, so that neither a type checker nor a reader looks for the
         # package where advtext's own modules are: it is found on the path the
         # host set, or not at all.
-        loaded = importlib.import_module("imtypeset")
+        try:
+            loaded = importlib.import_module("imtypeset")
+        finally:
+            for variable in lent:
+                os.environ.pop(variable, None)
     except Exception as exc:  # noqa: BLE001 -- any failure here means "draw as before"
         whole = f"{type(exc).__name__}: {exc}"
         # imtypeset's own word for the refusal, where it gives one (from its
@@ -544,7 +612,15 @@ def module() -> Any:
         if detail:
             _say(f"imtypeset says of that refusal ({_their_kind}): {detail}")
         return None
-    _route = ROUTE_ENVIRONMENT if named else ROUTE_DISTRIBUTION
+    # What the package says of how it found its library. From imtypeset's
+    # v0.3.0 on, a package directory that carries a library or an attestation
+    # reads no variable (its `host_info()["route"]` is `installed`): whatever
+    # the environment named, the distribution's own library is what was
+    # loaded, and that is the route to report (imtypeset's T8).
+    said = _host_info(loaded)
+    ignored = named and said.get("route") == "installed"
+    _route = ROUTE_ENVIRONMENT if named and not ignored else ROUTE_DISTRIBUTION
+    _named_by = by if _route == ROUTE_ENVIRONMENT else None
     # Kept whether or not it is accepted: `pairing()` then says which package
     # and which library were refused, and `unload()` can still be asked.
     _package = loaded
@@ -556,7 +632,57 @@ def module() -> Any:
         return None
     _reason = ""
     _ts = loaded
+    if _route == ROUTE_ENVIRONMENT:
+        # Remembered as the PACKAGE says it, where it says: that is the
+        # library in this process, which is what a later attempt will meet
+        # whatever the environment holds by then.
+        mapped = said.get("library")
+        mapped = mapped if isinstance(mapped, str) and mapped else library
+        origin = getattr(loaded, "__file__", None)
+        came_from = os.path.dirname(os.path.dirname(os.path.abspath(origin))) if origin else where
+        _pair = (mapped, came_from)
+        if by == NAMED_BY_ENVIRONMENT and not fresh and not _same_file(mapped, library):
+            note(
+                f"{LIBRARY_VARIABLE} names {library} and the library in this process is "
+                f"{mapped}: a process holds one, and the one named was not loaded "
+                "(a new process meets it: verdict())"
+            )
     return _ts
+
+
+def _host_info(package: Any) -> dict[str, Any]:
+    """
+    `package.host_info()` as a dictionary; empty when it has none or raises (`pairing` says so).
+    """
+    try:
+        return dict(package.host_info())
+    except Exception:  # noqa: BLE001 -- a question must not be what fails
+        return {}
+
+
+def _same_file(one: str, other: str) -> bool:
+    try:
+        return os.path.realpath(one) == os.path.realpath(other)
+    except Exception:  # noqa: BLE001 -- not comparable: not known to be the same
+        return False
+
+
+def forget_pair() -> None:
+    """
+    Forget the pair `module()` remembered, so that the next attempt asks the environment alone.
+
+    For a host that handed advtext a library through the two variables,
+    removed them, and now wants that library not to be come back to (it was
+    replaced; an operator switched it off for good). Nothing that is loaded
+    changes, `module()` and `pairing()` answer as they did, and nothing is
+    unloaded: it is the next `module()` after a `reset()` that finds
+    `IMTYPESET_LIBRARY is not set`, where the environment has no variable
+    and no distribution is installed. `verdict()` with no arguments then
+    asks about the environment as it is. With nothing remembered it does
+    nothing.
+    """
+    global _pair
+    _pair = None
 
 
 def missing(package: Any) -> list[str]:
@@ -733,6 +859,20 @@ def pairing() -> dict[str, str | None]:
       same commit on; `None` before it. `route` is how advtext found the
       package and is decided before the import; this is the package's word
       afterwards, and the two say the same thing of a real install.
+    - `ignored_environment`: the variables that were set and that the
+      package did NOT read, as it says itself
+      (`host_info()["ignored_environment"]`, from imtypeset's v0.3.0 on),
+      joined by `, `: `IMTYPESET_LIBRARY, IMTYPESET_PYTHON`. `None` when it
+      read what was set, and before that version. From v0.3.0 an installed
+      imtypeset reads neither variable; `route` is then
+      `ROUTE_DISTRIBUTION` although the variable was set, `library` is the
+      distribution's own, and this key is where to see that the library the
+      environment named is not the one in use.
+    - `named_by`: under `ROUTE_ENVIRONMENT`, who named the library of the
+      package that is loaded: `NAMED_BY_ENVIRONMENT` when `IMTYPESET_LIBRARY`
+      was set at that `module()`, `NAMED_BY_MEMORY` when it was not and the
+      pair remembered from an earlier load was used (`module` has the rule).
+      `None` under any other route.
 
     With an installed distribution known only by its `_attestation.json` (a
     frozen application without `dist-info`), `distribution` is `imtypeset
@@ -759,6 +899,8 @@ def pairing() -> dict[str, str | None]:
         "accepted_by": None,
         "imtypeset_kind": _their_kind,
         "imtypeset_route": None,
+        "ignored_environment": None,
+        "named_by": _named_by if package is not None else None,
     }
     if package is None:
         return answer
@@ -777,6 +919,9 @@ def pairing() -> dict[str, str | None]:
         answer["headers"] = said(gate.get("headers"))
         answer["accepted_by"] = said(gate.get("accepted_by"))
         answer["imtypeset_route"] = said(info.get("route"))
+        unread = info.get("ignored_environment")
+        if isinstance(unread, (list, tuple)):
+            answer["ignored_environment"] = said(", ".join(str(name) for name in unread))
         if _route == ROUTE_DISTRIBUTION:
             from importlib import metadata
 
@@ -812,6 +957,8 @@ _PAIRING_KEYS = (
     "accepted_by",
     "imtypeset_kind",
     "imtypeset_route",
+    "ignored_environment",
+    "named_by",
 )
 
 # What the child of `verdict()` runs: `_main`, in the advtext the asking
@@ -839,7 +986,8 @@ def verdict(
     For an updater that has to know whether a pair will be accepted before it
     switches to it, and for a `--version` that prints the pairing with no
     window. **Nothing is loaded into the asking process and nothing is
-    remembered in it**: this module's state is not read and not written, so
+    remembered in it**: this module's state is not written, and one thing
+    of it is read (the remembered pair, below), so
     it can be asked before `module()`, after a `disable`, and as often as
     wanted. The child imports the package, runs the library's import gate
     against the wheel, holds the package to `REQUIRED`, and prints
@@ -850,6 +998,13 @@ def verdict(
     what `IMTYPESET_PYTHON` is: `None` leaves each as this process has it, an
     empty string takes it out (so `verdict("")` asks about the installed
     distribution alone). Anything that is not a path is a `TypeError` here.
+    **With no `library` given and no `IMTYPESET_LIBRARY` in this process's
+    environment, the pair `module()` remembered is what the child is
+    handed**, as its two variables (`python_path`, when given, still wins
+    for the package): a host that removed the variables after its first load
+    is asking about the library it is running, and a new process without
+    them would find none. Where the environment has the variable, the
+    environment's is asked, as before. `forget_pair()` ends that.
     The child is `sys.executable` with this process's environment otherwise,
     so the wheel it meets is the one this interpreter would import. **Another
     interpreter is asked with the command line**, which is the same answer:
@@ -891,6 +1046,12 @@ def verdict(
     if not timeout > 0:
         raise ValueError(f"verdict() takes a timeout above zero, not {timeout!r}")
     environment = dict(os.environ)
+    if library is None and not environment.get(LIBRARY_VARIABLE) and _pair is not None:
+        # Explicitly, and to the child alone: nothing is put back into this
+        # process's environment.
+        library, remembered = _pair
+        if python_path is None and remembered:
+            python_path = remembered
     for variable, given in ((LIBRARY_VARIABLE, library), (PACKAGE_VARIABLE, python_path)):
         if given is None:
             continue
@@ -1493,6 +1654,9 @@ def reset() -> None:
       change those.
     - `trouble()`, a host's `unsupported()` sentence, and which package
       `pairing()` describes.
+    - **The pair the environment named**, once a load by it was accepted:
+      it is what the next `module()` is made with where `IMTYPESET_LIBRARY`
+      is no longer set (`module` has the rule, `forget_pair()` the way out).
     - The cause. If what failed fails again, the library is switched off
       again.
 
@@ -1525,15 +1689,18 @@ def _forget() -> None:
     Back to the state at import. For tests; a host calls `reset()`.
 
     `reset()`, and then what that keeps on purpose: which package this
-    process imported, the last `trouble()`, and a host's `unsupported()`. It
+    process imported, the pair it remembered (`forget_pair`), the last
+    `trouble()`, and a host's `unsupported()`. It
     forgets what this module knows, not what the process did: an imported
     imtypeset stays in `sys.modules` and its context stays made.
     """
-    global _package, _route, _trouble, _unsupported
+    global _package, _route, _trouble, _unsupported, _pair, _named_by
     _unsupported = ""  # First: `reset` says the host's sentence while there is one.
     reset()
     _package = None
     _route = ROUTE_NONE
+    _pair = None
+    _named_by = None
     _trouble = ""
 
 

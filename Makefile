@@ -294,7 +294,13 @@ IMTYPESET_HEADER_CACHE ?= $(CURDIR)/build/imtypeset-headers
 #                            as it is; without it every import probes the
 #                            library in a child interpreter
 #   pysnap/imtypeset/        the package as it was when the library was built
-#                            (what IMTYPESET_PYTHON defaults to, above)
+#                            (what IMTYPESET_PYTHON defaults to, above). Its
+#                            modules and nothing else: from imtypeset v0.3.0
+#                            on a package directory that holds a library or
+#                            an _attestation.json is an installed
+#                            distribution and reads neither variable, so
+#                            the library stays BESIDE pysnap and never goes
+#                            into it (tests/test_typesetter_pairing.py)
 #   BUILT-FROM               the checkout, its HEAD (or IMTYPESET_COMMIT), how
 #                            many paths were uncommitted, when, and the
 #                            library's checksum (what the stale-pair check

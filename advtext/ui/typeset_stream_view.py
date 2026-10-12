@@ -109,6 +109,15 @@ reader who scrolls up is left alone, scrolling back to the bottom resumes,
 `follow_tail()` does so from code, `follow=False` never scrolls, and a
 `scroll_to` carried out on a frame wins over the tail.
 
+**Out of sight it rests as a `TypesetView` does** ("A view out of sight"
+there; 2026-10-12, pptmstr's P30). `draw` still reads the stream first and
+still follows: a view that follows keeps its end in sight and so is drawn,
+and one the reader scrolled away from is out of sight with nothing to do
+until text arrives. Text arriving out of sight is its one edit and one
+ordinary draw (the new height is the library's), with no scrolling unless
+the view is following; `follow_tail()` works from out of sight.
+`tests/test_hidden_views.py` holds each.
+
 ## A selection while text arrives: what is and is not `StreamView`'s
 
 `TypesetView` drops a selection that ends in a replaced block, and a stream

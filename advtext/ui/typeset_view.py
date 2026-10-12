@@ -227,7 +227,8 @@ host had them, and the host can say so at the same cursor in the same frame:
 ## Calls into the library, per frame
 
 `layout`, `draw`, `size`: three, in that order (the size is stale until the
-draw has laid out what the window shows). The draw names no draw list
+draw has laid out what the window shows), for a view any part of which is in
+sight; **none for a view out of sight** ("A view out of sight" below). The draw names no draw list
 (`Document.draw(None, pos)` is the current window's), so
 `typesetter.window_draw_list()` is not used. Then one `block_geometry` for
 each hosted block in view: **3 + hosted blocks in view**, which does not grow
@@ -257,6 +258,81 @@ two `column` calls, then a `block_geometry` and a `column_pos` for each hosted
 block in the columns the window shows ("Columns" below). `column_count`,
 `column` and `column_pos` are one call each when a host asks, and a
 `scroll_to` a position asks `column_count` before its `caret_rect`.
+
+## A view out of sight
+
+**A view whose rectangle is wholly outside the clip rectangle rests**
+(2026-10-12; pptmstr's P30): `draw` claims the rectangle its last draw
+measured, with the same one item, and makes NO call into the library. A log
+is a view for each markdown run, four hundred in one scrolling child and a
+few dozen in sight, and until then each made its three calls a frame.
+Measured headless on the pinned pair (`.concerns/O-HOST3-scripts/p30_views.py`,
+2026-10-12, load average 2 to 4): 400 one-line views with 26 in sight were
+1,200 calls and 5.8 ms a frame and are 78 calls and 1.7 ms; a view out of
+sight was 14.6 microseconds a frame and is 3.9, none of it the library's.
+
+The rule, all of it (`_resting`): the view has been drawn before by a draw
+that reached the library; nothing that draw stood on has changed (the
+library's document is the same object, and the width, `revision`, every
+count in `edits`, the columns and the code overflow are what they were);
+nothing is waiting or under way (no `scroll_to`, no drag, no link held
+down); the view hosts no widget; and no pixel of the rectangle the last draw
+measured, put at this draw's cursor, is inside the draw list's current clip
+rectangle (touching its edge is outside). Then `draw` returns what the last
+draw answered, `under_mouse` and `hovered_link` are `None`, `stats.vertices`
+is 0, and `origin` is where the view is now.
+
+**What a view never drawn claims** is the library's own size: its first
+draw is an ordinary one wherever it is (the library's document is made and
+laid out, the three calls), and what that measured is claimed from then on.
+Not a guess of this module's: the claim is then exactly what the same view
+claimed before it could rest, so the scroll range of a pane is what it was.
+By measurement (`.concerns/O-HOST3-scripts/p30_views.py`) the range and the
+place of the text in sight move identically with resting on and off, frame
+for frame. The library's size is itself an estimate for blocks it has not
+laid out, and settles when they come into sight; that is the library's, and
+is the same with and without this.
+
+**When a view out of sight is drawn all the same**, each for one draw (the
+draw after it rests again) unless it says otherwise, and each held by name
+in `tests/test_hidden_views.py`:
+
+- its document changed (`set_document`, a stream's text arriving,
+  `set_theme`, `set_fixed_line_height`, `set_table_widths`,
+  `set_table_columns`, a palette whose ROLE inks changed, `close`): the
+  edit is counted in `edits`, or the library's document is another object;
+- the width changed, `set_columns`, `set_code_overflow`;
+- a `scroll_to` is waiting: for as many draws as it is looked at;
+- a drag that began in sight, or a link held down: until the button is up;
+- **it hosts a widget: such a view never rests.** A widget's height is its
+  host's to change at any frame and its keys are its own, and both are
+  asked at every draw as they were;
+- a host asked the document something that lays it out or may move it:
+  `layout_for`, `block_rect`, `span_rects`, `set_lines`, the table and
+  column questions, and ANY read of `native_document` (what is done with
+  it is not known here). A host that reads one of these every frame for a
+  view out of sight keeps it from resting, at the old cost and no more.
+
+**What does not wake it**, because nothing a view out of sight shows or
+measures depends on it: marks and inks (`set_marks`, `set_colours`), a
+palette's inks other than the roles (told to the library by the next draw
+that reaches it), `select` and `select_all`, `debug`, reading `stats`, and
+`set_document` with what is already on show.
+
+**A selection out of sight keeps its keys.** While the view owns the
+selection a resting draw still reads Ctrl+A and Ctrl+C (a copy is its one
+`range_text`), and still gives the selection up when another view begins
+one. The mouse does nothing for a view out of sight: no hit test, no hover,
+no press.
+
+**A page of columns** rests as its whole rectangle, every column and gutter.
+**A view with no text** has no height and is in sight wherever its corner is
+inside the clip rectangle: it is drawn (three calls, nothing set).
+
+`TypesetUnavailable` is raised by a draw out of sight exactly as by one in
+sight: readiness is asked first (`typesetter.ready()`: Dear ImGui's answers,
+no call into the library), and it is about a quarter of what a resting draw
+costs (0.9 of the 3.9 microseconds).
 
 ## What is `BareView`'s, kept
 
@@ -996,6 +1072,13 @@ class TypesetView:
         self._inked: dict[int, _Inks] = {}  # each block's inks, packed, made at a draw
         self._drawn_marks: Any = None
         self._drawn_for: tuple[int, int, int, int] | None = None
+        # What the last draw that reached the library drew, for a draw out of
+        # sight to compare with (`_resting`): the library's document, and the
+        # width and the state it was laid out at. `None` when no such draw
+        # stands: before the first, and after anything that may have moved
+        # the library's layout without the view's own counters saying so.
+        self._rested_doc: Any = None
+        self._rested: tuple[object, ...] | None = None
         if document is not None:
             self.set_document(document)
 
@@ -2207,6 +2290,9 @@ class TypesetView:
         """
         The `imtypeset.Document`, or `None` before the first draw and after `close`.
         """
+        # Whoever reads it may lay it out, cut it into columns or edit it,
+        # which can move its height: the next draw is not a resting one.
+        self._rested = None
         return None if self._doc is None or self._doc.closed else self._doc
 
     # ------------------------------------------------------------------
@@ -2638,8 +2724,10 @@ class TypesetView:
         when it is not read: it is not part of a frame's calls.
         """
         mine = ViewStats(self._whole, self._vertices, 0, 0, len(self._hosts_shown))
-        doc = self.native_document
-        if doc is None or typesetter.module() is None:
+        # Not through `native_document`: counting moves no layout, and a host
+        # that reads this every frame must not keep the view from resting.
+        doc = self._doc
+        if doc is None or doc.closed or typesetter.module() is None:
             return mine
         try:
             counted = doc.stats()
@@ -2719,6 +2807,7 @@ class TypesetView:
         if self._origin is None or not 0 <= block < len(self._texts):
             return None
         doc = self._document()
+        self._rested = None  # the block is laid out by the asking
         try:
             geometry = doc.block_geometry(block)
         except Exception as exc:  # noqa: BLE001 -- see `_failed`
@@ -2868,6 +2957,7 @@ class TypesetView:
         when nothing changed). Raises `TypesetUnavailable` as `draw` does.
         """
         doc = self._document()
+        self._rested = None  # laid out here, perhaps at another width than the last draw's
         width_px = self._column_px(max(float(width_px), MIN_WIDTH_PX))
         wanted = self._host_wants(width_px)
         try:
@@ -2955,19 +3045,25 @@ class TypesetView:
         library refused); `stats` has more. Raises `TypesetUnavailable` when
         the library cannot draw; nothing has been drawn or claimed then.
         What a hosted widget raises leaves here as itself.
+
+        **Out of sight, the view rests** ("A view out of sight" in the module
+        docstring): its rectangle is claimed as the last draw measured it,
+        the library is not called, and the answer is the last draw's.
         """
         from imgui_bundle import imgui
 
         if palette is not None and palette is not self._palette and palette != self._palette:
             self.set_palette(palette)
         doc = self._document()
-        self._begin_frame()
         if width_px is None:
             width_px = imgui.get_content_region_avail().x
         width_px = max(float(width_px), MIN_WIDTH_PX)
         cursor = imgui.get_cursor_screen_pos()
         x, y = math.floor(cursor.x + 0.5), math.floor(cursor.y + 0.5)
         native = imgui.get_window_draw_list()
+        if self._rested is not None and self._resting(doc, width_px, x, y, native):
+            return self._rest(imgui, x, y)
+        self._begin_frame()
         vertices = native.vtx_buffer.size()
         # What the document is laid out at: one column's width in columns.
         column_px = self._column_px(width_px)
@@ -3029,9 +3125,82 @@ class TypesetView:
         except Exception as exc:  # noqa: BLE001 -- see `_failed`
             self._failed(exc)
         self._handle_keys()
+        # What this draw stood on, for the next one to rest on if it is out
+        # of sight. Before `on_link`: what a host asks of the document there
+        # (`block_rect`, `native_document`) forgets it again.
+        self._rested_doc = doc
+        self._rested = self._standing(width_px)
         if followed is not None and self.on_link is not None:
             self.on_link(followed)
         return bool(whole)
+
+    def _standing(self, width_px: float) -> tuple[object, ...]:
+        """
+        Everything of the view's own that the library's layout was made from, at this width.
+
+        Two draws that find this equal, over the same library document, were
+        laid out alike: every edit of that document is counted in `edits`
+        (and one made around the view, through `native_document`, forgets the
+        last draw altogether).
+        """
+        edits = self.edits
+        return (
+            width_px,
+            self.revision,
+            edits["set"],
+            edits["replace"],
+            edits["append"],
+            self._columns,
+            self._overflow,
+        )
+
+    def _resting(self, doc: Any, width_px: float, x: float, y: float, native: Any) -> bool:
+        """
+        Whether this draw may rest: nothing to do, and nothing of the view in the clip rectangle.
+
+        "A view out of sight" in the module docstring has the rule and each
+        case in which a view out of sight is drawn all the same.
+        """
+        if (
+            doc is not self._rested_doc
+            or self._scroll is not None
+            or self._dragging
+            or self._link_down is not None
+            or self._hosts
+            or self._rested != self._standing(width_px)
+        ):
+            return False
+        low, high = native.get_clip_rect_min(), native.get_clip_rect_max()
+        return bool(
+            y >= high.y or y + self._height <= low.y or x >= high.x or x + self._width <= low.x
+        )
+
+    def _rest(self, imgui: Any, x: float, y: float) -> bool:
+        """
+        A draw out of sight: the last draw's rectangle claimed, and no call of the library.
+
+        No hit test and no hover: the mouse is not over what is not shown.
+        The keys are still read while the view owns the selection, so a
+        selection scrolled away is still copied by Ctrl+C.
+        """
+        self._origin = (x, y)
+        self._scrolled = False
+        self._vertices = 0
+        self._hit = None
+        self._hot = None
+        imgui.dummy(imgui.ImVec2(self._width, self._height))
+        if self._owned:
+            self._yield_selection()
+            self._handle_keys()
+        return self._whole
+
+    def _yield_selection(self) -> None:
+        """Drop the selection if another view began one since this one last did."""
+        if self._owned and not self.owns_selection:
+            self._selection = None
+            self._all_selected = False
+            self._dragging = False
+            self._owned = 0
 
     def _ink_edges(self, native: Any, x: float) -> tuple[float, float] | None:
         """
@@ -3194,11 +3363,7 @@ class TypesetView:
         down = imgui.is_mouse_down(left)
 
         # Another view began a selection since this one last did.
-        if self._owned and not self.owns_selection:
-            self._selection = None
-            self._all_selected = False
-            self._dragging = False
-            self._owned = 0
+        self._yield_selection()
         # The button is up and did not come up on this frame: the release was
         # on a frame this view was not drawn.
         if self._dragging and not down and not imgui.is_mouse_released(left):

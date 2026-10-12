@@ -21,7 +21,8 @@ What is here:
   `_math_inline`, `_math_block`) and the core rule that tells the inline math
   rule where the source ends (`_inline_knowing_the_end`);
 - the parser a host's reader options choose (`_reader_parser`), and the one
-  rule those add (`_written_stars`). Added 2026-10-12 for
+  rules those add (`_written_stars`; `_written_backslashes` and
+  `_written_cell_pipes`, pptmstr's P32). Added 2026-10-12 for
   `advtext.typeset_markdown.ReaderOptions`, which is where a host says them:
   these two names were never in `advtext.markdown` and are not imported back;
 - the source map: `SourceSpan`, `BlockSource`, `_line_starts`, `_span`;
@@ -436,6 +437,97 @@ def _written_stars(state: StateInline, silent: bool) -> bool:
     return True
 
 
+# What a backslash escapes in CommonMark: the 32 ASCII punctuation characters.
+_ESCAPABLE = frozenset("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+
+
+def _written_backslashes(state: StateInline, silent: bool) -> bool:
+    r"""
+    A backslash escape read as CommonMark reads it, with the backslash set as well.
+
+    Only in a parser built with `written_backslashes=True`
+    (`advtext.typeset_markdown.ReaderOptions.backslashes_as_written`), where
+    it stands in the escape rule's place and under its name. CommonMark
+    draws the punctuation and not the backslash: `C:\_work\*.log` is set as
+    `C:_work*.log`, `foo\.py` as `foo.py`, `\\server` as `\server` (pptmstr's
+    P32, reproduced here 2026-10-12), and a reader approving a path or a
+    pattern sees another one than was written.
+
+    **Replaced, not switched off.** With no escape rule at all the backslash
+    would be text and the character after it would be offered to every other
+    rule, so `\*not emphasis\*` would be an italic `not emphasis\` after a
+    backslash, and `\[x\](y)` a link: the writer's stars and brackets gone
+    and their meaning changed as well. Here the escaped character still
+    marks nothing, exactly as in CommonMark, and both characters are text.
+    The rule is pptmstr's (`_written_escapes` in its seam, read there).
+
+    - A backslash before one of the 32 ASCII punctuation characters: both
+      are set. `\\` is two backslashes, and the second escapes nothing.
+    - A backslash that ends a line: the backslash is set AND the line ends
+      there (a hard break), and the next line's leading white space is not
+      text, as in CommonMark. So `C:\dir\` at a line's end keeps its
+      backslash, and a writer who ended a line with one to break it still
+      gets the break, with a backslash before it.
+    - A backslash before anything else, or the last character of the text:
+      not this rule's. It is text already, as it is in CommonMark.
+
+    What this does not reach, because another rule has read the backslash
+    before any inline rule is asked: a link's destination and title
+    (`[a](C:\_x)` goes to `C:_x`, and that is what `show_link_destinations`
+    shows), and a link reference definition. `\|` in a table cell is put
+    back by `_written_cell_pipes`. A backslash in a code span, a fenced or
+    indented block, an autolink or a formula was never an escape and is
+    unchanged; a fence's info string is kept as written by the reader with
+    or without this.
+
+    `\$` when math is on: the math rule runs after this one, so the dollar
+    is taken here with its backslash and opens no formula, as an escaped
+    dollar never did; what is set is `\$`. Inside a formula nothing is
+    changed: `_math_inline` reads its source itself and skips an escaped
+    closer as before.
+    """
+    source = state.src
+    at = state.pos
+    if source[at] != "\\" or at + 1 >= state.posMax:
+        return False
+    after = source[at + 1]
+    if after == "\n":
+        if not silent:
+            state.pending += "\\"
+            state.push("hardbreak", "br", 0)
+        at += 2
+        while at < state.posMax and source[at] in " \t":
+            at += 1
+        state.pos = at
+        return True
+    if after not in _ESCAPABLE:
+        return False
+    if not silent:
+        state.pending += source[at : at + 2]
+    state.pos = at + 2
+    return True
+
+
+def _written_cell_pipes(state: StateCore) -> None:
+    r"""
+    `\|` in a table cell given back its backslash, before the cell is read as a line.
+
+    With `_written_backslashes`. markdown-it's table rule splits a row at
+    each `|` that has no backslash before it and, where one has, drops the
+    backslash and keeps the pipe (`escapedSplit`), so by the time a cell is
+    read as inline text `a\|b` is `a|b` and no inline rule can know. But
+    that makes the rule exact in reverse: **every `|` in a cell's content
+    was written `\|`**, in a code span too (the split does not look for
+    backticks). So each is written back as `\|`, and `_written_backslashes`
+    sets the two. In a code span that is `\|` as well, where CommonMark's
+    tables show `|`: as written.
+    """
+    tokens = state.tokens
+    for index, token in enumerate(tokens):
+        if token.type == "inline" and index and tokens[index - 1].type in ("th_open", "td_open"):
+            token.content = token.content.replace("|", "\\|")
+
+
 def _build_parser(
     *,
     references: bool = True,
@@ -443,6 +535,7 @@ def _build_parser(
     html: bool = True,
     images: bool = True,
     written_stars: bool = False,
+    written_backslashes: bool = False,
 ) -> MarkdownIt:
     """
     CommonMark, plus tables, minus underscore emphasis.
@@ -466,11 +559,17 @@ def _build_parser(
     switches off the image rule, and `![alt](url)` is then what is left when
     nothing claims the `!`: an exclamation mark and a link. `written_stars`
     adds `_written_stars` in front of the emphasis rule.
+    `written_backslashes` puts `_written_backslashes` in the escape rule's
+    place, under its name (so the math rule is still placed after it), and
+    `_written_cell_pipes` in front of the core's inline rule.
     """
     parser = MarkdownIt("commonmark").enable("table")
     parser.inline.ruler.at("emphasis", _asterisk_only_emphasis)
     if written_stars:
         parser.inline.ruler.before("emphasis", "written_stars", _written_stars)
+    if written_backslashes:
+        parser.inline.ruler.at("escape", _written_backslashes)
+        parser.core.ruler.before("inline", "written_cell_pipes", _written_cell_pipes)
     if not html:
         parser.disable(["html_block", "html_inline"])
     if not images:
@@ -513,13 +612,18 @@ def _parser(references: bool, math: bool) -> MarkdownIt:
 
 @cache
 def _reader_parser(
-    references: bool, math: bool, html: bool, images: bool, written_stars: bool
+    references: bool,
+    math: bool,
+    html: bool,
+    images: bool,
+    written_stars: bool,
+    written_backslashes: bool = False,
 ) -> MarkdownIt:
     """
-    The one parser for a combination of the two switches and three reader options.
+    The one parser for a combination of the two switches and four reader options.
 
     With the options at their defaults (`html` and `images` true,
-    `written_stars` false) this IS `_parser(references, math)`, the same
+    `written_stars` and `written_backslashes` false) this IS `_parser(references, math)`, the same
     object, so a caller that states no option reads with the parser every
     caller read with before the options existed. Any other combination is a
     parser of its own, built once and kept: `MarkdownIt.disable` mutates, so
@@ -527,10 +631,15 @@ def _reader_parser(
     document and a stream that state equal options are handed the same
     parser, which is the point of going through here.
     """
-    if html and images and not written_stars:
+    if html and images and not written_stars and not written_backslashes:
         return _parser(references, math)
     return _build_parser(
-        references=references, math=math, html=html, images=images, written_stars=written_stars
+        references=references,
+        math=math,
+        html=html,
+        images=images,
+        written_stars=written_stars,
+        written_backslashes=written_backslashes,
     )
 
 

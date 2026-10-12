@@ -127,16 +127,17 @@ read by its 300th line, against `StreamDocument`'s 0.08).
 ## What a host may ask of the reading
 
 `ReaderOptions`, as `reader=` to `parse_markdown`, `describe_markdown` and
-`MarkdownStream` (2026-10-12; pptmstr's requests P7 and P27). Five switches,
+`MarkdownStream` (2026-10-12; pptmstr's requests P7, P27 and P32). Six switches,
 all off by default, and all off is the reading there has always been: raw
 HTML set as the characters written (`html_as_text`), an image read as an
 exclamation mark and a link (`images_as_text`), the stars of a glob kept
 (`keep_glob_stars`), a link followed by its destination, inside the link
-(`show_link_destinations`), and a fence's info string set in front of its
-code (`show_fence_info`; "A fence's info string" below). The class says what
-each does exactly. The first three choose the PARSER
+(`show_link_destinations`), a fence's info string set in front of its
+code (`show_fence_info`; "A fence's info string" below), and a backslash
+escape set with its backslash (`backslashes_as_written`). The class says what
+each does exactly. The first three and the last choose the PARSER
 (`advtext.markdown_rules._reader_parser`, one object per combination, never
-a rule switched on a shared one); the last two are `_Reader`'s (and, for a
+a rule switched on a shared one); the other two are `_Reader`'s (and, for a
 fence a stream follows line by line, `MarkdownStream`'s). A stream and a
 settled parse given equal options go through the same parser and the same
 reader, and `tests/test_reader_options.py` holds a stream to one parse of
@@ -542,8 +543,38 @@ class ReaderOptions:
         in the module docstring says why it is a block and not a line of
         the code.
 
+    `backslashes_as_written`
+        A backslash escape is set with its backslash (2026-10-12; pptmstr's
+        P32). Off, CommonMark's reading: `C:\\_work\\*.log` is set as
+        `C:_work*.log`, `foo\\.py` as `foo.py`, `\\\\server` as `\\server`.
+        On, a backslash before one of the 32 ASCII punctuation characters is
+        set and so is the character, which still marks nothing:
+        `\\*not emphasis\\*` is those sixteen characters, upright. So a path
+        or a pattern reads as it was written, and a writer who escaped a
+        star on purpose sees their backslash. **A backslash that ends a line
+        is set and the line still ends there** (a hard break, as in
+        CommonMark, with the backslash before it). `\\$` with math on is
+        `\\$` and opens no formula. `\\|` in a table cell is `\\|`, in a code
+        span in a cell too. NOT reached, because the backslash is read
+        before any inline text is: a link's destination and title
+        (`[a](C:\\_x)` still goes to, and with `show_link_destinations`
+        shows, `C:_x`) and a link reference definition. Unchanged, having
+        never been escapes: a backslash in a code span, a fenced or indented
+        block, an autolink, a formula's source, a fence's info string.
+        `advtext.markdown_rules._written_backslashes` has the rule and why
+        the escape rule is replaced and not switched off.
+
     Not here, because pptmstr's old seam did it outside the parser and a
     host still can: breaking a long unbreakable word.
+
+    **A host that wants one character taken literally needs no escape at
+    all** if it makes the block itself: the `text` of a `MarkdownText`, a
+    `MarkdownCode` or a `MarkdownCell` handed to a view is never read as
+    markdown, so every character of it is set (white space apart: a text
+    block's is the library's, `text_as_set`). An escape is needed only inside
+    a string the host hands over to be READ as markdown, and there
+    CommonMark's own backslash still works under `backslashes_as_written`:
+    the character is literal, and its backslash shows.
     """
 
     html_as_text: bool = False
@@ -551,6 +582,7 @@ class ReaderOptions:
     keep_glob_stars: bool = False
     show_link_destinations: bool = False
     show_fence_info: bool = False
+    backslashes_as_written: bool = False
 
     def __post_init__(self) -> None:
         for field in fields(self):
@@ -1301,7 +1333,12 @@ def _parser_for(references: bool, math: bool, reader: ReaderOptions) -> Any:
     only in those share a parser.
     """
     return _reader_parser(
-        references, math, not reader.html_as_text, not reader.images_as_text, reader.keep_glob_stars
+        references,
+        math,
+        not reader.html_as_text,
+        not reader.images_as_text,
+        reader.keep_glob_stars,
+        reader.backslashes_as_written,
     )
 
 

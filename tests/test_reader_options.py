@@ -3,7 +3,7 @@ A host's reader options (pptmstr's P7) and a size for inline code (its P11).
 
 `advtext.typeset_markdown.ReaderOptions` says what of a source a CommonMark
 reader hides and this host wants set; `Theme.inline_code_scale` and
-`Theme.inline_code_step` say how big a code span is beside its block. Four
+`Theme.inline_code_step` say how big a code span is beside its block. Five
 groups.
 
 1.  **The options object**: its fields, that all off is the reading there
@@ -26,6 +26,10 @@ groups.
     sets such a run at that multiple of ITS BLOCK's size, measured from the
     advance of a monospace character. The theme's two fields themselves are
     in `tests/test_style.py`.
+5.  **Backslashes as written** (pptmstr's P32): what
+    `ReaderOptions.backslashes_as_written` sets, what it leaves alone, and
+    settled against streamed on a corpus of its own, alone and with each
+    other option.
 """
 
 from __future__ import annotations
@@ -34,6 +38,8 @@ import dataclasses
 import json
 import os
 import random
+import re
+import string
 import subprocess
 import sys
 from dataclasses import replace
@@ -43,6 +49,7 @@ from typing import Any
 import material_frozen
 import pytest
 import test_markdown as markdown_tests
+from markdown_it.rules_inline.escape import escape as markdown_it_escape
 
 from advtext import markdown_rules, typesetter
 from advtext import typeset_markdown as direct
@@ -73,8 +80,12 @@ OPTIONS: dict[str, ReaderOptions] = {
     "images": ReaderOptions(images_as_text=True),
     "stars": ReaderOptions(keep_glob_stars=True),
     "destinations": ReaderOptions(show_link_destinations=True),
+    "backslashes": ReaderOptions(backslashes_as_written=True),
     "all": ALL,
 }
+# `ALL` is the four options of P7, which the tables below were written for;
+# this is every field there is (section 5).
+EVERY = ReaderOptions(**{field.name: True for field in dataclasses.fields(ReaderOptions)})
 
 
 def _shown(blocks: Any) -> str:
@@ -91,6 +102,14 @@ def _shown(blocks: Any) -> str:
             rows = [block.header, *block.rows] if block.header else list(block.rows)
             out.append("\n".join(" | ".join(cell.text for cell in row) for row in rows))
     return "\n\n".join(out)
+
+
+def _rule(parser: Any, name: str) -> Any:
+    """
+    The function an inline rule of `parser` runs, by the rule's name.
+    """
+    (found,) = [rule.fn for rule in parser.inline.ruler.__rules__ if rule.name == name]
+    return found
 
 
 def _replay(
@@ -160,9 +179,10 @@ def test_the_fields_and_their_defaults_are_exactly_these() -> None:
         ("keep_glob_stars", "bool", False),
         ("show_link_destinations", "bool", False),
         ("show_fence_info", "bool", False),
+        ("backslashes_as_written", "bool", False),
     ]
     options = ReaderOptions()
-    assert options == ReaderOptions(False, False, False, False, False)
+    assert options == ReaderOptions(False, False, False, False, False, False)
     # A value: equal options are one key, and it cannot be changed under a stream.
     assert hash(ReaderOptions(html_as_text=True)) == hash(OPTIONS["html"])
     assert len({ReaderOptions(), ReaderOptions(), ALL, replace(ALL)}) == 2
@@ -183,13 +203,13 @@ def test_all_off_is_the_parser_there_always_was(references: bool, math: bool) ->
     assert direct._parser_for(references, math, reader_options(None)) is plain
     # Showing a destination is the reader's doing and not a parser's.
     assert direct._parser_for(references, math, OPTIONS["destinations"]) is plain
-    for name in ("html", "images", "stars", "all"):
+    for name in ("html", "images", "stars", "backslashes", "all"):
         other = direct._parser_for(references, math, OPTIONS[name])
         assert other is not plain, name
         # One per combination, kept: a second asking is handed the same one.
         assert direct._parser_for(references, math, replace(OPTIONS[name])) is other, name
-    # Five options, five parsers: the four that change the parse, and the plain one.
-    assert len({id(direct._parser_for(references, math, each)) for each in OPTIONS.values()}) == 5
+    # Six options, six parsers: the five that change the parse, and the plain one.
+    assert len({id(direct._parser_for(references, math, each)) for each in OPTIONS.values()}) == 6
     if not math:
         singletons = (markdown_rules._PARSER, markdown_rules._PARSER_WITHOUT_REFERENCES)
         assert plain is singletons[0 if references else 1]
@@ -209,6 +229,8 @@ def test_the_shared_parsers_still_have_the_rules_an_option_switches_off() -> Non
         inline = parser.inline.ruler.get_active_rules()
         assert {"html_inline", "image", "emphasis"} <= set(inline)
         assert "written_stars" not in parser.inline.ruler.get_all_rules()
+        assert "written_cell_pipes" not in parser.core.ruler.get_all_rules()
+        assert _rule(parser, "escape") is markdown_it_escape
     switched = direct._parser_for(True, False, ALL)
     assert "html_block" not in switched.block.ruler.get_active_rules()
     inline = switched.inline.ruler.get_active_rules()
@@ -617,6 +639,7 @@ def test_each_option_changes_its_own_thing_and_no_other() -> None:
     assert read["images"] == "A tag, an !image, a glob **/.py and **/.md, and a link."
     assert read["stars"] == "A tag, an , a glob **/*.py and **/*.md, and a link."
     assert read["destinations"] == "A tag, an , a glob **/.py and **/.md, and a link (http://l/y)."
+    assert read["backslashes"] == plain
     assert read["all"] == (
         "A <b>tag</b>, an !image (http://i/x.png), a glob **/*.py and **/*.md, "
         "and a link (http://l/y)."
@@ -1209,3 +1232,396 @@ def test_a_shown_destination_is_set_by_the_library_and_a_hit_on_it_is_the_link(
     assert told["hit"][0] > 0 and told["hit"][1] == url and told["hit"][2] == 0
     assert told["miss"] == [0, None]
     assert library["html"] == ["List<String> here", "<div>block</div>", "<!-- note", "after"]
+
+
+# ---------------------------------------------------------------------------
+# 5. Backslashes as written (pptmstr's P32)
+# ---------------------------------------------------------------------------
+
+_WRITTEN = OPTIONS["backslashes"]
+_PUNCTUATION = string.punctuation
+# CommonMark's reading of an escape, for what a default reader gives.
+_ESCAPE = re.compile(rf"\\([{re.escape(string.punctuation)}])")
+
+
+def _read(source: str, reader: ReaderOptions | None = _WRITTEN, **more: Any) -> Any:
+    return parse_markdown(source, _THEME, references=False, reader=reader, **more).blocks
+
+
+def test_there_are_thirty_two_escapable_characters_and_they_are_markdown_its() -> None:
+    from markdown_it.rules_inline.escape import _ESCAPED
+
+    assert len(_PUNCTUATION) == 32
+    assert markdown_rules._ESCAPABLE == set(_PUNCTUATION) == _ESCAPED
+
+
+@pytest.mark.parametrize(
+    ("written", "commonmark"),
+    [
+        # pptmstr's three, by its run, settled and streamed.
+        (r"C:\_work\*.log", "C:_work*.log"),
+        (r"foo\.py", "foo.py"),
+        (r"\\server", r"\server"),
+        (r"\\\\server\share\*.txt", r"\\server\share*.txt"),
+    ],
+)
+def test_a_backslash_escape_is_set_as_it_was_written_settled_and_streamed(
+    written: str, commonmark: str
+) -> None:
+    (plain,) = _read(written, None)
+    assert plain.text == commonmark
+    for options in (_WRITTEN, EVERY):
+        (block,) = _read(written, options)
+        assert block.text == written and block.runs == plain.runs == ()
+        for chunk in (1, 2):
+            (streamed,) = _replay(written, chunk, options).blocks
+            assert streamed == block
+
+
+@pytest.mark.parametrize("character", _PUNCTUATION)
+def test_before_each_punctuation_character_both_are_set_and_it_marks_nothing(
+    character: str,
+) -> None:
+    """
+    At the start of a block, inside a word, doubled, and at its end. Nothing
+    is emphasised, linked, a code span, a formula or a tag: no run, no link.
+    """
+    written = f"\\{character}a x\\{character}y\\{character}\\{character} z\\{character}"
+    for math in (False, True):
+        (block,) = _read(written, math=math)
+        assert isinstance(block, MarkdownText) and block.kind is BlockKind.PARAGRAPH
+        assert block.text == written, (character, math)
+        assert (block.runs, block.links, block.formulas) == ((), (), ())
+        (plain,) = _read(written, None, math=math)
+        assert plain.text == _ESCAPE.sub(r"\1", written), (character, math)
+        (streamed,) = _replay(written, 1, _WRITTEN, math=math).blocks
+        assert streamed == block
+
+
+def test_an_escaped_character_still_marks_nothing_and_an_unescaped_one_still_does() -> None:
+    """
+    Why the escape rule is replaced and not switched off: with no rule the
+    stars after the backslashes would be emphasis and the brackets a link.
+    """
+    (block,) = _read(r"\*not emphasis\* and *is*, \[x\](y) and [z](y), \`c\` and `d`")
+    assert block.text == r"\*not emphasis\* and is, \[x\](y) and z, \`c\` and d"
+    plain_face = face_role(Face.PROSE)
+    assert [text for text, face in _faces(block) if face != plain_face] == ["is", "d"]
+    assert [(block.text[link.start : link.end], link.target) for link in block.links] == [
+        ("z", "y")
+    ]
+    # What switching it off would have given, for the record.
+    bare = markdown_rules._build_parser(references=False)
+    bare.disable("escape")
+    tokens = [token.type for token in bare.parseInline(r"\*not emphasis\*")[0].children or ()]
+    assert "em_open" in tokens
+
+
+def test_a_backslash_that_is_not_an_escape_is_what_it_always_was() -> None:
+    for written in ("a \\b \\1 \\é", "ends \\", "\\", "tab \\\tafter"):
+        (block,) = _read(written)
+        (plain,) = _read(written, None)
+        assert block == plain
+    # In code, an autolink and a fence nothing was ever escaped.
+    for written in (
+        r"`a\*b` and ``\\``",
+        r"<https://e.org/a\*b>",
+        "```\na\\*b\\\n```\n",
+        "    a\\*b\n",
+    ):
+        assert _read(written) == _read(written, None), written
+    # A fence's info string is written out as it stands with or without.
+    info = ReaderOptions(show_fence_info=True)
+    both = ReaderOptions(show_fence_info=True, backslashes_as_written=True)
+    source = "```py\\*thon in\\fo\ncode\n```\n"
+    assert _read(source, both) == _read(source, info)
+    assert _read(source, both)[0].text == "py\\*thon in\\fo"
+
+
+def test_a_backslash_that_ends_a_line_is_set_and_the_line_still_ends_there() -> None:
+    """
+    pptmstr's seam did this (`_written_escapes`: the backslash, then the
+    break), and so does the option: the writer's break is kept, and
+    `C:\\dir\\` at a line's end keeps its backslash. The next line's leading
+    white space is not text, as in CommonMark.
+    """
+    for written, expected, commonmark in [
+        ("a\\\n   b", "a\\\nb", "a\nb"),
+        ("C:\\dir\\\nnext", "C:\\dir\\\nnext", "C:\\dir\nnext"),
+        ("a\\\\\nb", "a\\\\ b", "a\\ b"),
+        ("- item\\\n  more\n", "item\\\nmore", "item\nmore"),
+    ]:
+        (plain,) = _read(written, None)
+        (block,) = _read(written)
+        assert (plain.text, block.text) == (commonmark, expected), written
+        assert block.hard_breaks == plain.hard_breaks == ("\n" in expected)
+        for chunk in (1, 2, 0):
+            (streamed,) = _replay(written, chunk, _WRITTEN).blocks
+            assert streamed == block
+    # At the end of a paragraph there is no line to end: a backslash, both ways.
+    assert _read("a\\\n\nb")[0] == _read("a\\\n\nb", None)[0]
+
+
+def test_an_escaped_dollar_is_set_with_its_backslash_and_opens_no_formula() -> None:
+    written = r"\$5 and $x$ and \$y$, then $a\$b$ after"
+    (off,) = _read(written, math=False)
+    assert off.text == written and off.formulas == ()
+    (on,) = _read(written, math=True)
+    assert on.text == r"\$5 and x and \$y$, then a\$b after"
+    # The two formulas CommonMark's reading finds, and their sources untouched.
+    (plain,) = _read(written, None, math=True)
+    assert plain.text == r"$5 and x and $y$, then a\$b after"
+    assert [formula.source for formula in on.formulas] == ["x", r"a\$b"]
+    assert [formula.source for formula in plain.formulas] == ["x", r"a\$b"]
+    for chunk in (1, 3):
+        assert _replay(written, chunk, _WRITTEN, math=True).blocks == (on,)
+    # In the parser, the math rule is still the one after the escape rule.
+    names = [rule.name for rule in direct._parser_for(False, True, _WRITTEN).inline.ruler.__rules__]
+    assert names[names.index("escape") + 1] == "math_inline"
+
+
+def test_an_escaped_pipe_in_a_table_cell_is_set_with_its_backslash() -> None:
+    r"""
+    markdown-it's table rule drops the backslash of `\|` when it splits a row,
+    before any inline rule; `_written_cell_pipes` puts it back.
+    """
+    source = "| a\\|b | `c\\|d` |\n|---|---|\n| e\\\\|f | g\\*h |\n| plain | x \\| y \\| z |\n"
+
+    def cells(reader: ReaderOptions | None) -> list[list[str]]:
+        (table,) = _read(source, reader)
+        return [[cell.text for cell in row] for row in (table.header, *table.rows)]
+
+    assert cells(None) == [["a|b", "c|d"], ["e|f", "g*h"], ["plain", "x | y | z"]]
+    assert cells(_WRITTEN) == [["a\\|b", "c\\|d"], ["e\\\\|f", "g\\*h"], ["plain", "x \\| y \\| z"]]
+    for chunk in (1, 3, 0):
+        assert _replay(source, chunk, _WRITTEN).blocks == _read(source)
+
+
+def test_what_the_option_does_not_reach_is_a_links_destination_and_title() -> None:
+    """
+    Stated in the class and held here so that it is not found again: the link
+    rule reads the destination, backslash and all, before any text is read.
+    """
+    shown = ReaderOptions(backslashes_as_written=True, show_link_destinations=True)
+    (block,) = _read(r"[a\]b](C:\_x 'ti\*tle')", shown)
+    assert block.text == r'a\]b (C:_x "ti*tle")'
+    assert [link.target for link in block.links] == ["C:_x"]
+
+
+def test_the_options_parser_has_the_rule_in_the_escape_rules_place() -> None:
+    for references in (True, False):
+        for math in (True, False):
+            parser = direct._parser_for(references, math, _WRITTEN)
+            assert _rule(parser, "escape") is markdown_rules._written_backslashes
+            core = [rule.name for rule in parser.core.ruler.__rules__]
+            assert core.index("written_cell_pipes") + 1 == core.index("inline")
+            names = [rule.name for rule in parser.inline.ruler.__rules__]
+            plain = [
+                rule.name
+                for rule in markdown_rules._parser(references, math).inline.ruler.__rules__
+            ]
+            assert names == plain
+
+
+def test_a_block_a_host_makes_is_never_read_as_markdown() -> None:
+    r"""
+    The second half of P32, "a supported way for a host to mark punctuation it
+    wants taken literally": a host that makes the block needs no mark. The
+    `text` of a `MarkdownText` is described character for character
+    (`Description.texts` is what the library is handed), whatever it holds.
+    """
+    literal = r"*not* **emphasis** \* [x](y) <b> `c` $z$ &amp; C:\_work\*.log # > - 1."
+    theme = _THEME
+    block = MarkdownText(
+        kind=BlockKind.PARAGRAPH, style=theme.style(BlockKind.PARAGRAPH), text=literal
+    )
+    description = MarkdownConverter(theme).describe((block,))
+    assert list(description.texts) == [literal]
+    assert not description.links
+    (only,) = description.blocks
+    assert only.text == literal and only.runs == ()
+    # What pptmstr's seam writes U+FDD0 for: lines ended where the writer ended
+    # them, and no character read as markdown. One block with `hard_breaks`.
+    lines = "status: *done*\nnext_step: see [the log](x)\npath: C:\\_work\\*.log"
+    kept = MarkdownText(
+        kind=BlockKind.PARAGRAPH,
+        style=theme.style(BlockKind.PARAGRAPH),
+        text=lines,
+        hard_breaks=True,
+    )
+    assert direct.text_as_set(kept) is kept
+    described = MarkdownConverter(theme).describe((kept,))
+    assert list(described.texts) == [lines] and not described.links
+    assert described.blocks[0].flags & direct.BLOCK_HARD_BREAKS
+    assert described.blocks[0].runs == ()
+
+
+# A backslash before every ASCII punctuation character, wherever the stream's
+# commit rule or one of its shortcuts could meet it. A character at a time
+# puts a piece boundary between every backslash and what it escapes.
+_EACH = "".join(f"\\{character}" for character in _PUNCTUATION)
+BACKSLASH_CORPUS: dict[str, str] = {
+    "each": f"{_EACH}\n",
+    "each-in-words": " ".join(f"a\\{character}b" for character in _PUNCTUATION) + "\n",
+    "each-on-its-line": "".join(f"\\{character} x\n" for character in _PUNCTUATION),
+    "each-ending-a-line": "".join(f"x \\{character}\n" for character in _PUNCTUATION),
+    "each-a-paragraph": "".join(f"\\{character}\n\n" for character in _PUNCTUATION),
+    "each-in-a-list": "".join(f"- \\{character} i\\{character}\n" for character in _PUNCTUATION),
+    "each-in-a-quote": "".join(f"> \\{character} s\\{character}\n" for character in _PUNCTUATION),
+    "each-in-a-heading": "".join(
+        f"# \\{character} title \\{character}\n\n" for character in "#*_`[<$\\|"
+    ),
+    "each-in-a-table": "| a | b |\n|---|---|\n"
+    + "".join(f"| \\{character} | x\\{character}y |\n" for character in _PUNCTUATION)
+    + "\nafter\n",
+    "paths": (
+        "C:\\_work\\*.log and foo\\.py and \\\\server\\share\n"
+        "\n\\\\\\\\four\\\\ and \\\\\\three\n"
+    ),
+    "hard-breaks": (
+        "a\\\nb\\\n   c\\\n\nd\\\\\ne \\\n\n- item\\\n"
+        "  more\\\n- next\\\n\n> quoted\\\n> on\\\nlazy\\\n"
+    ),
+    "ends-in-one": "the last character is one \\",
+    "ends-in-two": "the last two \\\\",
+    "ends-in-a-break": "a line\\\n",
+    "emphasis": "\\*a\\* *b\\** **c\\*\\*** \\**d*\\* \\_e\\_ *f\\\n g*\n",
+    "links": (
+        "[a\\]b](u\\)v 'ti\\'tle') \\[c\\](d) [e](C:\\_x) "
+        "<http://h/\\*> \\<http://i/j\\> ![k\\]](l\\))\n"
+    ),
+    "html": "\\<div> <b\\> a \\<!-- b --> <!-- \\-\\-> c\n\n\\<div>\nblock\\\n</div\\>\n",
+    "code": (
+        "`a\\`b` ``c\\`` \\`d\\` `e\\\n f`\n\n```in\\*fo\n"
+        "\\*code\\\n```\n\n    indented\\*\\\n\n~~~\\~\n\\~~~\n~~~\n"
+    ),
+    "fence-escaped": "\\```\nnot code \\*\n\\```\n\n\\~~~\nnor this\n",
+    "blocks-escaped": (
+        "\\# not a heading\n\n\\- not an item\n\\> not a quote\n"
+        "\n1\\. not numbered\n\n\\---\n\n\\| a | b |\n|---|---|\n"
+    ),
+    "table": (
+        "| a\\|b | `c\\|d` |\n|---|---|\n| e\\\\|f | g\\*h |\n"
+        "| \\| | \\\\ |\n| x \\\n| y\\ | z\\\\\n\nafter\\|\n"
+    ),
+    "table-in-quote": "> | a\\|b | c |\n> |---|---|\n> | \\| | \\* |\n> \\| lazy\n\nend\n",
+    "math": (
+        "\\$5 and $x$ and \\$y$, $a\\$b$ then $$c\\$$$ and \\$$d$$\n"
+        "\n$$\ne\\$\\\n$$\n\n\\$$\nnot display\n\\$$\n"
+    ),
+    "nested": (
+        "- > \\* a\\\n  > b\\|\n\n  \\- c\n\n- d\n" "  - \\[e\\]\\\n    f\n\n    \\```\n1. g\\.\n"
+    ),
+    "everything": (
+        "# A \\<b>title</b\\> with \\**/*.py\n\n"
+        "See [the \\[doc\\]](http://d/x 'T\\'') and !\\[an image](http://i/y.png) and \\<http://a/z>.\n"
+        "<!-- hidden\\?\n\n"
+        "- rm \\**/*.py and \\*bold\\*\\\n  more\n- <div>\\\n  [in](http://l/1\\))\n\n"
+        "| [cell\\|](http://c/1) | **/\\* |\n|---|---|\n| <td\\> | \\![i](http://i/2) |\n"
+        "\\<div>\n\n```py\\*\n**/* <b> [x](y) \\\n```\n\nlast \\*.md line \\$x$ and 2\\*3\\*4\\\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(BACKSLASH_CORPUS))
+def test_a_source_with_backslashes_streams_as_one_parse_after_every_piece(name: str) -> None:
+    """
+    Under the option alone and with every option: a character at a time
+    (every backslash at a piece boundary), two at a time from either parity,
+    and by the line, with math and without. With each other option in turn:
+    a character at a time with math, and by the line without.
+    """
+    source = BACKSLASH_CORPUS[name]
+    for reader in (_WRITTEN, EVERY):
+        for math in (True, False):
+            for chunk in (1, 2, 0):
+                _replay(source, chunk, reader, math=math)
+            _replay(" " + source, 2, reader, math=math)
+    others = [field.name for field in dataclasses.fields(ReaderOptions)]
+    others.remove("backslashes_as_written")
+    assert len(others) == 5
+    for other in others:
+        reader = replace(_WRITTEN, **{other: True})
+        _replay(source, 1, reader, math=True)
+        _replay(source, 0, reader, math=False)
+
+
+def test_the_backslash_corpus_is_read_differently_with_the_option_on() -> None:
+    """
+    What makes the test above mean something: every source reads differently
+    but the two that end in a backslash with nothing after it to escape or
+    to break before.
+    """
+    same = [
+        name for name, source in BACKSLASH_CORPUS.items() if _read(source) == _read(source, None)
+    ]
+    assert same == ["ends-in-one", "ends-in-a-break"], same
+    assert len(BACKSLASH_CORPUS) == 25
+
+
+@pytest.mark.parametrize("name", sorted(HTML_CORPUS))
+def test_the_html_corpus_streams_with_backslashes_as_written_too(name: str) -> None:
+    for options in (_WRITTEN, EVERY):
+        for chunk in (1, 0):
+            _replay(HTML_CORPUS[name], chunk, options)
+
+
+@pytest.mark.parametrize("name", ["ADVERSARIAL", "DOCUMENTS", "REVIEW_5", "TABLES"])
+def test_the_sources_the_stream_is_held_to_stream_with_backslashes_as_written_too(
+    name: str,
+) -> None:
+    for source in material_frozen.corpora()[name].values():
+        if len(source) < 150:
+            _replay(source, 1, EVERY)
+        _replay(source, 0, _WRITTEN)
+
+
+def test_nested_and_long_sources_resume_correctly_with_backslashes_as_written() -> None:
+    for source in markdown_tests.NESTED_SOURCES:
+        _replay(source, 1, EVERY)
+        _replay(source, 0, _WRITTEN)
+    corpora = material_frozen.corpora()
+    for head, unit in corpora["LONG"].values():
+        source = head + "".join(unit.format(n=number) for number in range(1, 9))
+        _replay(source, 7, EVERY)
+    for head, unit, after in corpora["LEAVING"].values():
+        _replay(head + unit * 3 + after, 1, EVERY)
+
+
+def test_generated_sources_with_backslashes_stream_as_one_parse() -> None:
+    """
+    Lines drawn at random from the HTML fragments and from ones that put a
+    backslash where a block or a span would start or end. Seeded: the same
+    80 sources every run.
+    """
+    fragments = [
+        *_FRAGMENTS,
+        "\\# not a head\n",
+        "- item \\*\\\n",
+        "> quote\\\n",
+        "\\> \\- \\1. x\n",
+        "| a\\|b | \\\\ |\n",
+        "\\| a | b |\n",
+        "\\```\n",
+        "```in\\fo\n",
+        "text \\*a\\* *b\\* c\\\n",
+        "\\$x$ and $y\\$ z$\n",
+        "\\$$\n",
+        "a\\\\\n",
+        "[l\\]](u\\)) \\[m\\](n)\n",
+        "\\<div>\n",
+        "<!-- \\-->\n",
+        "\\\n",
+    ]
+    rng = random.Random(20261013)
+    for _ in range(80):
+        source = "".join(rng.choice(fragments) for _ in range(rng.randint(3, 14)))
+        if rng.random() < 0.5:
+            source = source.rstrip("\n")
+        options = rng.choice([_WRITTEN, EVERY])
+        _replay(source, rng.choice([1, 2, 5, 0]), options)
+
+
+@pytest.mark.parametrize("path", _DEMOS, ids=lambda p: str(p.relative_to(_ROOT / "demo")))
+def test_a_demo_streams_as_one_parse_with_every_option_there_is(path: Path) -> None:
+    _replay(path.read_text(encoding="utf-8"), 61, EVERY)

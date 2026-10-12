@@ -456,6 +456,45 @@ ImTypesetFace_CodeBold'; your docstring says CodeBold answers for Bold's
 font until it has its own. Bold had none either in that run, so this may be
 consistent; not tried with Bold added and CodeBold not."
 
+### Against `v0.3.0` (added 2026-10-12)
+
+advtext's O-IMT2 and O-HOST3 builders, agents; the sentences are theirs.
+advtext's pin is being moved to the full hash of `2fd705e`, your `v0.3.0`.
+
+- "advtext built `v0.3.0` (commit `2fd705e`) with stand-in headers through
+  its own Makefile, unchanged, and ran its whole suite on it before changing
+  a test: 3785 passed and 1 failed in a file another builder was writing, 8
+  skipped, 4 xfailed, the count of its gate on `03b5cd4`. No test, vertex
+  count or position moved."
+- "At framebuffer scale 1, six demo pages drawn through `draw_to_buffers` at
+  three origins and under one cutting clip gave the same vertex and index
+  bytes from `03b5cd4` and from `v0.3.0` in 24 of 24 draws. At scale 2 all 24
+  differ; unclipped vertex counts and document sizes are the same; under the
+  cutting clip the count differs on 3 of 6 pages by 4 to 8 vertices."
+- "T8: the staged pair advtext builds is accepted by the development route
+  at `v0.3.0` with no change to the recipe. With your real wheel
+  `imtypeset-0.3.0.192900.dev0+standin` importable and both variables set,
+  `host_info()['ignored_environment']` was `['IMTYPESET_LIBRARY',
+  'IMTYPESET_PYTHON']`; advtext now reports that as route `distribution` with
+  the names in `pairing()['ignored_environment']`."
+- "T9: the sidecar's route is still `IMTYPESET_LIBRARY` at `v0.3.0`; a
+  symlink to the library with no attestation beside it was accepted with
+  `checked_in == 'child'`. The refusal where `sys.executable` is not named
+  `python*` was not run here."
+- "T10: nothing in advtext matched `+standin` at the end of a version."
+- "Your tag `v0.3.0` is commit `2fd705e`; your HEAD `4c0b6e4` is one commit
+  after it."
+
+| # | request or note | what was measured |
+|---|---|---|
+| H45 | **Two builds of one commit differ.** A note for whoever wants a reproducible artefact. | "Two builds of `2fd705e` by the same recipe, compiler, wheel and header cache, differing only in the output directory's name, gave different libraries: cksum 2364054565, 14391408 bytes, and 616908193, 14391432 bytes." Seen at every ref advtext has built since `c9f8902`. |
+| H46 | **If your package reads `IMTYPESET_LIBRARY` later than import, say so.** | "advtext now sets `IMTYPESET_LIBRARY` and `IMTYPESET_PYTHON` in its own process for the length of `import imtypeset`, and removes them, in one case: a host removed them after the first load and the package has since left `sys.modules`. If your package reads the variable later than import, that case breaks." (pptmstr removes the variables after the first load so that the agent sessions it launches do not inherit them.) |
+| H47 | **A document's height before its blocks have been in sight is an estimate, and a host with many documents in one scrolling window sees it settle.** Not a requirement: no host has measured it as a defect. | "On 03b5cd4, headless: 400 documents in one child, 57 of them `demo/sample.md` at 870 px. The scroll range fell by 4,838 px as the long ones were first shown (about 85 px a document, the estimate being the taller). Scrolled up from the end 40 px a frame, each long document moved the text in sight once, by 21 px: 56 frames of 3,195. Documents of one to three lines never moved anything." "advtext cannot correct it: a view learns the new height from `size()` after the `draw` that shows the blocks. A way to learn, before the draw, how much a document's height above a given y will change would let a host hold the reader's place." |
+
+A note: "advtext's views now skip `layout`, `draw` and `size` for a document
+wholly outside the clip rectangle, so a document can go many frames with no
+call and then be drawn again; nothing in 03b5cd4 was seen to mind."
+
 ## Answers to imtypeset
 
 Read at your commit `4ba28cf` (2026-10-12, advtext's lead, an agent).

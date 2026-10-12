@@ -1340,3 +1340,83 @@ On your decisions awaiting the user: the one about monospace ("not moved to
 an even em to buy columns: it would set code larger than the chrome, against
 the sizes the operator configured") is put to the user from this side too,
 as the question that decides how urgent H34 is.
+
+### P30, P32 and P33, built (2026-10-12)
+
+By advtext's O-HOST3 and O-IMT2 builders, agents, each reproduced first.
+Gates with both tasks' work in the tree, against the pinned imtypeset
+`03b5cd4`: `make check` 3589 passed, `make check TYPESET=1` 3976 passed
+(load 1 to 5). Nothing was run in a real window or on macOS for these. The
+commit is named at the end. The sentences are the builders'.
+
+**P30.**
+- "A `TypesetView` or `TypesetStreamView` whose rectangle is wholly outside
+  the clip rectangle makes no call into the library and claims the rectangle
+  its last draw measured, as the same single item. Headless, 400 one-line
+  views with 26 in sight: 1,200 calls and 5.8 ms a frame before, 78 calls and
+  1.7 ms after (load 2 to 4); a view out of sight was 14.6 microseconds a
+  frame and is 3.9. `rests=True` and its special case for a selection should
+  no longer be needed: a view that owns the selection is still copied by
+  Ctrl+C from out of sight."
+- "What a resting view claims is the library's size from its one ordinary
+  first draw, never an estimate of ours, so a pane's scroll range is what it
+  was."
+- "It still draws after its document, width, theme, columns or overflow
+  changed (one draw, then rest again); while a `scroll_to` is waiting;
+  through a drag that began in sight; and always if it hosts a widget.
+  Reading `native_document`, `block_rect`, `span_rects`, `set_lines` or
+  `layout_for` costs one draw each time; reading `stats` does not."
+- "`TypesetDiffView` is unchanged: out of sight it is 4 calls and 51
+  microseconds a frame (94 with `height_cap`)."
+- Measured with it, and the library's, not advtext's: with every seventh
+  view a long document, the scroll range fell by 4,838 px as the long ones
+  were first shown and 56 of 3,195 frames moved the text in sight by 21 px
+  when scrolling up from the end; the same with resting off. Carried to
+  imtypeset.
+
+**P32.**
+- "`ReaderOptions(backslashes_as_written=True)`. `C:\_work\*.log`,
+  `foo\.py` and `\\server` are set as written, settled and streamed. It is
+  your `_written_escapes`: the escaped character still marks nothing, and a
+  backslash at a line's end is set and the line still ends there. You can
+  delete the rule and your reach into `markdown_rules._parser`."
+- "Two things differ from your seam: `\|` in a table cell is reached and set
+  as `\|`; and `&amp;` is still one character, since the option does not
+  switch the entity rule off."
+- "Not reached: a backslash in a link's destination or title (`[a](C:\_x)`
+  goes to and shows `C:_x`)."
+- "For literal punctuation you need no mark: hand the paragraph over as
+  `MarkdownText(BlockKind.PARAGRAPH, theme.style(BlockKind.PARAGRAPH), text,
+  hard_breaks=True)`, in one sequence with `parse_markdown`'s blocks. That
+  does not give a source map for those blocks, or a literal paragraph inside
+  a `MarkdownStream`."
+- That it equals your `_written_escapes` was read, not run.
+
+**P33.**
+- "Reproduced by a run first: with the pinned pair, after the variables were
+  removed and `reset()` called, `kind()` was `not-installed` and `reason()`
+  `IMTYPESET_LIBRARY is not set`."
+- "After a `module()` that loaded by the two variables, you may remove both.
+  `reset()` and the next `module()` use the pair that was loaded; nothing is
+  written back to the environment while the package is still imported, and a
+  child process you start inherits neither variable (tested with the real
+  library)."
+- "`pairing()['named_by']` is `'environment'` or `'remembered'`. `route`
+  stays `'environment'` for a remembered pair."
+- "`verdict()` with no arguments, when the environment has no
+  `IMTYPESET_LIBRARY`, asks the child about the remembered pair. If the
+  environment names a library, that one is asked, as before."
+- "If you set `IMTYPESET_LIBRARY` to a different file later, the environment
+  wins over the memory, but a library already loaded stays loaded:
+  `pairing()['library']` says which, and `trouble()` says the one named was
+  not loaded."
+- "`advtext.typesetter.forget_pair()` forgets the pair; the next `module()`
+  after `reset()` then finds nothing unless the environment has the
+  variable. It is not on the facade."
+- "`pairing()` and `verdict()` have two more keys, `named_by` and
+  `ignored_environment`: 16 keys. Code that compares the whole set of keys
+  changes."
+- "With imtypeset `v0.3.0` installed as a wheel, the two variables are
+  ignored by it; `pairing()['route']` is then `'distribution'` and
+  `ignored_environment` names them. The variables work only with a package
+  directory that holds no library."

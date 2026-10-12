@@ -20,7 +20,7 @@ interface answers neither question for a gallery it draws itself.
 from __future__ import annotations
 
 from advtext.ui.pages import PageSpec
-from advtext.ui.pages.specimen import SectionPage
+from advtext.ui.pages.specimen import SIZES, SectionPage
 
 __all__ = ["PAGE", "FormulaPage"]
 
@@ -32,6 +32,7 @@ class FormulaPage(SectionPage):
 
     SECTION = "Formulas"
     CHILD = "##advtext-formula"
+    NAME = "Formula"
 
 
 PAGE = PageSpec(
@@ -39,5 +40,6 @@ PAGE = PageSpec(
     order=40,
     factory=FormulaPage,
     group="Typesetting",
+    max_count=int(SIZES[-1]),
     caption="imtypeset's gallery of TeX math-mode rules",
 )

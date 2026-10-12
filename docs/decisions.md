@@ -1176,6 +1176,7 @@ are not repeated.
 | | In the tour, the Stream page's replay is fed whole before it is judged | four frames at its own rate were 8 glyphs of its own text, measured |
 | | `advtext.ui.app.DEFAULT_MARKDOWN`, the document an installed wheel shows, was reworded | it said the Python pipeline sets the text. T5-APP left it for the docs pass |
 | | `README.md`'s present-tense sections were rewritten where they named deleted things; its dated paragraphs, and every older section of `docs/status.md` and of this file, were not | a README that tells a reader to run a deleted script is a defect; a dated paragraph is a record |
+| T6-SIZE (after the user ran the demo and asked for a larger or selectable Math page) | The three gallery pages have a *text size* combo of 14, 16, 19, 23 and 28 px and open at 23, where T4-GALLERY's row above says 16. `--tab math:19` opens at 19; an integer not in the set is the nearest that is; above 28 is refused. The section's own sliders are not touched | from the font files: the pushed size is a line height, and a formula's x-height at 16 is 5.89 px, at 19 is 6.99 px and at 23 is 8.46 px against 8.45 px for the Document page's running text; 23 is the smallest whole size that reaches it. In a 1300 x 800 window no section is wider than its pane at any of the five. A combo and not a slider: a change of size is 37 layouts on Specimen, 12 on Formula and 257 on Math, measured |
 
 ### What review was, and what it found
 

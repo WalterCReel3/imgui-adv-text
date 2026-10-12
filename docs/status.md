@@ -234,7 +234,8 @@ Everything. Said as a list so that no line of it reads as checked:
 - Any of the fourteen pages with the library drawing: the text, the
   selection highlight, links, rules, tables and their rules, formulas, the
   diff's bands and gutters, the columns, the marks of a search.
-- The three gallery pages, which are imtypeset's demo sections shown at 16 px
+- The three gallery pages, which are imtypeset's demo sections shown at a size
+  the reader picks (14, 16, 19, 23 or 28 px; 23 as they open, since T6-SIZE)
   where the other team's own pictures were taken at 19.
 - The one line each page draws without the library, in the app's one font.
 - Any of the four examples.

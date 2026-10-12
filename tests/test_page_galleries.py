@@ -12,8 +12,10 @@ Four layers, cheapest first:
    drawing it imports nothing.
 3. **With a stand-in for the library**, in this process (the real one is kept
    out of it: `advtext/typesetter.py`): the section is called once a frame,
-   inside the page's child, at the theme's body size; the counts are the
-   differences of `stats()`; the ways the page gives the section up.
+   inside the page's child, at the page's size; the counts are the
+   differences of `stats()`; the ways the page gives the section up; and
+   the size: the default and why, the combo, the launch integer, and one
+   push for one pop when the section raises.
 4. **The real app in a real window** (`tests/conftest.py::window`), once with
    the library and once without, visiting the three pages in one run.
 
@@ -48,7 +50,13 @@ from advtext.ui.pages import formula as formula_page
 from advtext.ui.pages import mathtext as math_page
 from advtext.ui.pages import specimen as specimen_page
 from advtext.ui.pages import typeset as typeset_page
-from advtext.ui.pages.specimen import STAT_NAMES, SectionPage, why_not
+from advtext.ui.pages.specimen import (
+    DEFAULT_SIZE,
+    SIZES,
+    STAT_NAMES,
+    SectionPage,
+    why_not,
+)
 from advtext.ui.typeset_view import TypesetUnavailable
 from tests.test_typeset_closure import OLD_CORE, THEME, _loaded_by
 
@@ -402,7 +410,7 @@ def library(monkeypatch: pytest.MonkeyPatch) -> Iterator[_Library]:
 
 
 @pytest.mark.parametrize("name", sorted(PAGES))
-def test_the_section_is_called_once_a_frame_in_the_child_at_the_body_size(
+def test_the_section_is_called_once_a_frame_in_the_child_at_the_page_s_size(
     name: str, library: _Library
 ) -> None:
     """
@@ -412,7 +420,7 @@ def test_the_section_is_called_once_a_frame_in_the_child_at_the_body_size(
     _module, cls, section = PAGES[name]
     page = cls(PageContext.build())
     assert page.renderer == "section" and page.reason == ""
-    assert page.title == TITLES[section]
+    assert page.title == TITLES[section] and page.size_px == DEFAULT_SIZE
     assert page.counts == {"paragraphs": 0, "vertices": 0, "layouts": 0}
 
     sizes: list[float] = []
@@ -441,18 +449,205 @@ def test_the_section_is_called_once_a_frame_in_the_child_at_the_body_size(
     ]
 
 
-def test_the_size_is_the_themes_body_size_in_pixels(library: _Library) -> None:
-    from advtext.theme import BlockKind
-    from advtext.units import px_from_sp
+# The size ---------------------------------------------------------------
 
-    context = PageContext.build(px_per_inch=144.0)
-    page = specimen_page.SpecimenPage(context)
-    body = context.theme.style(BlockKind.PARAGRAPH).font.size
-    assert page.size_px == pytest.approx(px_from_sp(body, 144.0), abs=1e-3) and page.size_px > 0.0
-    assert specimen_page.SpecimenPage(PageContext.build()).size_px == 16.0
-    assert page.size_px == pytest.approx(
-        1.5 * specimen_page.SpecimenPage(PageContext.build()).size_px
+
+def test_every_page_opens_at_the_default_which_is_one_of_the_sizes(library: _Library) -> None:
+    assert SIZES == (14.0, 16.0, 19.0, 23.0, 28.0) and DEFAULT_SIZE == 23.0
+    assert DEFAULT_SIZE in SIZES and list(SIZES) == sorted(set(SIZES))
+    for _module, cls, _section in PAGES.values():
+        page = cls(PageContext.build())
+        assert page.size == DEFAULT_SIZE and page.size_px == 23.0
+    # Pixels at 96 to the inch: a denser context pushes more of them.
+    dense = specimen_page.SpecimenPage(PageContext.build(px_per_inch=144.0))
+    assert dense.size == DEFAULT_SIZE and dense.size_px == pytest.approx(34.5)
+
+
+def test_the_default_is_the_smallest_size_whose_formulas_reach_the_document_text_s_x_height() -> (
+    None
+):
+    """
+    The arithmetic behind `DEFAULT_SIZE`, from the font files, so that a change
+    of face says so here. The Document page sets its body at an EmSize of the
+    theme's body size; a section's em is the pushed height times the Regular
+    face's em over its height; a formula is at that em in the math face.
+    """
+    from advtext import fontlib
+    from advtext.primitives import Face, px_from_sp
+    from advtext.theme import BlockKind
+
+    theme = PageContext.build().theme
+    body_em = px_from_sp(theme.style(BlockKind.PARAGRAPH).font.size, theme.px_per_inch)
+    text, math = fontlib._face_data(Face.PROSE), fontlib._face_data(Face.MATH)
+    document_text_x = body_em * text.x_height / text.units_per_em
+
+    def formula_x(pushed: float) -> float:
+        em = fontlib.em_size_for_pixel_height(Face.PROSE, pushed)
+        return em * math.x_height / math.units_per_em
+
+    assert document_text_x == pytest.approx(8.453, abs=0.001)
+    assert formula_x(16.0) == pytest.approx(5.885, abs=0.001)
+    assert formula_x(19.0) == pytest.approx(6.988, abs=0.001)
+    assert formula_x(DEFAULT_SIZE) == pytest.approx(8.459, abs=0.001)
+    assert formula_x(DEFAULT_SIZE) >= document_text_x > formula_x(DEFAULT_SIZE - 1.0)
+    # And 19 is the whole size nearest the one at which the section's text is the Document's.
+    assert body_em / fontlib.em_size_for_pixel_height(Face.PROSE, 1.0) == pytest.approx(18.75)
+
+
+@pytest.fixture
+def pushes(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """
+    Every `imgui.push_font` size and every `imgui.pop_font`, in order, as they are called.
+    """
+    imgui = _imgui()
+    seen: list[Any] = []
+    real_push, real_pop = imgui.push_font, imgui.pop_font
+
+    def push(font: Any, size: float) -> None:
+        seen.append(float(size))
+        real_push(font, size)
+
+    def pop() -> None:
+        seen.append("pop")
+        real_pop()
+
+    monkeypatch.setattr(imgui, "push_font", push)
+    monkeypatch.setattr(imgui, "pop_font", pop)
+    return seen
+
+
+def test_set_size_changes_what_is_pushed_and_it_lasts(library: _Library, pushes: list[Any]) -> None:
+    page = math_page.MathPage(PageContext.build())
+    _frame(page.draw)
+    page.set_size(19.0)
+    for _ in range(3):
+        _frame(page.draw)
+    page.set_size(28.0)
+    _frame(page.draw)
+    assert pushes == [23.0, "pop", 19.0, "pop", 19.0, "pop", 19.0, "pop", 28.0, "pop"]
+    assert [size for _section, size, _window in library.calls] == pytest.approx(
+        [23.0, 19.0, 19.0, 19.0, 28.0]
     )
+    assert page.size == page.size_px == 28.0
+    assert "section=Math size=28.00 " in page.report()[0]
+    assert "at 28 px" in page.line()
+    for refused in (17.0, 0.0, 29.0):
+        with pytest.raises(ValueError, match="not one of the sizes"):
+            page.set_size(refused)
+    assert page.size == 28.0
+
+
+def test_the_combo_sets_the_size_in_the_frame_it_is_picked_in(
+    library: _Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    The widget's answers are stood in for (no mouse here): a combo that is
+    open and whose "19 px" row was clicked. The real, closed combo of the
+    frames before and after changes nothing.
+    """
+    imgui = _imgui()
+    page = math_page.MathPage(PageContext.build())
+    _frame(page.draw)
+    _frame(page.draw)
+    assert page.size == DEFAULT_SIZE
+    asked: list[Any] = []
+
+    def begin_combo(label: str, preview: str, *rest: Any) -> bool:
+        asked.append((label, preview, str(imgui.internal.get_current_window().name)))
+        return True
+
+    def selectable(label: str, selected: bool, *rest: Any) -> tuple[bool, bool]:
+        asked.append((label, selected))
+        return label == "19 px", selected
+
+    with monkeypatch.context() as patch:
+        patch.setattr(imgui, "begin_combo", begin_combo)
+        patch.setattr(imgui, "selectable", selectable)
+        patch.setattr(imgui, "end_combo", lambda: asked.append("end"))
+        _frame(page.draw)
+    label, preview, window = asked[0]
+    assert (label, preview) == ("text size", "23 px")
+    assert math_page.MathPage.CHILD not in window, "the combo is outside the section's child"
+    assert asked[1:] == [
+        ("14 px", False),
+        ("16 px", False),
+        ("19 px", False),
+        ("23 px", True),
+        ("28 px", False),
+        "end",
+    ]
+    assert page.size == 19.0
+    assert library.calls[-1][1] == pytest.approx(19.0), "the same frame"
+    _frame(page.draw)
+    assert page.size == 19.0 and library.calls[-1][1] == pytest.approx(19.0)
+
+
+@pytest.mark.parametrize(
+    "spec, size",
+    [
+        ("math", 23.0),
+        ("math:19", 19.0),
+        ("math:14,debug", 14.0),
+        ("math:28", 28.0),
+        ("math:17", 16.0),
+        ("math:21", 23.0),  # as near 19 as 23: the larger
+        ("math:1", 14.0),
+        ("formula:14", 23.0),  # another page's integer
+    ],
+)
+def test_the_launch_integer_is_the_size(spec: str, size: float, library: _Library) -> None:
+    request = parse_tab_request(spec, discover())
+    page = math_page.MathPage(
+        PageContext.build(
+            request_page=request.tab,
+            request_options=request.options,
+            request_count=request.columns,
+        )
+    )
+    assert page.size == size and page.size in SIZES
+    assert f"size={size:.2f} " in page.report()[0]
+
+
+@pytest.mark.parametrize("name", sorted(PAGES))
+def test_an_integer_above_the_largest_size_is_refused_before_a_window(name: str) -> None:
+    found = {page.name: page for page in discover().pages}
+    assert found[name].max_count == 28 and PAGES[name][1].NAME == name
+    assert parse_tab_request(f"{name.lower()}:28", discover()).columns == 28
+    with pytest.raises(ValueError, match="28"):
+        parse_tab_request(f"{name.lower()}:29", discover())
+
+
+@pytest.mark.parametrize(
+    "error", [ValueError("the section failed"), TypesetUnavailable("switched off")]
+)
+def test_push_and_pop_balance_when_the_section_raises(
+    error: Exception, library: _Library, pushes: list[Any]
+) -> None:
+    """
+    At a size that is not the default, drawn by the page alone (no app to put
+    ImGui's stacks back): one push, one pop, and ImGui's size after the page
+    is what it was before it, whether the page catches the exception or not.
+    """
+    imgui = _imgui()
+    page = math_page.MathPage(PageContext.build())
+    page.set_size(28.0)
+    library.raises = error
+    sizes: list[float] = []
+    raised: list[BaseException] = []
+
+    def draw() -> None:
+        sizes.append(float(imgui.get_font_size()))
+        try:
+            page.draw()
+        except ValueError as exc:
+            raised.append(exc)
+        sizes.append(float(imgui.get_font_size()))
+
+    _frame(draw)
+    assert pushes == [28.0, "pop"] and sizes[0] == sizes[1] != 28.0
+    assert len(library.calls) == 1 and library.calls[0][1] == pytest.approx(28.0)
+    assert raised == ([error] if isinstance(error, ValueError) else [])
+    assert page.size == 28.0, "the size is the page's whatever the section did"
 
 
 def test_a_library_without_the_section_leaves_the_one_line(library: _Library) -> None:
@@ -560,7 +755,8 @@ WANT_LIBRARY = sys.argv[1] == "with"
 ORDER = ("Specimen", "Formula", "Math")
 STAY = 8
 report = {"frames": 0, "pages": {}}
-seen = {"calls": 0, "child": 0, "size": 0.0, "window": ""}
+seen = {"calls": 0, "child": 0, "size": 0.0, "first_size": 0.0, "window": ""}
+PICK_AT = 3
 real_gui = advtext_app.App.gui
 
 
@@ -570,6 +766,7 @@ def watch(demo):
     def shown(section):
         before = imgui.get_window_draw_list().vtx_buffer.size()
         seen["size"] = imgui.get_font_size()
+        seen["first_size"] = seen["first_size"] or seen["size"]
         seen["window"] = imgui.internal.get_current_window().name
         real(section)
         seen["calls"] += 1
@@ -594,6 +791,9 @@ def watched_gui(self):
         if at == 0:
             watch(made._demo)
         report["stats_" + name] = typesetter.module().stats().DrawCalls
+    if step == PICK_AT and name == "Math" and WANT_LIBRARY:
+        # What the combo calls. Frames 1 to 4 were at the default, 5 to 8 are at 19.
+        made.set_size(19.0)
     if step == STAY - 1:
         entry = {
             "current": self.current,
@@ -601,6 +801,7 @@ def watched_gui(self):
             "reason": made.reason,
             "title": made.title,
             "size": made.size_px,
+            "choice": made.size,
             "frames": made.frames,
             "counts": dict(made.counts),
             "report": made.report(),
@@ -611,11 +812,12 @@ def watched_gui(self):
             error = typesetter.module().last_error()
             entry["last_error"] = int(error.code)
         report["pages"][name] = entry
-        seen.update(calls=0, child=0, size=0.0, window="")
+        seen.update(calls=0, child=0, size=0.0, first_size=0.0, window="")
         if at + 1 < len(ORDER):
             self.select(ORDER[at + 1])
         else:
             report["ready"] = typesetter.ready()
+            report["module_after"] = typesetter.module() is not None
             report["trouble"] = typesetter.trouble()
             report["errors"] = sorted(self.page_errors)
             hello_imgui.get_runner_params().app_shall_exit = True
@@ -684,8 +886,11 @@ def test_in_a_real_window_with_the_library_each_page_draws_its_section(
     Counts only. Each section, shown for eight frames as it opens: it was
     called once a frame in the page's child at the page's size; it put
     vertices on that child's draw list; the library says it drew paragraphs
-    and emitted vertices in the last frame; and no page raised. Nobody
-    looked at the window.
+    and emitted vertices in the last frame; and no page raised. Specimen
+    and Formula stay at the default size; the Math page is given 19 after
+    its fourth frame, and the section's next call is at 19. The child
+    asserts `module()` and `ready()` as each page opens, and both are asked
+    again after the last frame. Nobody looked at the window.
     """
     if not os.environ.get(typesetter.LIBRARY_VARIABLE):
         pytest.skip(
@@ -694,6 +899,7 @@ def test_in_a_real_window_with_the_library_each_page_draws_its_section(
         )
     report = _run(window, "with", monkeypatch)
     assert report["imported"] is True and report["ready"] is True
+    assert report["module_after"] is True
     assert report["errors"] == [] and report["trouble"] == ""
     titles = {"Specimen": "Specimen", "Formula": "Formula gallery", "Math": "Math"}
     for name, (_module, cls, section) in PAGES.items():
@@ -707,6 +913,9 @@ def test_in_a_real_window_with_the_library_each_page_draws_its_section(
         assert seen["calls"] == (STAY - 1 if name == "Specimen" else STAY), seen
         assert cls.CHILD in seen["window"]
         assert seen["size"] == pytest.approx(entry["size"]) and entry["size"] > 0.0
+        assert seen["first_size"] == pytest.approx(DEFAULT_SIZE)
+        assert entry["choice"] == (19.0 if name == "Math" else DEFAULT_SIZE)
+        assert entry["size"] == entry["choice"], "the window is at 96 to the inch"
         assert seen["child"] > 0, f"{name}: nothing on the child's draw list"
         assert counts["paragraphs"] > 0 and counts["vertices"] > 0, counts
         assert entry["report"] == [

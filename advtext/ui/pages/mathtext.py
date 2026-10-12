@@ -15,7 +15,10 @@ While `advtext.typesetter.ready()` is false the page is one line saying why
 
 - A *debug overlay* checkbox and a *measure* slider in the header row. The
   section has a Width slider of its own, and a debug checkbox for the one
-  part of it that is a document.
+  part of it that is a document. The header row's one control is the *text
+  size* combo every section page has (`SectionPage`, "The size"): the section
+  has no size control of its own, and everything in it follows the size
+  pushed around it.
 - **A `done` option.** `--tab math:done` used to open the page's old body
   with its stream fed to the end. The section keeps its stream's state inside
   the library and offers no way to set it from outside, so the option and the
@@ -26,7 +29,7 @@ While `advtext.typesetter.ready()` is false the page is one line saying why
 from __future__ import annotations
 
 from advtext.ui.pages import PageSpec
-from advtext.ui.pages.specimen import SectionPage
+from advtext.ui.pages.specimen import SIZES, SectionPage
 
 __all__ = ["PAGE", "MathPage"]
 
@@ -38,6 +41,7 @@ class MathPage(SectionPage):
 
     SECTION = "Math"
     CHILD = "##advtext-math"
+    NAME = "Math"
 
 
 PAGE = PageSpec(
@@ -45,6 +49,7 @@ PAGE = PageSpec(
     order=60,
     factory=MathPage,
     group="Typesetting",
+    max_count=int(SIZES[-1]),
     title="Math in text",
     caption="inline and display formulas from a $...$ subset, in running text and in a stream",
 )

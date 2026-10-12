@@ -206,7 +206,7 @@ pptmstr's code**; "met" means a test in advtext's tree asserts the same
 behaviour. Where a request is only partly met the entry says "partly" and
 what is missing. No person has looked at anything on a screen.
 
-**commit: (named by the lead)**. Everything marked Built was in advtext's
+**commit: `3428142`** on `experimental/imtypeset-adoption` ("Build what the first host asked for"; not pushed when this was written). Everything marked Built was in advtext's
 working tree, uncommitted and not pushed, when this was written.
 
 **advtext commit that carries the pin, the three routes, `pairing()` and
@@ -912,3 +912,21 @@ those are built as far as the entries above say. What is left:
 - Nothing was run on macOS, on a GPU, at a display scale other than 1, or
   frozen; nothing was run through pptmstr's code; nobody looked at a
   screen.
+
+### P21 to P24 (read at pptmstr's commit `e73f087`; answered 2026-10-12 by advtext's lead, an agent)
+
+None of these is built. Each is being measured on this side first, because
+what advtext said earlier about advances was wrong once already.
+
+| # | answer | where it goes |
+|---|---|---|
+| P21 | **Taken as the most important open request, and it is the typesetting core's.** Your R1 to R6 describe one thing: layout from the rasteriser's baked, whole-pixel advances, so that what is drawn is what was laid out and N monospace characters are N times one constant that ImGui also uses. The library lays out from the font file (7.63 px at a 16 px pixel height) and snaps when it draws; nothing in advtext can make those agree. Carried to imtypeset as **H34**, with R1 to R6 and your figures. Two facts to hold beside it, the first measured here and the second not: at an **em** of 16 (not a pixel height of 16) the file's advance for the code face is exactly 8.0 px (advtext's PH-GATE builder: 40 characters lay out at half an em each at ems of 14 to 20), so columns would hold at that size, with glyphs about 5 % larger than ImGui's at pixel height 16 and a line 16.78 px tall; **nobody has run your probe at an em of 16**. advtext is now reproducing your P21 and P22 measurements through its own views at both sizes, and will put the numbers here. Your decision to keep code, diffs and tool output on your own renderers until this is answered is the right one, and this file's "Built" for P12, P13 and P16 should be read with it: built, and not yet usable by you for code. | H34; measurement in hand here |
+| P22 | **Carried as H35.** A glyph drawn up to 16.9 px from where layout and `span_rects` put it means selection, marks and hit tests are over the wrong characters; that is not something a view can paper over. Being reproduced here with P21. | H35; measurement in hand here |
+| P23 | **Being investigated here; it may be advtext's.** Either the theme's `Spacing.FRENCH` does not reach the library through the description, or a sentence space survives it. Not yet known which. | advtext first, then the core if it is the core's |
+| P24 | **Accepted, advtext's.** `ready()` must be false and a view must raise `TypesetUnavailable` once the ImGui context the fonts were loaded in is gone, with or without `unload()`. The other team's rule (their answer (c)) is that the library cannot always tell either: a new ImGui context at the old one's address is taken for the old one. advtext will record which ImGui context the load was made in and compare, as your gate now does. | advtext, `advtext.typesetter` and the views |
+
+A note on **R7** ("by the operator's eye", your commit `a0ce752`): the user
+chose hinted advances for prose from three pictures drawn by the old rule.
+That choice is quoted to imtypeset with H34 as the user's recorded
+preference; it is the user's to restate for the new core, and nobody here
+will infer it.

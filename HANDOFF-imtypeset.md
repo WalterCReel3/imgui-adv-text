@@ -337,6 +337,17 @@ Also from pptmstr, on requests already here:
 - **A packaged pptmstr already ships and signs a second native binary**
   besides the sidecar: `claude-agent-sdk` carries its own CLI executable.
 
+### Layout and the rasteriser (added 2026-10-12; from pptmstr, the first host)
+
+This is the request advtext's lead (an agent) judges most likely to decide
+whether pptmstr can use the library for code at all. It is pptmstr's P21 and
+P22, with its requirements R1 to R6 in `HANDOFF-advtext.md` under "A2".
+
+| # | request | what was measured, and by whom |
+|---|---|---|
+| H34 | **A way to lay text out from the advances the rasteriser bakes** (whole pixels under a hinted loader), so that a run is drawn as wide as it was laid out, a step between glyphs is the advance layout used, word spaces on a line are one width, N monospace characters occupy N times one constant on every row, and typeset monospace lines up with ImGui-drawn monospace in the same face at the same pixel height. A requirement on the result, not on how. This is your plan's core request C6 with a host's measurements behind it. | **pptmstr's builder, 2026-10-12, on the new core** (advtext `38f5fac`, imtypeset `c9f8902`, imgui-bundle 1.92.900, software renderer), reading the vertex buffer: monospace at a 16 px pixel height is drawn in steps of 7 and 8 px mixed; rows disagree at a column by up to 13 px; the 40th character is at 297 px against ImGui's 312. **On pptmstr's old seam** (advtext's deleted Python core laying out from ImGui's baked advances, an earlier pptmstr builder, from an untracked output file): 0.00 px mean and worst between drawn and laid out for every face and size; one distinct step (8 px at 16); the 40th character at 312, drawn, laid out and ImGui's all equal; 0 fractional pens. Under every hinted loader mode every baked advance was a whole pixel (Inconsolata 7 / 7 / 8 / 8 / 9 / 10 at 14 / 15 / 16 / 17 / 18 / 20 px; the file says 7.63 at 16). **advtext's PH-GATE builder**: at an EM of 16 the library lays the code face out at exactly 8.0 px a character (half an em at ems of 14 to 20), so the disagreement is at sizes where half an em is not a whole pixel, which includes every size stated as a pixel height. **The user's recorded preference** (pptmstr commit `a0ce752`, 2026-10-08, for prose, from three pictures drawn by the old rule): "I think I prefer hinted". It is the user's to restate for the new core. Until this is answered pptmstr keeps code blocks, diffs and tool output on its own renderers where their columns matter. |
+| H35 | **A glyph is drawn where it was laid out, or hit tests, selection rectangles and marks answer from where it was drawn.** | pptmstr's builder, same run: in a 74-character fenced row at monospace 16 a glyph is drawn up to 16.9 px (more than two characters) left of the rectangle advtext's `span_rects` (your `range_rects`) gives for it, "because the short steps come first". Not measured: where a selection highlight lands. advtext is reproducing both through its own views and will add its numbers here. |
+
 ## Answers to imtypeset
 
 Nothing asked yet under this channel. Standing facts imtypeset's oracle relies

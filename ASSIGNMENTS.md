@@ -75,16 +75,17 @@ Safe at any time: GitHub redirects the old URL, for the web and for git,
 until a new repository is created under the old name. So do not reuse
 `imgui-adv-text`.
 
-- [ ] GitHub → the repository → **Settings → General → Repository name** →
-      `imscribe`.
-- [ ] Point the local checkout at the new URL:
+- [x] GitHub → the repository → **Settings → General → Repository name** →
+      `imscribe`. *(Done 2026-10-13; the session set `origin` to the new URL
+      and verified it.)*
+- [x] Point the local checkout at the new URL (done by the session):
 
       ```sh
       cd ~/Source/imgui-adv-text
       git remote set-url origin git@github.com:WalterCReel3/imscribe.git
       ```
 
-- [ ] **Tell this session it is done.** It then changes the URL in both
+- [x] **Tell this session it is done.** It then changes the URL in both
       handoff files, in the package metadata and in the README, and the other
       two sessions pick it up from there.
 - [ ] **Do NOT rename the local folder yet.** `~/Source/imgui-adv-text` is

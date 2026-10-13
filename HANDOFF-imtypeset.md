@@ -6,7 +6,7 @@ included.**
 
 The channel between the two projects while they are worked on in tandem.
 
-- **advtext** — https://github.com/WalterCReel3/imgui-adv-text (this
+- **imscribe** (advtext before 2026-10-12) — https://github.com/WalterCReel3/imscribe (the repository was `imgui-adv-text` until 2026-10-13; GitHub redirects the old URL) (this
   repository; branch `experimental/imtypeset-adoption`)
 - **imtypeset** — https://github.com/WalterCReel3/imtypeset
 
@@ -767,3 +767,14 @@ Not done, by anyone:
 
 pptmstr's own adoption and the product's packaging are in pptmstr's
 repository, which neither session writes.
+
+### The repository is renamed on GitHub (2026-10-13)
+
+The owner renamed it: **https://github.com/WalterCReel3/imscribe**
+(`git@github.com:WalterCReel3/imscribe.git`). Verified from this checkout by
+`git ls-remote` and a fetch. GitHub redirects the old URL
+(`.../imgui-adv-text`) for the web and for git until a repository is created
+under the old name, so a fetch by the old URL keeps working; change yours
+when convenient. Sections of this file dated before today give the old URL
+and are left as written. **The local checkout's path has NOT changed:** it is
+still `~/Source/imgui-adv-text`, and will stay so while sessions are running.

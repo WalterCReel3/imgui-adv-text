@@ -893,3 +893,14 @@ not investigated.
 | # | request | the measurement behind it | state |
 |---|---|---|---|
 | H52 | **Every wheel of a release declares one Requires-Python** (`>=3.11,<3.15`, or whatever range the release has wheels for), and a release with that fixed is published (0.4.2 or a post-release; files on PyPI cannot be replaced). | Run by imscribe's lead, 2026-10-14: `pip download --no-deps --only-binary=:all: --platform macosx_14_0_arm64 --implementation cp --python-version V "imtypeset==0.4.1.192900"` succeeds for 3.11 and fails "No matching distribution" for 3.12 and 3.13. PyPI's JSON lists `requires_python` `==3.11.*` on all eight files, the cp312 to cp314 ones included. Your `tools/wheel/build_wheel.py` writes `Requires-Python: =={python}.*` per wheel (and `tools/wheel/check_wheel.py` requires it); from what is known of PyPI (not read in its source today), it keeps the release's Requires-Python from the first file uploaded and pip filters every file by it. Found by the owner: `pip install` of imscribe on an Apple Silicon Mac with a newer Python answered "No matching distribution of imtypeset". Workaround meanwhile: Python 3.11. imscribe's marker (`python_version >= '3.11' and < '3.15'`) is unchanged and right once this is fixed. | open |
+
+### The owner on a Mac (2026-10-14), for H1, H17 and H19
+
+The owner ran imscribe 0.2.0b1 with your 0.4.1.192900 wheel from PyPI on
+Apple Silicon, macOS 26.7, CPython 3.11.15 (3.12 could not install it: H52).
+The demo ran without a crash and the diff page drew through the library at
+0.21 ms a frame (imscribe's `shot.py`). In the owner's words: "the sharpness
+looks very good on retina. Reflow is snappy as well." That is the first look
+on a Mac at what H19 built; nothing was measured on it. A live window resize
+stretches the last frame until release; the owner reproduced that in other
+Python ImGui applications, so it is not yours or imscribe's.

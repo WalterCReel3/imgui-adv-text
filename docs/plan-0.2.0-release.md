@@ -94,11 +94,11 @@ In this order. A1 to A4 are independent except where files overlap.
     `/proc/loadavg`, which macOS lacks (fixed, `os.getloadavg()`; the Mac
     rerun not yet done). Open from it:
     - **Live resize on macOS stretches the last frame and reflows only on
-      release** (the owner saw it). The lead's reading, not verified: during
-      a live resize Cocoa holds the event loop and the GLFW backend draws no
-      new frame unless a refresh callback does; likely hello_imgui's or
-      GLFW's, not imscribe's. Check whether hello_imgui has a setting for it
-      before reporting upstream.
+      release.** Not imscribe's: the owner, 2026-10-14, "Verified with other
+      python ImGui apps." The owner may start separate research into it.
+    - On Retina, the owner: "the sharpness looks very good on retina. Reflow
+      is snappy as well." (imtypeset's H19, Retina density, seen on a Mac
+      for the first time.)
     - `scripts/shot.py` needs numpy, which is in the `dev` extra only; the
       owner ran it before installing the extra. Make it say so in one
       sentence when numpy is absent.

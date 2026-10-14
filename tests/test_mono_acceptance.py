@@ -150,7 +150,7 @@ WINDOW = (2500.0, 980.0)
 NATIVE_INK = 0x30FFFFFF
 
 def loadavg():
-    return open("/proc/loadavg").read().split()[:3]
+    return ["%.2f" % x for x in __import__("os").getloadavg()]
 
 def half_up(value):
     return float(math.floor(value + 0.5))

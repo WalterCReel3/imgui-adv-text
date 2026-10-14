@@ -62,7 +62,7 @@ from imscribe.ui.typeset_stream_view import TypesetStreamView
 from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
 
 report = {"module": typesetter.module() is not None,
-          "load_start": open("/proc/loadavg").read().split()[:3]}
+          "load_start": ["%.2f" % x for x in __import__("os").getloadavg()]}
 imgui.create_context()
 io = imgui.get_io()
 io.display_size = imgui.ImVec2(900.0, 700.0)
@@ -431,7 +431,7 @@ try:
     report["gone"] = "drew"
 except TypesetUnavailable as exc:
     report["gone"] = "TypesetUnavailable"
-report["load_end"] = open("/proc/loadavg").read().split()[:3]
+report["load_end"] = ["%.2f" % x for x in __import__("os").getloadavg()]
 print("REPORT " + json.dumps(report))
 """
 

@@ -427,7 +427,7 @@ from imscribe.ui.pages.columns import ColumnsPage
 
 SIZE = (1300.0, 800.0)
 report = {"module": typesetter.module() is not None,
-          "load_start": open("/proc/loadavg").read().split()[:3]}
+          "load_start": ["%.2f" % x for x in __import__("os").getloadavg()]}
 imgui.create_context()
 io = imgui.get_io()
 io.display_size = imgui.ImVec2(*SIZE)
@@ -495,7 +495,7 @@ def ranges(view):
 
 CHILD_EPILOGUE = r"""
 report["trouble"] = typesetter.trouble()
-report["load_end"] = open("/proc/loadavg").read().split()[:3]
+report["load_end"] = ["%.2f" % x for x in __import__("os").getloadavg()]
 print("REPORT " + json.dumps(report))
 """
 

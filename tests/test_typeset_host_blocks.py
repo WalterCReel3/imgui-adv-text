@@ -628,7 +628,7 @@ from imscribe.ui.typeset_stream_view import TypesetStreamView
 from imscribe.ui.typeset_view import CODE_OVERFLOWS, TypesetUnavailable, TypesetView
 
 report = {"module": typesetter.module() is not None,
-          "load_start": open("/proc/loadavg").read().split()[:3]}
+          "load_start": ["%.2f" % x for x in __import__("os").getloadavg()]}
 imgui.create_context()
 io = imgui.get_io()
 io.display_size = imgui.ImVec2(900.0, 700.0)
@@ -1018,7 +1018,7 @@ view.close()
 report["trouble"] = typesetter.trouble()
 report["module_at_end"] = typesetter.module() is not None
 report["ready_at_end"] = typesetter.ready()
-report["load_end"] = open("/proc/loadavg").read().split()[:3]
+report["load_end"] = ["%.2f" % x for x in __import__("os").getloadavg()]
 print("REPORT " + json.dumps(report))
 """
 
@@ -1417,7 +1417,7 @@ PARKED = (700.0, 700.0)
 PARAGRAPH = "some prose that is long enough to be broken into lines at the width of the pane\n\n"
 SOURCE = PARAGRAPH + "```\nshort\n" + "x" * 400 + "\n```\n\n" + PARAGRAPH
 theme = Theme.build()
-report = {"frames": {}, "load_start": open("/proc/loadavg").read().split()[:3]}
+report = {"frames": {}, "load_start": ["%.2f" % x for x in __import__("os").getloadavg()]}
 state = {"n": 0, "view": None, "at": {}}
 
 def load_fonts():
@@ -1512,7 +1512,7 @@ runner.callbacks.pre_new_frame = pre_new_frame
 runner.callbacks.before_exit = before_exit
 immapp.run(runner)
 report["frame_count"] = state["n"]
-report["load_end"] = open("/proc/loadavg").read().split()[:3]
+report["load_end"] = ["%.2f" % x for x in __import__("os").getloadavg()]
 print("REPORT " + json.dumps(report))
 """
 

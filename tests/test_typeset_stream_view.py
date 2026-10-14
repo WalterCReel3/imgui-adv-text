@@ -953,7 +953,7 @@ CHUNK = int(sys.argv[2])
 REPEAT = int(sys.argv[3])
 
 def loadavg():
-    return open("/proc/loadavg").read().split()[:3]
+    return ["%.2f" % x for x in __import__("os").getloadavg()]
 
 source = (ROOT / "demo" / "sample.md").read_text(encoding="utf-8") * REPEAT
 pieces = [source[at:at + CHUNK] for at in range(0, len(source), CHUNK)]

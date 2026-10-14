@@ -1130,7 +1130,7 @@ PARKED = (5.0, 695.0)
 UNIFIED, SIDE = DiffLayout.UNIFIED, DiffLayout.SIDE_BY_SIDE
 
 def loadavg():
-    return open("/proc/loadavg").read().split()[:3]
+    return ["%.2f" % x for x in __import__("os").getloadavg()]
 
 class Counting:
     # Stands in front of the ctypes library and writes down each call made through it.
@@ -2768,7 +2768,7 @@ from imscribe.ui.typeset_hosts import HostedDiff
 
 LONG, VERDICT = sys.argv[1], sys.argv[2]
 POS = (10.0, 10.0)
-report = {"load": open("/proc/loadavg").read().split()[:3]}
+report = {"load": ["%.2f" % x for x in __import__("os").getloadavg()]}
 calls = []
 state = {"n": 0, "scene": None, "last": None, "done": False, "final": None}
 

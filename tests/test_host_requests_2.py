@@ -481,7 +481,7 @@ from imscribe.ui.typeset_stream_view import TypesetStreamView
 from imscribe.ui.typeset_view import TypesetView
 
 report = {"module": typesetter.module() is not None,
-          "load_start": open("/proc/loadavg").read().split()[:3]}
+          "load_start": ["%.2f" % x for x in __import__("os").getloadavg()]}
 imgui.create_context()
 io = imgui.get_io()
 io.display_size = imgui.ImVec2(900.0, 700.0)
@@ -795,7 +795,7 @@ report["p29"]["recipe"] = {"texts": list(settled.texts), "copy": settled.selecte
 report["module_at_end"] = typesetter.module() is not None
 report["ready_at_end"] = typesetter.ready()
 report["reason_at_end"] = typesetter.reason()
-report["load_end"] = open("/proc/loadavg").read().split()[:3]
+report["load_end"] = ["%.2f" % x for x in __import__("os").getloadavg()]
 print("REPORT " + json.dumps(report))
 """
 

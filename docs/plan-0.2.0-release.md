@@ -82,6 +82,28 @@ In this order. A1 to A4 are independent except where files overlap.
     the package, so an installed wheel's demo has no documents; only a
     checkout installed with `pip install -e .` shows them.
 
+11. **The owner's first macOS run (2026-10-14).** Apple Silicon, macOS
+    26.7, CPython 3.11.15 (3.12 and later cannot install imtypeset 0.4.1
+    from PyPI: H52). Installed from PyPI with `pip install -e .` at
+    `v0.2.0b1`; the demo ran without a crash, the owner's words: "worked
+    without crash and took the stress test well"; Cmd+C copied in every
+    selectable page including the diffs; `shot.py` drew the Diff page with
+    `TypesetDiffView (imtypeset)` at 0.21 ms a frame. Suite: 25 failures,
+    3 in `tests/test_typeset_host_blocks.py` and the rest in
+    `tests/test_typeset_view.py`; the owner found the cause: tests read
+    `/proc/loadavg`, which macOS lacks (fixed, `os.getloadavg()`; the Mac
+    rerun not yet done). Open from it:
+    - **Live resize on macOS stretches the last frame and reflows only on
+      release** (the owner saw it). The lead's reading, not verified: during
+      a live resize Cocoa holds the event loop and the GLFW backend draws no
+      new frame unless a refresh callback does; likely hello_imgui's or
+      GLFW's, not imscribe's. Check whether hello_imgui has a setting for it
+      before reporting upstream.
+    - `scripts/shot.py` needs numpy, which is in the `dev` extra only; the
+      owner ran it before installing the extra. Make it say so in one
+      sentence when numpy is absent.
+    - The demo's help text says "Ctrl+C" on macOS, where the key is Cmd+C.
+
 ### B. The owner's
 
 1. **Look at it in a window:** `make run`; the Diff page, a fenced code

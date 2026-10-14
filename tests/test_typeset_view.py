@@ -181,7 +181,7 @@ PARKED = (300.0, 700.0)   # in the application's window, below the ImGui one
 OVER = (300.0, 200.0)     # on the text
 
 def loadavg():
-    return open("/proc/loadavg").read().split()[:3]
+    return ["%.2f" % x for x in __import__("os").getloadavg()]
 
 class Counting:
     # Stands in front of the ctypes library and writes down each call made through it.
@@ -1261,7 +1261,7 @@ ROOT = Path(sys.argv[1])
 sys.path.insert(0, str(ROOT / "tests"))
 import material_frozen
 report = {"module": typesetter.module() is not None,
-          "load_start": open("/proc/loadavg").read().split()[:3]}
+          "load_start": ["%.2f" % x for x in __import__("os").getloadavg()]}
 context = imgui.create_context()
 io = imgui.get_io()
 io.display_size = imgui.ImVec2(900.0, 700.0)
@@ -1655,7 +1655,7 @@ def another(n):
 report["timing"]["new_view_ms_then_frame_ms"] = switch(another)
 report["trouble"] = typesetter.trouble()
 report["module_at_end"] = typesetter.module() is not None
-report["load_end"] = open("/proc/loadavg").read().split()[:3]
+report["load_end"] = ["%.2f" % x for x in __import__("os").getloadavg()]
 print("REPORT " + json.dumps(report))
 """
 
@@ -1956,7 +1956,7 @@ from imscribe.units import px_from_sp, sp_from_px
 ROOT = Path(sys.argv[1])
 WIDTH = 684.0
 report = {"module": typesetter.module() is not None,
-          "load_start": open("/proc/loadavg").read().split()[:3]}
+          "load_start": ["%.2f" % x for x in __import__("os").getloadavg()]}
 imgui.create_context()
 io = imgui.get_io()
 io.display_size = imgui.ImVec2(900.0, 700.0)
@@ -2299,7 +2299,7 @@ frame(view)
 report["reloaded"] = view.table_geometry(table).row_count
 report["trouble"] = typesetter.trouble()
 report["module_at_end"] = typesetter.module() is not None
-report["load_end"] = open("/proc/loadavg").read().split()[:3]
+report["load_end"] = ["%.2f" % x for x in __import__("os").getloadavg()]
 print("REPORT " + json.dumps(report))
 """
 
@@ -2580,7 +2580,7 @@ ROOT = Path(sys.argv[1])
 WIDTH = 900.0
 PANE = (1240.0, 640.0)
 report = {"module": typesetter.module() is not None,
-          "load_start": open("/proc/loadavg").read().split()[:3]}
+          "load_start": ["%.2f" % x for x in __import__("os").getloadavg()]}
 imgui.create_context()
 io = imgui.get_io()
 io.display_size = imgui.ImVec2(1300.0, 700.0)
@@ -2967,7 +2967,7 @@ streamed.close()
 
 report["trouble"] = typesetter.trouble()
 report["module_at_end"] = typesetter.module() is not None
-report["load_end"] = open("/proc/loadavg").read().split()[:3]
+report["load_end"] = ["%.2f" % x for x in __import__("os").getloadavg()]
 print("REPORT " + json.dumps(report))
 """
 

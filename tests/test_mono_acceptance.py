@@ -3,12 +3,13 @@ Monospace on the pixel grid: what "fixed" means, for the diff view and for code 
 
 pptmstr, the first host, measured it (its `HANDOFF-advtext.md`, A2: R1 to R6,
 and requests P21 and P22; `scripts/measure_typeset_diff.py` is its probe): at
-the pixel heights a host sets text at, imtypeset lays the code face out at the
-font file's advance (7.626 px at a 16 px height), draws on whole pixels, and
-so a row is a mix of 7 and 8 px steps, the 40th character is 15 px from where
-Dear ImGui puts it, and a point on a drawn glyph is answered as a neighbouring
-character. The typesetting core's answer is its H34 and H35
-(`HANDOFF-imtypeset.md`). This file is the acceptance test for both sides.
+the pixel heights a host sets text at, imtypeset 0.3 laid the code face out at
+the font file's advance (7.626 px at a 16 px height), drew on whole pixels,
+and so a row was a mix of 7 and 8 px steps, the 40th character was 15 px from
+where Dear ImGui puts it, and a point on a drawn glyph was answered as a
+neighbouring character. The typesetting core's answer was its H34 and H35
+(`HANDOFF-imtypeset.md`), done in imtypeset 0.4. This file is the acceptance
+test for both sides, **and since imtypeset 0.4.1 every page of it passes**.
 
 **What is asserted, of every page** (a page is one view at one pixel height;
 everything is read from the window's vertex buffer and the library's own
@@ -22,31 +23,37 @@ answers, in a real window, and no pixel is read):
   copy of the same file, both at the page's pixel height;
 - **R1 / P22** every glyph's pen within 0.5 px of the left edge of the
   rectangle the library answers for that character (`range_rects`);
-- **hit** a `hit_test` at the centre of each drawn glyph answers that
-  character;
+- **hit** a `hit_test` a quarter of a cell right of a drawn glyph's pen
+  answers the caret before it and three quarters the caret after (the
+  library answers the nearest caret);
 - **selection** the fill drawn for characters 21 to 40 of the 74-character
   row has its edges on the pens of characters 21 and 41;
 - **R6** no pen and no quad corner off the pixel grid, no bitmap resampled.
 
-**Three kinds of page.**
+**Two kinds of page**, each at pixel heights 12 to 24:
 
-1. `TypesetDiffView(..., cell="pixel")`, unified and side by side, at pixel
-   heights 12 to 24, built as pptmstr builds its diff (a theme whose code
-   style is sized by pixel height with a pitch of its own). **These pass**:
-   the view chooses the em at which the face's advance is the whole pixel
-   Dear ImGui draws it at, and keeps the pitch
-   (`imscribe.ui.typeset_diff_view`, "A whole-pixel cell").
-2. The same view with the default cell (`cell="font"`), at 14 to 20.
-3. A fenced code block in a `TypesetView` at a pixel height, at 14 to 20.
+1. `TypesetDiffView` as a host gets it -- nothing passed for the cell --
+   unified and side by side, built as pptmstr builds its diff (a theme whose
+   code style is sized by pixel height with a pitch of its own); and at 13,
+   16 and 22 in a view too narrow for its longest row, scrolled sideways,
+   pressed and dragged.
+2. A fenced code block in a `TypesetView` at a pixel height.
 
-**Kinds 2 and 3 fail today, by measurement, and are strict xfails**: they are
-what imtypeset's H34 / H35 work must turn green, and the day a library that
-does is pinned here these tests XPASS, the suite goes red, and the marks come
-off. Each xfail's reason names the request and the figure measured on
-imtypeset v0.3.0. R6 holds on every page today and is asserted outright.
+**The history, because the tests' names changed with it.** On imtypeset
+v0.3.0 only a third kind passed: the diff view with `cell="pixel"`, an option
+that drew the face at another em so that its advance was a whole pixel
+(`test_pixel_cell_*`, 26 pages). The diff view's default cell and the fence
+were 105 strict xfails at 14 to 20 (`test_core_*`: five assertions on 21
+pages), written to go red the day a library that mended H34 and H35 was
+pinned. On 2026-10-13, on imtypeset 0.4.1, all 105 XPASSed. The marks came
+off, the option was deprecated (it is accepted and ignored: the tests at the
+end of this file), the two kinds are held to the same assertions at 12 to 24,
+and the tests are named for what they assert.
 
 The numbers behind every sentence here are in
-`.concerns/D-CELL--builder--result.md`. `make test TYPESET=1`.
+`.concerns/D-CELL--builder--result.md` (v0.3.0) and
+`.concerns/ADOPT-API--builder--result.md` (0.4.1). They need the library:
+an installed imtypeset, or `make test TYPESET=1`.
 """
 
 from __future__ import annotations
@@ -65,36 +72,17 @@ from imscribe import typesetter
 _ROOT = Path(__file__).resolve().parent.parent
 
 PIXEL_HEIGHTS = tuple(range(12, 25))
-"""The pixel heights the whole-pixel cell is held at: 12 to 24."""
-
-CORE_HEIGHTS = tuple(range(14, 21))
-"""The pixel heights the typesetting core's fix is asked for at: pptmstr's 14 to 20."""
+"""The pixel heights every page is held at: 12 to 24 (pptmstr's own are 14 to 20)."""
 
 ACT_HEIGHTS = (13, 16, 22)
 """
-The pixel heights a scroll, a press and a drag are run at on the whole-pixel
-cell: one where the em shrinks, one where it grows, one where the cell is not
-the laid-out advance rounded.
+The pixel heights a scroll, a press and a drag are run at: one where the
+file's advance is above the cell, one where it is below, one where the cell
+is not the file's advance rounded.
 """
 
 LAYOUTS = ("unified", "side-by-side")
 MARKS = (1, 10, 20, 30, 40, 74)
-
-H34 = (
-    "imtypeset H34 (pptmstr's P21, R4 and R5): monospace laid out from the font file's "
-    "advance and drawn on whole pixels. Measured on imtypeset v0.3.0 at a 16 px pixel "
-    "height: advance 7.626, steps of 7 and 8 px mixed, the 40th character 297 px from the "
-    "first against Dear ImGui's 312. Fixed when a library that lays out from the "
-    "rasteriser's advances is pinned: this then XPASSes and the mark comes off"
-)
-H35 = (
-    "imtypeset H35 (pptmstr's P22): hit tests, range_rects and the selection fill answer "
-    "from layout, not from where the glyph was drawn. Measured on imtypeset v0.3.0 at a "
-    "16 px pixel height in the 74-character row: a glyph up to 17.2 px left of its "
-    "rectangle, a hit_test at the centre of a drawn glyph answering another character for "
-    "40 of 64 glyphs, a selection fill 13 px right of the first glyph selected. Fixed when "
-    "a newer library is pinned: this then XPASSes and the mark comes off"
-)
 
 
 def pages() -> list[dict[str, Any]]:
@@ -102,15 +90,12 @@ def pages() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for px in PIXEL_HEIGHTS:
         for layout in LAYOUTS:
-            out.append({"kind": "diff", "px": px, "cell": "pixel", "layout": layout})
-    for px in CORE_HEIGHTS:
-        for layout in LAYOUTS:
-            out.append({"kind": "diff", "px": px, "cell": "font", "layout": layout})
-    for px in CORE_HEIGHTS:
+            out.append({"kind": "diff", "px": px, "layout": layout})
+    for px in PIXEL_HEIGHTS:
         out.append({"kind": "fence", "px": px})
     for px in ACT_HEIGHTS:
         for layout in LAYOUTS:
-            out.append({"kind": "act", "px": px, "cell": "pixel", "layout": layout})
+            out.append({"kind": "act", "px": px, "layout": layout})
     return out
 
 
@@ -118,9 +103,9 @@ def page_name(page: dict[str, Any]) -> str:
     if page["kind"] == "fence":
         return f"fence px{page['px']}"
     if page["kind"] == "act":
-        return f"act {page['cell']} px{page['px']} {page['layout']}"
+        return f"act px{page['px']} {page['layout']}"
     extra = "".join(f" {key}={page[key]}" for key in ("build", "model", "leading") if key in page)
-    return f"diff {page['cell']} px{page['px']} {page['layout']}{extra}"
+    return f"diff px{page['px']} {page['layout']}{extra}"
 
 
 DRIVER = r"""
@@ -394,8 +379,6 @@ def make_diff(page):
     px = float(page["px"])
     layout = DiffLayout.SIDE_BY_SIDE if page["layout"] == "side-by-side" else DiffLayout.UNIFIED
     kwargs = {"layout": layout, "palette": DARK_PALETTE}
-    if page["cell"] != "default":
-        kwargs["cell"] = page["cell"]
     if page.get("build") == "probe":
         # As pptmstr's scripts/measure_typeset_diff.py builds its view.
         theme = Theme.at_pixel_height(px, faces=Faces.mono(), align=Align.LEFT)
@@ -626,9 +609,9 @@ def name_of(page):
     if page["kind"] == "fence":
         return f"fence px{page['px']}"
     if page["kind"] == "act":
-        return f"act {page['cell']} px{page['px']} {page['layout']}"
+        return f"act px{page['px']} {page['layout']}"
     extra = "".join(f" {key}={page[key]}" for key in ("build", "model", "leading") if key in page)
-    return f"diff {page['cell']} px{page['px']} {page['layout']}{extra}"
+    return f"diff px{page['px']} {page['layout']}{extra}"
 
 def gui():
     state["n"] += 1
@@ -806,6 +789,10 @@ def report(window: Any) -> dict[str, Any]:
         )
     got = run_driver(window, pages())
     assert set(got["pages"]) == {page_name(page) for page in pages()}
+    keep = os.environ.get("IMSCRIBE_MONO_REPORT")
+    if keep:
+        # For the record of a run: the window's own directory is removed at teardown.
+        Path(keep).write_text(json.dumps(got), encoding="utf-8")
     return got
 
 
@@ -856,84 +843,151 @@ def holds_r6(report: dict[str, Any], name: str) -> None:
         assert pane["glyphs"] > 250 and pane["fractional"] == [0, 0, 0], name
 
 
-_PIXEL = [
-    page_name({"kind": "diff", "px": px, "cell": "pixel", "layout": layout})
+_DIFF = [
+    page_name({"kind": "diff", "px": px, "layout": layout})
     for px in PIXEL_HEIGHTS
     for layout in LAYOUTS
 ]
-_FONT = [
-    page_name({"kind": "diff", "px": px, "cell": "font", "layout": layout})
-    for px in CORE_HEIGHTS
-    for layout in LAYOUTS
-]
-_FENCE = [page_name({"kind": "fence", "px": px}) for px in CORE_HEIGHTS]
+_FENCE = [page_name({"kind": "fence", "px": px}) for px in PIXEL_HEIGHTS]
+_ALL = _DIFF + _FENCE
+
+BAKED_ADVANCE = dict(zip(PIXEL_HEIGHTS, (6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12), strict=True))
+"""
+Dear ImGui's baked advance of the bundled code face at each pixel height,
+measured on 2026-10-12 (`.concerns/D-CELL--builder--result.md`, section 2) and
+again on 2026-10-13: not the file's advance rounded (10.49 at 22 is 11).
+"""
 
 
-# -- 1. the diff view on a whole-pixel cell: holds today -----------------------------------
+def _px(name: str) -> int:
+    return int(name.split("px")[1].split()[0])
 
 
-@pytest.mark.parametrize("name", _PIXEL)
-def test_pixel_cell_r4_one_step_on_every_row_and_rows_agree(
-    report: dict[str, Any], name: str
-) -> None:
+# -- every page: the diff view as a host gets it, and a fenced block ------------------------
+#
+# Until imtypeset 0.4 these were two sets. The diff view passed only with
+# `cell="pixel"` (26 pages, 12 to 24), which drew the face at another em; the
+# view with its default cell and the fence (21 pages, 14 to 20) were 105 strict
+# xfails, `test_core_*`, naming imtypeset's H34 and H35. On imtypeset 0.4.1 all
+# 105 passed (2026-10-13, `build/adopt-api-run1.log`: 105 XPASS(strict)), the
+# marks came off, the option went, and the fence is held at 12 to 24 as well.
+
+
+@pytest.mark.parametrize("name", _ALL)
+def test_r4_one_step_on_every_row_and_rows_agree(report: dict[str, Any], name: str) -> None:
+    """
+    On imtypeset v0.3.0, at every pixel height from 14 to 20: two step sizes
+    (7 px 101 times and 8 px 150 times over eight rows at 16), and rows 4 to
+    23 px apart at one column.
+    """
     holds_r4(report, name)
 
 
-@pytest.mark.parametrize("name", _PIXEL)
-def test_pixel_cell_r5_characters_are_on_dear_imgui_s_pens(
-    report: dict[str, Any], name: str
-) -> None:
+@pytest.mark.parametrize("name", _ALL)
+def test_r5_characters_are_on_dear_imgui_s_pens(report: dict[str, Any], name: str) -> None:
+    """
+    On v0.3.0 at 16: characters 10, 20, 30, 40 and 74 of the 74-character row
+    were 9, 19, 27, 27 and 27 px left of Dear ImGui's; at 17, 8 px right.
+    """
     holds_r5(report, name)
-    px = int(name.split(" px")[1].split()[0])
+    px = _px(name)
     page = report["pages"][name]
     for pane in _panes(report, name):
         # The cell is the advance Dear ImGui has baked for the face at the host's height.
-        assert page["cell"] == pane["own_advance_at_px"] == pane["chrome_advance_at_px"], (name, px)
-        assert pane["rows"]["ruler"]["pen"][-1] == 39 * page["cell"]
-        assert pane["rows"]["long"]["pen"][-1] == 73 * page["cell"]
+        cell = BAKED_ADVANCE[px]
+        assert cell == pane["own_advance_at_px"] == pane["chrome_advance_at_px"], (name, px)
+        if name in _FENCE:
+            # A fence's "cell" here is the library's own layout (a tenth of ten characters'
+            # rectangle), which is the whole pixel to C-float arithmetic and not exactly
+            # (measured 2026-10-13: 6.0000013 at 12, 8.0000092 at 16). The pens are exact.
+            assert page["cell"] == pytest.approx(cell, abs=1e-4), name
+        else:
+            assert page["cell"] == cell, name
+        assert pane["rows"]["ruler"]["pen"][-1] == 39 * cell
+        assert pane["rows"]["long"]["pen"][-1] == 73 * cell
+        # The glyphs come from the raster of the size asked for. (`cell="pixel"`
+        # drew an even pixel height from the raster one pixel larger.)
+        assert pane["baked"] == px, (name, pane["baked"])
 
 
-@pytest.mark.parametrize("name", _PIXEL)
-def test_pixel_cell_r1_a_glyph_is_drawn_where_it_was_laid_out(
-    report: dict[str, Any], name: str
-) -> None:
+@pytest.mark.parametrize("name", _ALL)
+def test_r1_a_glyph_is_drawn_where_it_was_laid_out(report: dict[str, Any], name: str) -> None:
+    """
+    On v0.3.0 the worst glyph of a page was 4.6 (at 19) to 23.0 px (at 20)
+    from the rectangle the library answers for it; 21.9 px at 16.
+
+    R1 as pptmstr wrote it is half a pixel. Held tighter here, because it is
+    measured tighter and the difference is one this package makes: on 0.4.1
+    the worst glyph of any page is 0.0015 px from its rectangle, PROVIDED
+    the block's indent is a whole pixel. A fenced block's was not (the
+    theme's 11.44 px at a 12 px height) and its glyphs stood 0.44 px from
+    their rectangles until `TypesetView` put a code block's indent on a
+    whole pixel (`imscribe.ui.typeset_view._code_on_a_pixel`).
+    """
     holds_r1(report, name)
+    for pane in _panes(report, name):
+        assert abs(pane["less_rect_worst"][0]) <= 0.01, (name, pane["less_rect_worst"])
 
 
-@pytest.mark.parametrize("name", _PIXEL)
-def test_pixel_cell_a_hit_at_a_glyph_s_centre_answers_that_character(
-    report: dict[str, Any], name: str
-) -> None:
-    holds_hit(report, name)
-
-
-@pytest.mark.parametrize("name", _PIXEL)
-def test_pixel_cell_a_selection_s_fill_has_its_edges_on_the_glyph_pens(
-    report: dict[str, Any], name: str
-) -> None:
-    holds_selection(report, name)
-
-
-@pytest.mark.parametrize("name", _PIXEL)
-def test_pixel_cell_r6_nothing_is_off_the_pixel_grid(report: dict[str, Any], name: str) -> None:
-    holds_r6(report, name)
-
-
-@pytest.mark.parametrize("name", _PIXEL)
-def test_pixel_cell_keeps_the_pitch_and_the_rows_the_host_asked_for(
+@pytest.mark.parametrize("name", _ALL)
+def test_a_hit_on_a_drawn_glyph_answers_the_carets_either_side_of_it(
     report: dict[str, Any], name: str
 ) -> None:
     """
-    The em changes and nothing else: the row is the pitch the theme asked
-    for, the height is rows times it, the cell is a whole pixel, the panes
-    and the code start on it, and a header's width is a whole number of cells.
+    The library's `hit_test` answers the nearest CARET, so what is asked of a
+    drawn glyph is: a quarter of a cell right of its pen is the caret before
+    it, three quarters the caret after. On v0.3.0, 68 (fence, 19) to 225
+    (fence, 14) of 274 glyphs answered otherwise; 54 of the 64 of the
+    74-character row in the diff view at 16.
+
+    (pptmstr's first reading -- the centre of the glyph's quad against the
+    glyph's own index -- is not this and cannot be the test: where a glyph is
+    drawn exactly on its rectangle the centre of its ink is in the right half
+    of the cell at most sizes, and the nearest caret is the next one.)
+    """
+    holds_hit(report, name)
+
+
+@pytest.mark.parametrize("name", _ALL)
+def test_a_selection_s_fill_has_its_edges_on_the_glyph_pens(
+    report: dict[str, Any], name: str
+) -> None:
+    """
+    On v0.3.0, characters 21 to 40 of the 74-character row: the fill was 3 px
+    left (at 19) to 14 px right (fence, 14) of the first glyph selected; 13 px
+    right at 16.
+    """
+    holds_selection(report, name)
+
+
+@pytest.mark.parametrize("name", _ALL)
+def test_r6_nothing_is_off_the_pixel_grid(report: dict[str, Any], name: str) -> None:
+    holds_r6(report, name)
+
+
+@pytest.mark.parametrize("name", _DIFF)
+def test_the_view_keeps_the_size_the_pitch_and_the_rows_the_host_asked_for(
+    report: dict[str, Any], name: str
+) -> None:
+    """
+    The row is the pitch the theme asked for, the height is rows times it,
+    the cell is a whole pixel, the panes and the code start on it, and a
+    header's width is a whole number of cells.
+
+    **Restated on imtypeset 0.4.1.** This was
+    `test_pixel_cell_keeps_the_pitch_and_the_rows_the_host_asked_for` and
+    asserted `em_drawn != em_asked`: `cell="pixel"` got its whole cell by
+    drawing the face at another em (16.000 for the 15.253 of a 16 px height).
+    The library now puts the face on the device's cell at the em asked for,
+    so the em drawn IS the em asked, and that is what is asserted. Nothing
+    else here changed.
     """
     page = report["pages"][name]
     assert page["option"] == "pixel"
     assert page["row"] == page["row_asked"] == page["pitch_asked"]
     assert page["content_height"] == page["rows"] * page["row"]
     assert page["cell"] == int(page["cell"]) >= 1
-    assert page["em_drawn"] != pytest.approx(page["em_asked"], abs=1e-3)
+    assert page["em_drawn"] == pytest.approx(page["em_asked"], abs=1e-6)
     for edges in page["pane_edges"]:
         assert all(edge % page["cell"] == 0 for edge in (edges[0], edges[2])), edges
     for pane in _panes(report, name):
@@ -943,126 +997,56 @@ def test_pixel_cell_keeps_the_pitch_and_the_rows_the_host_asked_for(
         assert text_width == pytest.approx((1 + text) * page["cell"], abs=1e-2)
 
 
-# -- 2 and 3. the default cell, and a fenced block: the typesetting core's to fix ----------
+# -- `cell=`: deprecated, accepted, ignored --------------------------------------------------
 
 
-@pytest.mark.parametrize("name", _FONT + _FENCE)
-@pytest.mark.xfail(strict=True, reason=H34)
-def test_core_r4_one_step_on_every_row_and_rows_agree(report: dict[str, Any], name: str) -> None:
+def test_cell_is_deprecated_and_a_wrong_name_is_still_the_host_s_mistake() -> None:
     """
-    Today, at every pixel height from 14 to 20: two step sizes (7 px 101
-    times and 8 px 150 times over eight rows at 16), and rows 4 to 23 px
-    apart at one column.
-    """
-    holds_r4(report, name)
+    `cell=` no longer chooses anything: the default of the view and of the
+    fences is `None`, a host that passes `"pixel"` (pptmstr was told to, at
+    two places) or `"font"` gets a `DeprecationWarning` at its own line that
+    says what the view does now, and a name that is not one of the two is
+    still a `ValueError`, something that is no name a `TypeError` -- with or
+    without the library, so before the constructor says the library is not
+    there.
 
-
-@pytest.mark.parametrize("name", _FONT + _FENCE)
-@pytest.mark.xfail(strict=True, reason=H34)
-def test_core_r5_characters_are_on_dear_imgui_s_pens(report: dict[str, Any], name: str) -> None:
-    """
-    Today, at 16: characters 10, 20, 30, 40 and 74 of the 74-character row
-    are 9, 19, 27, 27 and 27 px left of Dear ImGui's; at 17, 8 px right.
-    """
-    holds_r5(report, name)
-
-
-@pytest.mark.parametrize("name", _FONT + _FENCE)
-@pytest.mark.xfail(strict=True, reason=H35)
-def test_core_r1_a_glyph_is_drawn_where_it_was_laid_out(report: dict[str, Any], name: str) -> None:
-    """
-    Today the worst glyph of the page is 4.6 (at 19) to 23.0 px (at 20) from
-    the rectangle the library answers for it; 21.9 px at 16.
-    """
-    holds_r1(report, name)
-
-
-@pytest.mark.parametrize("name", _FONT + _FENCE)
-@pytest.mark.xfail(strict=True, reason=H35)
-def test_core_a_hit_on_a_drawn_glyph_answers_the_carets_either_side_of_it(
-    report: dict[str, Any], name: str
-) -> None:
-    """
-    The library's `hit_test` answers the nearest CARET, so what is asked of a
-    drawn glyph is: a quarter of a cell right of its pen is the caret before
-    it, three quarters the caret after. Today 68 (fence, 19) to 225 (fence,
-    14) of 274 glyphs answer otherwise; 54 of the 64 of the 74-character row
-    in the diff view at 16.
-
-    (pptmstr's reading -- the centre of the glyph's quad against the glyph's
-    own index -- is not this and cannot be the test: where a glyph is drawn
-    exactly on its rectangle the centre of its ink is in the right half of
-    the cell at most sizes, and the nearest caret is the next one. Measured
-    with the whole-pixel cell at 16, glyphs 0.00 px from their rectangles:
-    63 of 64 "wrong" by that reading, 0 of 64 by this one.)
-    """
-    holds_hit(report, name)
-
-
-@pytest.mark.parametrize("name", _FONT + _FENCE)
-@pytest.mark.xfail(strict=True, reason=H35)
-def test_core_a_selection_s_fill_has_its_edges_on_the_glyph_pens(
-    report: dict[str, Any], name: str
-) -> None:
-    """
-    Today, characters 21 to 40 of the 74-character row: the fill is 3 px
-    left (at 19) to 14 px right (fence, 14) of the first glyph selected; 13 px
-    right at 16.
-    """
-    holds_selection(report, name)
-
-
-@pytest.mark.parametrize("name", _FONT + _FENCE)
-def test_core_r6_nothing_is_off_the_pixel_grid_today(report: dict[str, Any], name: str) -> None:
-    """R6 is the one requirement the default holds at every size, and must go on holding."""
-    holds_r6(report, name)
-
-
-def test_the_default_cell_is_the_face_s_own_advance_and_the_pitch_is_the_same(
-    report: dict[str, Any],
-) -> None:
-    """
-    The option changes the em and nothing else. At each height from 14 to 20
-    the default view's cell is the file's advance (0.47664 of the pixel
-    height, not a whole pixel), its em is the one asked for, and its row,
-    its row count and its height are the whole-pixel view's.
-    """
-    for px in CORE_HEIGHTS:
-        for layout in LAYOUTS:
-            font = report["pages"][f"diff font px{px} {layout}"]
-            pixel = report["pages"][f"diff pixel px{px} {layout}"]
-            assert font["option"] == "font"
-            assert font["cell"] == pytest.approx(px * 0.476644, abs=1e-3)
-            assert font["em_drawn"] == pytest.approx(font["em_asked"], abs=1e-6)
-            assert font["em_asked"] == pytest.approx(pixel["em_asked"], abs=1e-9)
-            for key in ("row", "rows", "content_height"):
-                assert font[key] == pixel[key], (px, layout, key)
-
-
-# -- the option itself ---------------------------------------------------------------------
-
-
-def test_the_default_is_the_font_s_cell_and_a_wrong_name_is_the_host_s_mistake() -> None:
-    """
-    `cell="font"` is the default of the view and of the fences: nothing a
-    host has today changes until it passes `cell="pixel"`. A name that is
-    not one of the two is a `ValueError`, and something that is no name a
-    `TypeError`, at the host's call -- with or without the library, so
-    before the constructor says the library is not there.
+    **Restated on imtypeset 0.4.1.** Was
+    `test_the_default_is_the_font_s_cell_and_a_wrong_name_is_the_host_s_mistake`:
+    the defaults were `"font"`, and `TypesetDiffFences(cell="pixel").cell`
+    was `"pixel"` with no warning. The option was a bridge until the library
+    laid code out on the device's grid; it does, so there is nothing to choose.
     """
     import inspect
+    import warnings
 
     from imscribe import Diff, Theme
     from imscribe.ui.typeset_diff_view import CELLS, TypesetDiffView
     from imscribe.ui.typeset_hosts import TypesetDiffFences
+    from imscribe.ui.typeset_view import TypesetUnavailable
 
     assert CELLS == ("font", "pixel")
-    assert inspect.signature(TypesetDiffView).parameters["cell"].default == "font"
-    assert inspect.signature(TypesetDiffFences).parameters["cell"].default == "font"
-    assert TypesetDiffFences().cell == "font"
-    assert TypesetDiffFences(cell="pixel").cell == "pixel"
+    assert inspect.signature(TypesetDiffView).parameters["cell"].default is None
+    assert inspect.signature(TypesetDiffFences).parameters["cell"].default is None
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert TypesetDiffFences().cell == "pixel"
     theme = Theme.build()
-    for make in (lambda value: TypesetDiffView(Diff(), theme, cell=value), _fences_with):
+
+    def view_with(value: Any) -> Any:
+        try:
+            return TypesetDiffView(Diff(), theme, cell=value)
+        except TypesetUnavailable:  # no library in this run: said after the warning
+            return None
+
+    for make, where in ((view_with, "TypesetDiffView"), (_fences_with, "TypesetDiffFences")):
+        with pytest.warns(DeprecationWarning, match=r"cell=\"pixel\"\) is deprecated") as caught:
+            made = make("pixel")
+        assert where in str(caught[0].message) and "by default" in str(caught[0].message)
+        assert caught[0].filename == __file__, "the warning is not at the host's call"
+        assert made is None or made.cell == "pixel"
+        with pytest.warns(DeprecationWarning, match=r"cell=\"font\"\) is deprecated"):
+            made = make("font")
+        assert made is None or made.cell == "pixel"
         with pytest.raises(ValueError, match="cell="):
             make("whole")
         with pytest.raises(TypeError, match="cell="):
@@ -1078,6 +1062,7 @@ def _fences_with(value: Any) -> Any:
 _OPTION = r"""
 import json
 import sys
+import warnings
 
 from imgui_bundle import imgui
 
@@ -1094,10 +1079,9 @@ imgui.get_io().backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
 theme = Theme.build()
 diff = Diff.from_texts("a\nb\n", "a\nc\n", "x.py")
 
-# Before the fonts: the option is taken, the size asked for is what it is without it, and the
-# grid cannot be answered, as without it.
-early = TypesetDiffView(diff, theme, pixel_height=16.0, cell="pixel")
-report["early_option"] = early.cell
+# Before the fonts: the size asked for is what it is after them, and the grid cannot be
+# answered.
+early = TypesetDiffView(diff, theme, pixel_height=16.0)
 report["early_size"] = list(code_size(theme, 16.0)[:2])
 report["early_rows"] = [early.row_count, early.row_px, early.content_height]
 try:
@@ -1109,42 +1093,53 @@ report["early_headers"] = [h.width_px for h in early.headers()]
 
 report["ready"] = bool(typesetter.load_fonts()) and typesetter.ready()
 report["size_ready"] = list(code_size(theme, 16.0)[:2])
+ts = typesetter.module()
+base = typesetter.base_style(theme, 0)
 sizes = {}
 for px in (None, 13.0, 14.0, 16.0, 21.0):
     row = {}
-    for cell in ("font", "pixel"):
-        view = TypesetDiffView(diff, theme, pixel_height=px, cell=cell)
+    for cell in (None, "font", "pixel"):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            view = TypesetDiffView(diff, theme, pixel_height=px, cell=cell)
         grid = view.grid
-        row[cell] = {
+        row[str(cell)] = {
             "cell": grid.cell, "row": grid.row, "em": grid.em * grid.scale,
             "asked": code_size(theme, px)[0], "content_height": view.content_height,
             "content_width": view.content_width, "height_for": view.height_for(300.0),
+            "warned": [w.category.__name__ for w in caught], "option": view.cell,
+            "library": ts.device_glyph_advance(int(ts.Face.Code), "0", base, grid.scale),
         }
         view.close()
     sizes[str(px)] = row
 report["sizes"] = sizes
 
-# On a living view: the grid follows the option.
+# On a living view: setting the option warns and moves nothing.
 live = TypesetDiffView(diff, theme, pixel_height=16.0)
-before = live.grid.cell
-live.cell = "pixel"
-after = live.grid.cell
-live.cell = "font"
-report["switched"] = [before, after, live.grid.cell]
+before = live.grid
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    live.cell = "font"
+    live.cell = "pixel"
+report["switched"] = [before.cell, live.grid.cell, live.grid is before, live.cell]
+report["switched_warned"] = [w.category.__name__ for w in caught]
 try:
     live.cell = "whole"
     report["switched_wrong"] = "taken"
 except ValueError as exc:
     report["switched_wrong"] = str(exc)
 
-# Through the fences: each diff a document hosts is made with the option.
+# Through the fences: each diff a document hosts is on the device's cell, asked or not.
 source = "```diff\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n```\n"
-for name in ("font", "pixel"):
-    fences = TypesetDiffFences(cell=name, pixel_height=16.0)
-    document = TypesetView(source, theme=theme, host_for=fences)
-    (at,) = document.hosts
-    hosted = fences.view_of(document, at)
-    report["fenced_" + name] = [hosted.cell, hosted.grid.cell, hosted.grid.row]
+for name in (None, "font", "pixel"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fences = TypesetDiffFences(cell=name, pixel_height=16.0)
+        document = TypesetView(source, theme=theme, host_for=fences)
+        (at,) = document.hosts
+        hosted = fences.view_of(document, at)
+    report["fenced_" + str(name)] = [
+        hosted.cell, hosted.grid.cell, hosted.grid.row, [w.category.__name__ for w in caught]]
     document.close()
 report["ready_at_end"] = typesetter.ready()
 typesetter.unload()
@@ -1176,15 +1171,15 @@ def option() -> dict[str, Any]:
     return got
 
 
-def test_before_the_fonts_the_option_is_taken_and_changes_nothing(option: dict[str, Any]) -> None:
+def test_before_the_fonts_a_view_is_made_and_its_grid_is_not_answered(
+    option: dict[str, Any],
+) -> None:
     """
-    A view may be made with `cell="pixel"` before `typesetter.load_fonts()`:
-    `code_size` answers the size asked for and the pitch, as it does without
-    the option and as it does once the fonts are in; the rows are counted;
-    `grid` raises `TypesetUnavailable` as it always has there; `headers`
-    answers the texts without widths.
+    A view may be made before `typesetter.load_fonts()`: `code_size` answers
+    the size asked for and the pitch, as it does once the fonts are in; the
+    rows are counted; `grid` raises `TypesetUnavailable` as it always has
+    there; `headers` answers the texts without widths.
     """
-    assert option["early_option"] == "pixel"
     assert option["early_size"] == pytest.approx(option["size_ready"], abs=1e-6)
     assert option["early_size"][0] == pytest.approx(15.2526, abs=1e-3)
     assert option["early_rows"][0] > 0
@@ -1193,64 +1188,89 @@ def test_before_the_fonts_the_option_is_taken_and_changes_nothing(option: dict[s
     assert option["early_headers"] == [None]
 
 
-def test_the_pixel_cell_is_dear_imgui_s_advance_and_only_the_em_moves(
+def test_the_cell_is_the_device_s_whole_pixel_at_the_em_asked_for_whatever_cell_says(
     option: dict[str, Any],
 ) -> None:
     """
     With no window, at the theme's own size and at the pixel heights the
     frozen answers of the old `DiffView` were taken at: the cell is 8, 6, 7,
-    8 and 10 px -- Dear ImGui's baked advance of the face -- where the
-    default is the file's 8.000, 6.196, 6.673, 7.626 and 10.010; the row and
-    the height are the default's; the size `code_size` answers is the
-    default's; the em drawn at is twice the cell.
+    8 and 10 px -- Dear ImGui's baked advance of the face -- exactly, and the
+    em drawn is the em asked for; and the same with `cell="font"` and with
+    `cell="pixel"`, each of which is one `DeprecationWarning`.
+
+    **Restated on imtypeset 0.4.1.** Was
+    `test_the_pixel_cell_is_dear_imgui_s_advance_and_only_the_em_moves`: the
+    default's cell was the FILE's advance (8.000, 6.196, 6.673, 7.626,
+    10.010) and `cell="pixel"` got 8, 6, 7, 8, 10 at an em of twice the cell
+    (16.000 for 15.253). The library lays the code face out on the device's
+    advances now, so the default is those whole pixels and no em moves.
+
+    The library's own answer (`device_glyph_advance`) is within 2e-5 px of
+    the whole pixel and not on it (8.000008583 at 16; float arithmetic on an
+    em that is a rounded number): the view takes the whole pixel. Both are
+    asserted, so a library that answers 8.0 exactly, or drifts further, shows.
     """
     wanted = {"None": 8.0, "13.0": 6.0, "14.0": 7.0, "16.0": 8.0, "21.0": 10.0}
-    files = {"None": 8.0, "13.0": 6.1964, "14.0": 6.6730, "16.0": 7.6263, "21.0": 10.0095}
     assert option["sizes"].keys() == wanted.keys()
     for px, row in option["sizes"].items():
-        font, pixel = row["font"], row["pixel"]
-        assert pixel["cell"] == wanted[px], px
-        assert font["cell"] == pytest.approx(files[px], abs=1e-3), px
-        assert pixel["em"] == pytest.approx(2 * wanted[px], abs=1e-4), px
-        assert font["em"] == pytest.approx(font["asked"], abs=1e-6), px
-        for key in ("row", "content_height", "asked"):
-            assert pixel[key] == font[key], (px, key)
-        assert pixel["content_width"] == pytest.approx(
-            font["content_width"] * wanted[px] / font["cell"], abs=1e-2
-        ), px
+        for name, warned in (
+            ("None", []),
+            ("font", ["DeprecationWarning"]),
+            ("pixel", ["DeprecationWarning"]),
+        ):
+            got = row[name]
+            assert got["cell"] == wanted[px], (px, name)
+            assert got["warned"] == warned, (px, name)
+            assert got["option"] == "pixel"
+            assert got["em"] == pytest.approx(got["asked"], abs=1e-6), (px, name)
+            assert got["library"] == pytest.approx(wanted[px], abs=1e-4), (px, name)
+            for key in ("row", "content_height", "content_width", "height_for", "asked"):
+                assert got[key] == row["None"][key], (px, name, key)
 
 
-def test_at_13_px_the_pixel_cell_is_the_cell_the_old_diff_view_drew_on(
+def test_at_13_px_the_cell_is_the_cell_the_old_diff_view_drew_on(
     option: dict[str, Any],
 ) -> None:
     """
     `tests/data/diff_view_answers.json` holds what `DiffView` answered at a
-    13 px pixel height: a cell of 6 px for an advance of 6.196. The default
-    here is the 6.196; with `cell="pixel"` it is the 6.
+    13 px pixel height: a cell of 6 px for an advance of 6.196. The view's
+    cell is the 6. (Until imtypeset 0.4 its default was the 6.196 and only
+    `cell="pixel"` gave the 6.)
     """
     frozen = json.loads((_ROOT / "tests" / "data" / "diff_view_answers.json").read_text("utf-8"))
     small = frozen["window"]["small"]
     assert small["cell"] == 6 and small["advance"] == pytest.approx(6.196368, abs=1e-5)
-    at_13 = option["sizes"]["13.0"]
-    assert at_13["pixel"]["cell"] == small["cell"]
-    assert at_13["font"]["cell"] == pytest.approx(small["advance"], abs=1e-3)
-    assert at_13["pixel"]["row"] == at_13["font"]["row"] == small["row"]
+    at_13 = option["sizes"]["13.0"]["None"]
+    assert at_13["cell"] == small["cell"]
+    assert at_13["row"] == small["row"]
 
 
-def test_the_option_can_be_changed_on_a_living_view_and_reaches_a_fenced_diff(
+def test_setting_cell_on_a_living_view_warns_and_moves_nothing_and_a_fenced_diff_is_the_same(
     option: dict[str, Any],
 ) -> None:
-    before, after, back = option["switched"]
-    assert after == 8.0 and before == back == pytest.approx(7.6263, abs=1e-3)
+    """
+    **Restated on imtypeset 0.4.1.** Was
+    `test_the_option_can_be_changed_on_a_living_view_and_reaches_a_fenced_diff`:
+    `view.cell = "pixel"` moved the grid from 7.626 to 8.0 and back, and a
+    fence made with `cell="font"` hosted a 7.626 px cell. There is one cell
+    now: 8.0 at 16 px, before and after, through the fences too.
+    """
+    before, after, same, name = option["switched"]
+    assert before == after == 8.0 and same is True and name == "pixel"
+    assert option["switched_warned"] == ["DeprecationWarning", "DeprecationWarning"]
     assert "cell=" in option["switched_wrong"]
-    assert option["fenced_pixel"][0] == "pixel" and option["fenced_pixel"][1] == 8.0
-    assert option["fenced_font"][0] == "font"
-    assert option["fenced_font"][1] == pytest.approx(7.6263, abs=1e-3)
-    assert option["fenced_pixel"][2] == option["fenced_font"][2]
+    for given, warned in (
+        ("None", []),
+        ("font", ["DeprecationWarning"]),
+        ("pixel", ["DeprecationWarning"]),
+    ):
+        got = option["fenced_" + given]
+        assert got[:2] == ["pixel", 8.0] and got[3] == warned, given
+        assert got[2] == option["fenced_None"][2]
 
 
 _ACT = [
-    page_name({"kind": "act", "px": px, "cell": "pixel", "layout": layout})
+    page_name({"kind": "act", "px": px, "layout": layout})
     for px in ACT_HEIGHTS
     for layout in LAYOUTS
 ]
@@ -1258,9 +1278,7 @@ _LONG = "total = float(baked.get_char_advance(code)) + kern_px  # 40th is in 'ke
 
 
 @pytest.mark.parametrize("name", _ACT)
-def test_pixel_cell_scrolled_sideways_the_row_stays_on_the_grid(
-    report: dict[str, Any], name: str
-) -> None:
+def test_scrolled_sideways_the_row_stays_on_the_grid(report: dict[str, Any], name: str) -> None:
     """
     In a view forty cells wide the 74-character row does not fit: the view
     claims its scrollbar's height, and with the code scrolled ten cells every
@@ -1278,7 +1296,7 @@ def test_pixel_cell_scrolled_sideways_the_row_stays_on_the_grid(
 
 
 @pytest.mark.parametrize("name", _ACT)
-def test_pixel_cell_a_press_and_a_drag_select_the_characters_under_the_pointer(
+def test_a_press_and_a_drag_select_the_characters_under_the_pointer(
     report: dict[str, Any], name: str
 ) -> None:
     """
@@ -1295,3 +1313,69 @@ def test_pixel_cell_a_press_and_a_drag_select_the_characters_under_the_pointer(
     assert second["selection"] == [[*where, 16], [*where, 23]], name
     assert second["text"] == _LONG[16:23] == "ked.get"
     assert first["scroll_x"] == second["scroll_x"] == 10 * page["cell"]
+
+
+# -- the two small rules of this package's own, with no library -----------------------------
+
+
+def test_the_cell_is_the_library_s_answer_on_the_whole_framebuffer_pixel_it_is_beside() -> None:
+    """
+    `_device_cell` with a stand-in for the library: an answer within 0.001
+    px of a whole FRAMEBUFFER pixel is that pixel (8.000008583 is 8 at a
+    density of 1; 7.500004 is 7.5 at 2), any other answer is left as it came,
+    the role and the character asked are the code face's `0` at the scale
+    given, and where the library itself refuses (its own error: no atlas to
+    ask) the cell is the advance it lays ten characters out at. An error that
+    is not the library's is raised as it is.
+    """
+    from types import SimpleNamespace
+
+    from imscribe.ui import typeset_diff_view as module
+
+    asked: list[tuple[Any, ...]] = []
+
+    def library(answer: Any) -> Any:
+        def device_glyph_advance(face: int, char: str, style: Any, scale: float) -> float:
+            asked.append((face, char, style, scale))
+            if isinstance(answer, BaseException):
+                raise answer
+            return float(answer)
+
+        return SimpleNamespace(
+            Face=SimpleNamespace(Code=7), device_glyph_advance=device_glyph_advance
+        )
+
+    base = object()
+    assert module._device_cell(library(8.000008583068848), base, 0.95, 18, 1.0) == 8.0
+    assert asked == [(7, "0", base, 0.95)]
+    assert module._device_cell(library(7.500004), base, 1.0, 18, 2.0) == 7.5
+    assert module._device_cell(library(7.500004), base, 1.0, 18, 1.0) == 7.500004
+    assert module._device_cell(library(7.626), base, 1.0, 18, 1.0) == 7.626
+    assert module._device_cell(library(0.0), base, 1.0, 18, 1.0) == 0.0
+
+    refusal = type("Error", (Exception,), {"__module__": "imtypeset"})("no atlas")
+    laid: list[tuple[Any, ...]] = []
+    kept = module._advance_at
+    module._advance_at = lambda ts, style, scale, row: laid.append((style, scale, row)) or 7.626  # type: ignore[assignment]
+    try:
+        assert module._device_cell(library(refusal), base, 0.5, 18, 1.0) == 7.626
+        assert laid == [(base, 0.5, 18)]
+        with pytest.raises(ZeroDivisionError):
+            module._device_cell(library(ZeroDivisionError("ours")), base, 0.5, 18, 1.0)
+        assert len(laid) == 1
+    finally:
+        module._advance_at = kept
+
+
+def test_a_code_block_s_indent_is_put_on_a_whole_pixel_and_no_other_block_s_is() -> None:
+    from imscribe.description import KIND_CODE, KIND_PARAGRAPH, BlockDescription
+    from imscribe.ui.typeset_view import _code_on_a_pixel
+
+    for given, whole in ((11.4395, 11.0), (15.999998, 16.0), (45.6, 46.0), (0.5, 1.0), (0.0, 0.0)):
+        code = BlockDescription(kind=KIND_CODE, text="x", left_indent=given)
+        assert _code_on_a_pixel(code).left_indent == whole
+        assert _code_on_a_pixel(code)._replace(left_indent=given) == code  # nothing else moved
+        prose = BlockDescription(kind=KIND_PARAGRAPH, text="x", left_indent=given)
+        assert _code_on_a_pixel(prose) is prose
+    already = BlockDescription(kind=KIND_CODE, text="x", left_indent=16.0)
+    assert _code_on_a_pixel(already) is already

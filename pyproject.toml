@@ -2,11 +2,16 @@
 name = "imscribe"
 # The same string as `imscribe.__version__` (`tests/test_dist.py` holds them
 # equal), which is where a host reads it at run time and where what the number
-# promises is written. `.devN`: no release exists; a requirement names a commit
-# or a file's sha256, never this alone. `make dist` builds the files.
-version = "0.2.0.dev0"
+# promises is written. `b1`: the first upload to PyPI is a beta, which pip
+# installs only when asked (`pip install --pre imscribe`, or `imscribe==0.2.0b1`).
+# `make dist` builds the files; `.github/workflows/release.yml` publishes them
+# for a pushed tag `v0.2.0b1` and refuses a tag that is not this string.
+version = "0.2.0b1"
 description = "Markdown, streaming and diff views for Dear ImGui, typeset by imtypeset"
-readme = "README.md"
+# The project's page on PyPI: short, and true of an installed wheel. README.md
+# is the repository's (how the tree is built, tested and measured) and is in
+# neither the wheel nor the sdist.
+readme = "README-pypi.md"
 requires-python = ">=3.11"
 # MIT, the licence of Dear ImGui and of Dear ImGui Bundle; the owner's choice
 # (2026-10-12: "permissive but compatible with the imgui ecosystem"). The six
@@ -37,12 +42,29 @@ dependencies = [
     # needs another imgui-bundle. That is true of the pairing whatever this
     # line says; the pin says it at install.
     #
-    # imtypeset itself is NOT listed. It has no distribution to name yet
-    # (HANDOFF-imtypeset.md, request H3), and a dependency that cannot be
-    # resolved would break `pip install` for everyone. Until it has one the
-    # library is built by `make typeset-lib` and found by IMTYPESET_LIBRARY;
-    # when it has one, it goes here, pinned the same way.
     "imgui-bundle==1.92.900",
+    # The library that draws, since 2026-10-13 a dependency like any other
+    # (until then it had no distribution: HANDOFF-imtypeset.md, H3).
+    #
+    # BOTH PINS MOVE TOGETHER. An imtypeset wheel is built for one
+    # imgui-bundle and its version says which: the fourth number, 192900, is
+    # 1.92.900 again, and that wheel itself requires `imgui-bundle==1.92.900`.
+    # Changing one line without the other is an install that cannot resolve.
+    # `tests/test_ci_workflow.py` holds the two to each other and the marker to
+    # the text below.
+    #
+    # The marker is where imtypeset HAS wheels, copied from its
+    # docs/releasing.md, section 5 (CPython 3.11 to 3.14; Linux x86-64 with
+    # glibc 2.28 or later, macOS 14 or later on arm64). Everywhere else it is
+    # false, pip leaves imtypeset out and `pip install imscribe` still
+    # succeeds: `import imtypeset` then fails, `imscribe.typesetter.kind()`
+    # is `not-installed`, and a view says so and draws nothing. What no marker
+    # can say (the same section): musl (Alpine) is Linux on x86-64, has no
+    # wheel, and the install FAILS there at this line.
+    #
+    # Not an extra (the lead's decision, 2026-10-13): there is no other
+    # renderer, so imscribe without it draws nothing.
+    "imtypeset==0.4.1.192900; python_version >= '3.11' and python_version < '3.15' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'darwin' and platform_machine == 'arm64'))",
     # Block and inline parsing for the markdown litmus test. Only the parser is
     # used -- token stream in, our own box tree out. Nothing here renders HTML.
     "markdown-it-py>=3.0",
@@ -53,8 +75,8 @@ dependencies = [
 ]
 
 [project.urls]
-# The repository keeps its first name until its owner renames it on GitHub.
-Repository = "https://github.com/WalterCReel3/imgui-adv-text"
+# Renamed on GitHub on 2026-10-13 (it was imgui-adv-text; GitHub redirects the old URL).
+Repository = "https://github.com/WalterCReel3/imscribe"
 
 [project.optional-dependencies]
 # The ruff floor is deliberately recent: the lint rule set shifts between minor
@@ -80,10 +102,13 @@ dev = [
     # installed so that the build runs without network and without an isolated
     # environment (`python -m build --no-isolation`): what builds an artefact
     # is then what `./.venv` holds, and `dist/BUILT-FROM` records the versions.
-    # Added 2026-10-12 by a session with no index: neither was in `./.venv`
-    # then, and `make dist` had not built anything when this line was written.
+    # Added 2026-10-12 by a session with no index; installed and run for the
+    # first time on 2026-10-13 (build 1.6.1, hatchling 1.32.4).
     "build>=1.2",
     "hatchling>=1.27",
+    # `twine check dist/*`: whether PyPI will render the description. The
+    # publishing action runs the same check before it uploads.
+    "twine>=6.0",
 ]
 
 [build-system]
@@ -98,20 +123,30 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["imscribe"]
 
+# The sdist is what BUILDS and DESCRIBES the package and nothing else (the
+# lead's decision, 2026-10-13, before the first upload; the owner may reverse
+# it): the package, this file, the licence, and the page PyPI shows. Until
+# then it also carried tests/, docs/, demo/, examples/, scripts/, .github/,
+# the Makefile, README.md and the two handoff files: working notes, some
+# naming paths on the machine they were written on, in a file whose name PyPI
+# never lets anyone replace. All of that is in the repository, which the page
+# links. So the suite cannot be run from an unpacked sdist, and was never
+# shown to (its sources include `demo/`, which a build of the wheel does not
+# need).
+#
 # Listed explicitly rather than inferred: hatchling falls back to parsing
 # .gitignore when not told otherwise, which silently couples what ships to what
-# is ignored.
+# is ignored. Hatchling adds three members whatever this list says: PKG-INFO,
+# and `.gitignore` where the source has one (measured: it is in the sdist of a
+# `git archive` export). `scripts/make_dist.py` refuses an sdist holding
+# anything but these, and `tests/test_dist.py` holds this list to that script.
 [tool.hatch.build.targets.sdist]
 include = [
-    "/imscribe", "/scripts", "/examples", "/tests", "/docs", "/README.md", "/Makefile",
-    "/pyproject.toml", "/LICENSE",
-    # Read by tests/test_ci_workflow.py (2026-10-12).
-    "/imtypeset.ref", "/.github", "/HANDOFF-imtypeset.md",
-    # The other half of the same record, and what the suite reads its sources
-    # from (`demo/`, which tests/ names in 39 places and the list above left
-    # out; the suite has not been run from an unpacked sdist). Both in the
-    # sdist ONLY: the wheel is the package and nothing else.
-    "/HANDOFF-pptmstr.md", "/demo",
+    "/imscribe",
+    "/pyproject.toml",
+    "/LICENSE",
+    # The `readme` above: the build fails without it.
+    "/README-pypi.md",
 ]
 exclude = ["**/__pycache__", "**/*.pyc"]
 

@@ -7,7 +7,10 @@ checked from inside a checkout:
 
 1.  It reads as YAML -- in a subset (below), because `./.venv` has no YAML
     parser and a dev dependency added for one test file is not worth it.
-2.  Its triggers and its two jobs are the ones the gate is described by.
+2.  Its triggers and its jobs are the ones the gate is described by: since
+    2026-10-13 two on a push (the suite with the library switched off, and
+    with the imtypeset wheel `make bootstrap` installs) and one started by
+    hand (the pair built from source).
 3.  Every `make <target>` it runs is a target of the `Makefile`, and every
     `NAME=value` it hands to `make` is a variable the `Makefile` assigns.
 4.  The imtypeset ref is in ONE place, `imtypeset.ref`, as a full commit hash;
@@ -16,6 +19,9 @@ checked from inside a checkout:
 5.  Every `run:` is a command a person can paste into a shell: no workflow
     expression inside one.
 6.  The macOS file cannot start by itself.
+7.  `release.yml` can send files to PyPI for a pushed tag `v*` and for
+    nothing else, to TestPyPI only for a run started by hand that asks, and
+    does neither before the build job passed (2026-10-13).
 
 **The YAML subset.** `read_yaml` below is not a YAML parser. It reads block
 mappings, block sequences, plain and quoted scalars on one line, and literal
@@ -48,15 +54,24 @@ from typing import Any
 
 import pytest
 
+from imscribe import typesetter
+
 _ROOT = Path(__file__).resolve().parent.parent
 _WORKFLOWS = _ROOT / ".github" / "workflows"
 _CI = _WORKFLOWS / "ci.yml"
 _MACOS = _WORKFLOWS / "macos.yml"
+_RELEASE = _WORKFLOWS / "release.yml"
+_PYPROJECT = _ROOT / "pyproject.toml"
 _MAKEFILE = _ROOT / "Makefile"
 _REF = _ROOT / "imtypeset.ref"
 _HANDOFF = _ROOT / "HANDOFF-imtypeset.md"
 
 IMTYPESET_URL = "github.com/WalterCReel3/imtypeset"
+
+# The one action that is not GitHub's own, named by a commit and not a tag: it
+# is handed the right to publish. v1.14.2 (read from GitHub's API on
+# 2026-10-13; the commit imtypeset's wheels.yml names).
+PUBLISH_ACTION = "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +392,7 @@ def test_the_reader_refuses_what_it_would_have_to_guess_at(text: str) -> None:
         read_yaml(text)
 
 
-@pytest.mark.parametrize("path", [_CI, _MACOS], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [_CI, _MACOS, _RELEASE], ids=lambda p: p.name)
 def test_the_reader_agrees_with_a_real_parser_when_there_is_one(path: Path) -> None:
     """
     With PyYAML importable, its reading and this file's are the same structure.
@@ -411,15 +426,30 @@ def test_the_reader_agrees_with_a_real_parser_when_there_is_one(path: Path) -> N
 
 
 def test_the_workflow_runs_on_pushes_and_pull_requests_to_main_and_experimental() -> None:
+    """
+    And by hand (`workflow_dispatch`, added 2026-10-13; until then the two
+    events below were the whole set): that is what starts the `sidecar` job,
+    and nothing else does.
+    """
     workflow = _workflow(_CI)
-    assert set(workflow["on"]) == {"push", "pull_request"}
+    assert set(workflow["on"]) == {"push", "pull_request", "workflow_dispatch"}
+    assert workflow["on"]["workflow_dispatch"] is None
     for event in ("push", "pull_request"):
         assert workflow["on"][event] == {"branches": ["main", "experimental/**"]}, event
+    by_hand = {name for name, job in workflow["jobs"].items() if "if" in job}
+    assert by_hand == {"sidecar"}
+    assert workflow["jobs"]["sidecar"]["if"] == "github.event_name == 'workflow_dispatch'"
 
 
 def test_the_workflow_has_the_two_gates_on_ubuntu_with_python_3_11() -> None:
+    """
+    Three jobs since 2026-10-13 (two until then: `plain` and a `typeset` that
+    built the pair from source). imtypeset became a dependency, so the gate
+    with the library is the one `make bootstrap` leaves, and building from
+    source moved to `sidecar`.
+    """
     workflow = _workflow(_CI)
-    assert set(workflow["jobs"]) == {"plain", "typeset"}
+    assert set(workflow["jobs"]) == {"plain", "typeset", "sidecar"}
     for name, job in workflow["jobs"].items():
         assert job["runs-on"].startswith("ubuntu-"), name
         pythons = [
@@ -434,13 +464,18 @@ def test_the_workflow_has_the_two_gates_on_ubuntu_with_python_3_11() -> None:
 
 def test_the_plain_job_is_bootstrap_then_check_and_never_meets_imtypeset() -> None:
     """
-    `make check` with no library must pass with no imtypeset anywhere.
+    `make check` with no library must pass where the library is not used.
 
-    So the plain job builds nothing of it, opts into nothing, and has a step
-    that fails if a checkout, a built pair, either variable or an installed
-    distribution is there after all. (When imtypeset becomes a declared
-    dependency of imscribe, that step goes red and the job's meaning has to be
-    decided again; that is what it is for.)
+    Until 2026-10-13 this job had NO imtypeset anywhere and a step, "No
+    imtypeset anywhere", that failed if a distribution was installed
+    (`find_spec("imtypeset")`); its docstring said: "When imtypeset becomes a
+    declared dependency of imscribe, that step goes red and the job's meaning
+    has to be decided again". It became one, and this is the decision: `make
+    bootstrap` installs the wheel in every job, and the plain job is the
+    suite with `IMSCRIBE_NO_TYPESET=1`, which is what imscribe is on a
+    platform with no wheel. The job still builds nothing, opts into nothing
+    and names no library, and a step before the gate holds that the switch
+    is honoured: the command line answers `not-installed` (exit 3).
     """
     plain = _workflow(_CI)["jobs"]["plain"]
     goals = [goals for run in _runs(plain) for goals, _ in _make_calls(run)]
@@ -449,22 +484,84 @@ def test_the_plain_job_is_bootstrap_then_check_and_never_meets_imtypeset() -> No
     assert variables == [{}, {}]
     text = "\n".join(_runs(plain))
     assert "typeset-lib" not in text and "TYPESET=" not in text
-    guard = next(
-        step["run"] for step in _steps(plain) if step.get("name") == "No imtypeset anywhere"
-    )
+    guard = next(step for step in _steps(plain) if step.get("name", "").startswith("No library"))
     for needle in (
         "test ! -e ../imtypeset",
         "IMTYPESET_LIBRARY",
         "IMTYPESET_PYTHON",
-        'find_spec("imtypeset")',
+        ".venv/bin/python -P -m imscribe.typesetter || code=$?",
+        'test "$code" = 3',
     ):
-        assert needle in guard, needle
+        assert needle in guard["run"], needle
+    assert typesetter.EXIT_CODES[typesetter.Kind.NOT_INSTALLED] == 3
+    gate = next(step for step in _steps(plain) if step.get("name") == "make check")
+    for step in (guard, gate):
+        assert step["env"] == {typesetter.DISABLE_VARIABLE: "1"}, step["name"]
     names = [step.get("name") for step in _steps(plain)]
-    assert names.index("No imtypeset anywhere") < names.index("make check")
+    assert names.index(guard["name"]) < names.index("make check")
 
 
-def test_the_typeset_job_builds_the_pair_from_the_ref_and_runs_the_gate_with_it() -> None:
+def test_the_typeset_job_runs_the_gate_with_the_wheel_bootstrap_installed() -> None:
+    """
+    The with-library gate since 2026-10-13: nothing is built and nothing is
+    set. Before the gate a step asks imscribe which imtypeset it found, with
+    no variable in the environment, and is red unless it loads (exit 0).
+    """
     typeset = _workflow(_CI)["jobs"]["typeset"]
+    assert "if" not in typeset
+    calls = [call for run in _runs(typeset) for call in _make_calls(run)]
+    assert [goals for goals, _ in calls] == [["bootstrap"], ["shot"], ["check"]]
+    assert set(calls[1][1]) == {"ARGS"} and calls[2][1] == {}
+    text = "\n".join(_runs(typeset))
+    assert "typeset-lib" not in text and "TYPESET=" not in text and "imtypeset.ref" not in text
+    assert all(typesetter.DISABLE_VARIABLE not in step.get("env", {}) for step in _steps(typeset))
+    asked = next(
+        s for s in _steps(typeset) if s["name"].startswith("Which imtypeset pip installed")
+    )
+    assert asked["run"].rstrip().endswith("\n.venv/bin/python -P -m imscribe.typesetter")
+    names = [step["name"] for step in _steps(typeset)]
+    assert names.index("make bootstrap") < names.index(asked["name"]) < names.index("make check")
+
+
+def test_the_dependency_the_workflows_wait_for_is_the_one_pyproject_names() -> None:
+    """
+    Both pins are exact and the imtypeset line is built for the imgui-bundle
+    beside it: its fourth number is that version written as one number.
+    """
+    text = _PYPROJECT.read_text(encoding="utf-8")
+    bundle = re.search(r'^\s*"imgui-bundle==(\d+)\.(\d+)\.(\d+)",$', text, flags=re.MULTILINE)
+    library = re.search(r'^\s*"imtypeset==(\d+\.\d+\.\d+)\.(\d+); ([^"]+)",$', text, re.MULTILINE)
+    assert bundle is not None and library is not None
+    assert library.group(2) == "".join(bundle.groups()), "the two pins do not name one imgui-bundle"
+    major, minor = (int(part) for part in library.group(1).split(".")[:2])
+    assert (major, minor) >= typesetter.MINIMUM
+    # The marker, as imtypeset's docs/releasing.md (section 5) gives it.
+    assert library.group(3) == (
+        "python_version >= '3.11' and python_version < '3.15' and "
+        "((sys_platform == 'linux' and platform_machine == 'x86_64') or "
+        "(sys_platform == 'darwin' and platform_machine == 'arm64'))"
+    )
+    pinned = f"imtypeset {library.group(1)}.{library.group(2)}"
+    for path in (_CI, _MACOS):
+        # Both files say which published file every job waits on. (For a few
+        # hours on 2026-10-13 the sentence was "RED UNTIL ... IS ON PyPI":
+        # the pin was written before imtypeset's first upload.)
+        assert f"EVERY JOB NEEDS {pinned} FROM PyPI" in path.read_text("utf-8"), path.name
+
+
+def test_the_sidecar_job_builds_the_pair_from_the_ref_and_runs_the_gate_with_it() -> None:
+    """
+    Until 2026-10-13 this was the `typeset` job and ran on every push. The
+    same steps, in the job that is started by hand, with one more first: the
+    installed imtypeset is taken out, because an installed one reads no
+    variable and would be what `TYPESET=1` loads.
+    """
+    typeset = _workflow(_CI)["jobs"]["sidecar"]
+    removal = next(s for s in _steps(typeset) if s["name"].startswith("Take the installed"))
+    assert ".venv/bin/python -m pip uninstall -y imtypeset" in removal["run"]
+    names = [step["name"] for step in _steps(typeset)]
+    assert names.index("make bootstrap") < names.index(removal["name"])
+    assert names.index(removal["name"]) < names.index("make check TYPESET=1")
     calls = [call for run in _runs(typeset) for call in _make_calls(run)]
     goals = [goals for goals, _ in calls]
     assert goals == [["bootstrap"], ["typeset-lib"], ["shot"], ["check"]]
@@ -493,7 +590,7 @@ def test_every_make_target_the_workflows_name_is_a_target_of_the_makefile() -> N
     targets = _makefile_targets()
     assert {"bootstrap", "check", "typeset-lib", "shot"} <= targets  # the reading works at all
     calls = _all_make_calls(_workflow(_CI)) + _all_make_calls(_workflow(_MACOS))
-    assert len(calls) >= 8
+    assert len(calls) >= 10
     for job, goals, _ in calls:
         assert goals, f"{job}: a `make` with no goal runs `help`"
         assert set(goals) <= targets, f"{job}: {sorted(set(goals) - targets)} is no target"
@@ -554,20 +651,54 @@ def test_a_run_step_is_a_command_a_person_can_paste() -> None:
     """
     No workflow expression inside a `run:`; values arrive through `env:`.
     """
-    for path in (_CI, _MACOS):
+    for path in (_CI, _MACOS, _RELEASE):
         for name, job in _workflow(path)["jobs"].items():
             for run in _runs(job):
                 assert "${{" not in run, (path.name, name, run)
 
 
 def test_a_step_either_runs_or_uses_an_action_at_a_named_major_version() -> None:
-    for path in (_CI, _MACOS):
+    """
+    In ci.yml and macos.yml, which publish nothing. In release.yml every
+    action is named by a commit (2026-10-13; until then it named major
+    versions too, which this test held it to): a tag can be moved, and that
+    workflow is handed the right to publish.
+    """
+    for path in (_CI, _MACOS, _RELEASE):
         for name, job in _workflow(path)["jobs"].items():
             for step in _steps(job):
                 assert ("run" in step) != ("uses" in step), (path.name, name, step)
                 assert "name" in step, (path.name, name, step)
-                if "uses" in step:
+                if "uses" in step and path == _RELEASE:
+                    assert re.fullmatch(r"[a-z-]+/[a-z-]+@[0-9a-f]{40}", step["uses"]), step
+                elif "uses" in step:
                     assert re.fullmatch(r"actions/[a-z-]+(/[a-z-]+)?@v\d+", step["uses"]), step
+
+
+def test_the_release_names_one_commit_for_each_action_and_says_which_version_it_is() -> None:
+    """
+    One action, one commit, wherever it is used in the file; and one of the
+    two lines above each `uses` (the step's name may come between) says the
+    version the commit was read as, because a hash alone tells a reader
+    nothing.
+    """
+    lines = _RELEASE.read_text(encoding="utf-8").splitlines()
+    commits: dict[str, set[str]] = {}
+    for at, line in enumerate(lines):
+        found = re.fullmatch(r"\s+uses: (\S+)@(\S+)", line)
+        if found is None:
+            continue
+        commits.setdefault(found.group(1), set()).add(found.group(2))
+        above = lines[at - 2 : at]
+        assert any(re.fullmatch(r"\s+# v\d+\.\d+\.\d+", one) for one in above), above
+    assert set(commits) == {
+        "actions/checkout",
+        "actions/setup-python",
+        "actions/upload-artifact",
+        "actions/download-artifact",
+        "pypa/gh-action-pypi-publish",
+    }
+    assert all(len(found) == 1 for found in commits.values()), commits
 
 
 def test_the_checkout_leaves_no_token_in_the_repository_the_build_fetches_from() -> None:
@@ -584,7 +715,7 @@ def test_the_checkout_leaves_no_token_in_the_repository_the_build_fetches_from()
 
 def test_window_tests_cannot_skip_unnoticed() -> None:
     """
-    Both jobs run the gate under a display, and stop before it if `unshare -rm`
+    Every job runs the gate under a display, and stops before it if `unshare -rm`
     does not work: two test files start their own Xvfb in a user namespace and
     skip without one (tests/test_mouse_probe.py, tests/test_example_stream.py).
     """
@@ -592,12 +723,34 @@ def test_window_tests_cannot_skip_unnoticed() -> None:
     assert workflow["env"]["LIBGL_ALWAYS_SOFTWARE"] == "1"
     assert workflow["env"]["GALLIUM_DRIVER"] == "llvmpipe"
     assert workflow["env"]["PYTEST_ADDOPTS"] == "-rs"  # the log names every skip and why
+    # The display `xvfb-run` gives a job is the one the window tests use.
+    assert workflow["env"]["IMSCRIBE_TEST_DISPLAY"] == "1"
     for name, job in workflow["jobs"].items():
         runs = _runs(job)
         gate = next(run for run in runs if re.search(r"\bmake check\b", run))
         assert gate.startswith("xvfb-run "), name
         before = runs[: runs.index(gate)]
         assert any(run.rstrip().endswith("\nunshare -rm true") for run in before), name
+
+
+def test_the_window_fixture_prefers_its_own_xvfb_unless_the_display_is_asked_for() -> None:
+    """
+    `tests/conftest.py::choose_window`, the order the `window` fixture goes
+    by since 2026-10-13 (a reachable `DISPLAY` used to win): its own Xvfb
+    where one can be started, the session's display where it cannot (a Mac
+    has no Xvfb) or where `IMSCRIBE_TEST_DISPLAY` asks, which the workflow
+    does.
+    """
+    from conftest import DISPLAY_VARIABLE, choose_window
+
+    assert DISPLAY_VARIABLE == "IMSCRIBE_TEST_DISPLAY"
+    assert choose_window(asked=False, reachable=True, xvfb=True) == "xvfb"
+    assert choose_window(asked=True, reachable=True, xvfb=True) == "display"
+    assert choose_window(asked=True, reachable=False, xvfb=True) == "xvfb"
+    assert choose_window(asked=False, reachable=True, xvfb=False) == "display"
+    assert choose_window(asked=False, reachable=False, xvfb=True) == "xvfb"
+    for asked in (False, True):
+        assert choose_window(asked=asked, reachable=False, xvfb=False) is None
 
 
 # ---------------------------------------------------------------------------
@@ -624,7 +777,7 @@ def test_the_workflow_reads_the_ref_from_the_file_and_repeats_it_nowhere() -> No
     ref = _ref_lines()[0]
     text = _CI.read_text(encoding="utf-8")
     assert ref not in text and ref[:7] not in text
-    typeset = _workflow(_CI)["jobs"]["typeset"]
+    typeset = _workflow(_CI)["jobs"]["sidecar"]
     pair = next(step for step in _steps(typeset) if step.get("id") == "pair")
     assert "imtypeset.ref" in pair["run"] and 'echo "ref=$ref"' in pair["run"]
     build = next(step for step in _steps(typeset) if "make typeset-lib" in step.get("run", ""))
@@ -636,7 +789,7 @@ def test_the_workflows_way_of_reading_the_ref_file_reads_the_ref() -> None:
     The `sed` in the workflow is "the first line that is neither blank nor a
     comment"; said again in Python and held to the same answer.
     """
-    typeset = _workflow(_CI)["jobs"]["typeset"]
+    typeset = _workflow(_CI)["jobs"]["sidecar"]
     pair = next(step for step in _steps(typeset) if step.get("id") == "pair")
     assert "sed -n '/^[^#[:space:]]/{p;q;}' imtypeset.ref" in pair["run"]
     first = next(
@@ -646,7 +799,7 @@ def test_the_workflows_way_of_reading_the_ref_file_reads_the_ref() -> None:
 
 
 def test_the_cache_of_the_built_pair_is_keyed_on_the_ref_and_on_the_wheel() -> None:
-    typeset = _workflow(_CI)["jobs"]["typeset"]
+    typeset = _workflow(_CI)["jobs"]["sidecar"]
     restore = next(step for step in _steps(typeset) if step.get("id") == "cache")
     assert restore["uses"].startswith("actions/cache/restore@")
     assert restore["with"]["path"] == "build/imtypeset-bundle"
@@ -671,11 +824,193 @@ def test_the_cache_of_the_built_pair_is_keyed_on_the_ref_and_on_the_wheel() -> N
 
 
 def test_the_macos_workflow_cannot_start_by_itself_and_says_what_it_waits_on() -> None:
+    """
+    Until 2026-10-13 its one job was switched off (`if: false`) and waited on
+    H1 of HANDOFF-imtypeset.md. imtypeset answered H1 yes (a wheel for macOS
+    arm64, its probe green on GitHub's runners), so the job is on: it still
+    starts only by hand, it says it has never run, and it is the gate with no
+    window (`make check`; the window tests skip there).
+    """
     workflow = _workflow(_MACOS)
     assert set(workflow["on"]) == {"workflow_dispatch"}
-    assert workflow["jobs"]
+    assert workflow["on"]["workflow_dispatch"] is None
+    assert set(workflow["jobs"]) == {"check-macos"}
     for name, job in workflow["jobs"].items():
-        assert job["if"] == "false", name
-        assert job["runs-on"].startswith("macos-"), name
+        assert "if" not in job, name
+        assert job["runs-on"] == "macos-14", name  # arm64: where imtypeset has a wheel
+        calls = [call for run in _runs(job) for call in _make_calls(run)]
+        assert calls == [(["bootstrap"], {}), (["check"], {})], name
+        assert ".venv/bin/python -P -m imscribe.typesetter" in "\n".join(_runs(job)), name
+        assert "xvfb" not in "\n".join(_runs(job)) and "unshare" not in "\n".join(_runs(job))
+    assert "never run" in workflow["name"]
     text = _MACOS.read_text(encoding="utf-8")
+    assert "NEVER RUN" in text
     assert "H1 of HANDOFF-imtypeset.md" in text and "L1-MAC" in text
+
+
+# ---------------------------------------------------------------------------
+# release.yml
+
+
+def _release() -> dict[str, Any]:
+    return _workflow(_RELEASE)
+
+
+def test_the_release_starts_for_a_pushed_tag_or_by_hand_and_for_no_branch() -> None:
+    on = _release()["on"]
+    assert set(on) == {"push", "workflow_dispatch"}
+    assert on["push"] == {"tags": ["v*"]}, "a branch push must not start a release"
+    assert on["workflow_dispatch"]["inputs"]["testpypi"]["default"] == "false"
+    assert on["workflow_dispatch"]["inputs"]["testpypi"]["type"] == "boolean"
+    # Nothing is granted to the workflow as a whole but reading the repository.
+    assert _release()["permissions"] == {"contents": "read"}
+
+
+def test_only_the_two_publishing_jobs_can_publish_and_each_only_for_its_own_event() -> None:
+    """
+    PyPI: a PUSHED tag `v...`, nothing else. TestPyPI: a run started by hand
+    with the input set, nothing else. Each after the build job, each in its
+    own environment, each with `id-token: write` and no other write.
+    """
+    jobs = _release()["jobs"]
+    assert set(jobs) == {"build", "publish-pypi", "publish-testpypi"}
+    uploads = {
+        name: [step for step in _steps(job) if step.get("uses") == PUBLISH_ACTION]
+        for name, job in jobs.items()
+    }
+    assert {name: len(steps) for name, steps in uploads.items()} == {
+        "build": 0,
+        "publish-pypi": 1,
+        "publish-testpypi": 1,
+    }
+    assert "permissions" not in jobs["build"] and "environment" not in jobs["build"]
+    assert "if" not in jobs["build"]
+
+    pypi = jobs["publish-pypi"]
+    assert pypi["if"] == "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
+    assert pypi["environment"] == {"name": "pypi", "url": "https://pypi.org/project/imscribe/"}
+    assert "repository-url" not in uploads["publish-pypi"][0]["with"]
+
+    rehearsal = jobs["publish-testpypi"]
+    assert rehearsal["if"] == (
+        "github.event_name == 'workflow_dispatch' && github.event.inputs.testpypi == 'true'"
+    )
+    assert rehearsal["environment"]["name"] == "testpypi"
+    assert uploads["publish-testpypi"][0]["with"]["repository-url"] == (
+        "https://test.pypi.org/legacy/"
+    )
+
+    for name in ("publish-pypi", "publish-testpypi"):
+        job = jobs[name]
+        assert job["needs"] == "build", name
+        assert job["permissions"] == {"contents": "read", "id-token": "write"}, name
+        assert job["runs-on"].startswith("ubuntu-"), "the publishing action runs on Linux only"
+        assert uploads[name][0]["with"]["packages-dir"] == "upload", name
+        # No token anywhere: Trusted Publishing is the run's own identity.
+        assert "password" not in uploads[name][0]["with"], name
+    text = _RELEASE.read_text(encoding="utf-8")
+    assert "secrets." not in text and "PYPI_API_TOKEN" not in text
+
+
+def test_the_release_builds_with_the_script_make_dist_runs_and_uploads_two_files() -> None:
+    build = _release()["jobs"]["build"]
+    names = [step["name"] for step in _steps(build)]
+    runs = {step["name"]: step["run"] for step in _steps(build) if "run" in step}
+    # What `make dist` runs, with the runner's interpreter (the Makefile's
+    # recipe names ./.venv, which a runner does not have).
+    recipe = _MAKEFILE.read_text(encoding="utf-8")
+    assert "$(PY) -P scripts/make_dist.py --out" in recipe
+    built = next(name for name in names if name.startswith("Build the commit twice"))
+    assert runs[built] == "python -P scripts/make_dist.py --out dist --rev HEAD"
+    # Only the wheel and the sdist: dist/ also holds .sha256 files and
+    # BUILT-FROM, which an upload of the directory would stop on.
+    files = next(name for name in names if name.startswith("The two files"))
+    assert "cp dist/*.whl dist/*.tar.gz upload/" in runs[files]
+    assert "python -m twine check --strict upload/*" in runs[files]
+    kept = next(step for step in _steps(build) if step.get("uses", "").startswith("actions/upload"))
+    assert kept["with"] == {"name": "dist", "path": "upload", "if-no-files-found": "error"}
+    # The wheel is installed with its dependencies and asked for its library
+    # BEFORE anything is kept for a publishing job.
+    installed = next(name for name in names if name.startswith("Install the wheel"))
+    assert runs[installed].rstrip().endswith("bin/python -P -m imscribe.typesetter")
+    assert names.index(built) < names.index(files) < names.index(installed)
+    assert names.index(installed) < names.index(kept["name"])
+    # The system libraries imgui-bundle's extension loads are installed before
+    # the wheel is asked for its library, and they are the ones the job that
+    # runs the suite on the installed wheel installs (ci.yml, `typeset`).
+    system = next(name for name in names if name.startswith("System libraries"))
+    assert names.index(system) < names.index(installed)
+    theirs = _apt_packages(_workflow(_CI)["jobs"]["typeset"])
+    assert {"libx11-6", "libxext6", "libgl1"} <= theirs
+    assert _apt_packages(build) == {package for package in theirs if package.startswith("lib")}
+    for name in ("publish-pypi", "publish-testpypi"):
+        fetched = _steps(_release()["jobs"][name])[0]
+        assert fetched["uses"].startswith("actions/download-artifact@")
+        assert fetched["with"] == {"name": "dist", "path": "upload"}, name
+
+
+def _apt_packages(job: dict[str, Any]) -> set[str]:
+    """What a job's `sudo apt-get install` commands name."""
+    packages: set[str] = set()
+    for run in _runs(job):
+        for command in _commands(run):
+            if command[:3] == ["sudo", "apt-get", "install"]:
+                packages |= {word for word in command[3:] if not word.startswith("-")}
+    return packages
+
+
+def test_the_release_says_what_a_second_run_of_one_version_does() -> None:
+    """
+    `skip-existing` finishes an upload that stopped partway; it also lets a
+    run for a version the index already holds go green having sent nothing.
+    The file says so where the owner reads before pushing a tag.
+    """
+    jobs = _release()["jobs"]
+    for name in ("publish-pypi", "publish-testpypi"):
+        upload = next(step for step in _steps(jobs[name]) if step.get("uses") == PUBLISH_ACTION)
+        assert upload["with"]["skip-existing"] == "true", name
+    said = " ".join(
+        line.lstrip("# ")
+        for line in _RELEASE.read_text(encoding="utf-8").splitlines()
+        if line.startswith("#")
+    )
+    assert "GOES GREEN HAVING UPLOADED NOTHING" in said
+    assert "`skip-existing: true`" in said
+
+
+def test_a_tag_that_is_not_the_version_is_refused_before_anything_is_built() -> None:
+    """
+    The step's `sed` is said again in Python against the real pyproject.toml,
+    and its comparison is run in a shell for the right tag and two wrong ones.
+    """
+    import subprocess
+
+    build = _release()["jobs"]["build"]
+    names = [step["name"] for step in _steps(build)]
+    step = next(step for step in _steps(build) if step["name"] == "The tag is the version")
+    assert step["if"] == "github.event_name == 'push'"
+    assert step["env"] == {"RELEASE_TAG": "${{ github.ref_name }}"}
+    assert names.index(step["name"]) < names.index(
+        next(name for name in names if name.startswith("Build the commit twice"))
+    )
+    stated = re.search(r'^version = "(.*)"$', _PYPROJECT.read_text(encoding="utf-8"), re.MULTILINE)
+    assert stated is not None
+
+    def run(tag: str) -> int:
+        done = subprocess.run(
+            ["sh", "-e", "-c", step["run"]],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            cwd=str(_ROOT),
+            env={"PATH": "/usr/bin:/bin", "RELEASE_TAG": tag},
+        )
+        if done.returncode == 0:
+            assert f"pyproject.toml says {stated.group(1)}; the tag is {tag}" in done.stdout
+        return done.returncode
+
+    assert run(f"v{stated.group(1)}") == 0
+    assert run(stated.group(1)) != 0, "a tag without the v"
+    assert run(f"v{stated.group(1)}.post1") != 0
+    assert run("v") != 0

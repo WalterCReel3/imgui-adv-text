@@ -1,34 +1,45 @@
-# macOS: NOT A RUNNABLE WORKFLOW. A placeholder that says what is waited for.
+# macOS on Apple Silicon: imscribe installed with its dependencies, and the
+# tests that need no window.
 #
-# It has no push or pull_request trigger and its one job is switched off
-# (`if: false`), so starting it by hand does nothing either. It is a file and
-# not a comment in ci.yml so that turning it on is a diff of this file alone.
+# NEVER RUN. Nobody on this project has run anything of imscribe on a Mac, and
+# this workflow has not been started. It starts ONLY by hand
+# (`workflow_dispatch`): a job that has never passed should not turn a push
+# red on the day of a release. Its first run is the finding; make it a push
+# trigger once it has been green.
 #
-# What it waits on:
+# What it waited on, and the answer: H1 of HANDOFF-imtypeset.md (does the
+# sidecar work on macOS at all) is answered YES by imtypeset: its probe passed
+# on GitHub's macOS arm64 runners, and it publishes a wheel for
+# `macosx_14_0_arm64`, CPython 3.11 to 3.14 (its docs/releasing.md, section
+# 1). So `make bootstrap` here installs imtypeset from PyPI as it does on
+# Linux, and the step after it asks imscribe whether the library loads.
 #
-#   H1 of HANDOFF-imtypeset.md   does the sidecar work on macOS at all: are the
-#                                Dear ImGui symbols exported from the macOS
-#                                imgui-bundle wheel's module, and does a .dylib
-#                                built with undefined dynamic lookup bind to
-#                                them. Asked of the imtypeset team; nobody on
-#                                either side has run anything on a Mac.
-#   imscribe's own Linux audit    task L1-MAC of 2026-10-11 (what in imscribe
-#                                assumes Linux); its findings are to be in
-#                                docs/status.md.
+# What runs: `make check` -- lint, types and the suite. The tests that open a
+# real window SKIP here and say why: the `window` fixture (tests/conftest.py)
+# finds no DISPLAY and no Xvfb, and the two files that start their own Xvfb
+# need `unshare`, which macOS does not have. Everything that runs Dear ImGui
+# frames with no window, and every with-library test of that kind, runs.
 #
-# Known from reading, before either answer, to be Linux-only in what ci.yml
-# does: `xvfb-run`, `unshare -rm` and the apt packages; imtypeset's build
-# script at the pinned ref (g++, `-shared`, `-Wl,--version-script`,
-# `-Wl,--no-undefined`; from its commit 03b5cd4 on it has a macOS branch,
-# never run). The Makefile no longer names the library's file: it reads the
-# name that script writes (2026-10-12; never run on a Mac). Not known: whether a GLFW
-# window opens on a hosted macOS runner at all, which the tests that
-# photograph the app need.
+# Not known, and what the first run will say: whether `make` and the
+# Makefile's shell lines work with macOS's tools (BSD sed, cksum, find); how
+# many tests skip; whether any test assumes Linux in a way that fails and
+# does not skip (imscribe's own audit of that, task L1-MAC of 2026-10-11, was
+# to be in docs/status.md); whether text is set in the same places as on
+# Linux (the tests hold numbers measured on Linux x86-64).
 #
-# The steps below are the plain gate only and are a guess at a starting point,
-# never run anywhere.
+# EVERY JOB NEEDS imtypeset 0.4.1.192900 FROM PyPI, as in ci.yml (published
+# 2026-10-13, with wheels for macosx_14_0_arm64, CPython 3.11 to 3.14).
+#
+# Known of imtypeset itself on macOS 14 arm64, by its own notes
+# (docs/advtext-swap-status.md there, "Known at v0.4.1"): its wheels' installed
+# checks pass; three of its 55 tests failed on its first run there (a scripted
+# keyboard-copy test that sent Ctrl where a Mac sends Cmd, a paragraph laid
+# out differently under a decimal-comma locale, and 2 of 7,510 glyph boxes
+# under Homebrew's FreeType, which the wheel does not use), and its tag
+# v0.4.1 is the commit "Correct the four tests that failed on the first macOS
+# run". None of that was run by imscribe.
 
-name: "macOS (disabled; waits on H1)"
+name: "macOS arm64 (by hand; never run)"
 
 on:
   workflow_dispatch:
@@ -36,10 +47,12 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTEST_ADDOPTS: "-rs"
+
 jobs:
-  plain-macos:
-    name: "make check on macOS (switched off)"
-    if: false
+  check-macos:
+    name: "make check on macOS arm64 (window tests skip)"
     runs-on: macos-14
     timeout-minutes: 45
     steps:
@@ -57,6 +70,11 @@ jobs:
 
       - name: "make bootstrap"
         run: make bootstrap
+
+      - name: "Which imtypeset pip installed, and that it loads with nothing set (exit 0 only then)"
+        run: |
+          .venv/bin/python -m pip check
+          .venv/bin/python -P -m imscribe.typesetter
 
       - name: "make check"
         run: make check

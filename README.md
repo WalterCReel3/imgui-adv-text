@@ -15,10 +15,12 @@ arithmetic over numbers already computed.
 **Until 2026-10-12 this package was named `advtext`.** It was renamed and
 nothing else: no call changed its signature or what it does
 (`docs/decisions.md`, "The package is renamed imscribe"). `import advtext`
-is an error now; no alias was left. The repository and its URL are still
-`imgui-adv-text`, the git tag `advtext-reference` keeps its name, and the
-documents under `docs/` that were written before the rename say advtext.
-This file was brought level, its dated paragraphs included.
+is an error now; no alias was left. The repository was renamed to follow
+on 2026-10-13: <https://github.com/WalterCReel3/imscribe> (it was
+`imgui-adv-text`; GitHub redirects the old URL, and the local checkout's
+directory still has the old name). The git tag `advtext-reference` keeps its
+name, and the documents under `docs/` that were written before the rename
+say advtext. This file was brought level, its dated paragraphs included.
 
 **Until 2026-10-11 that typesetter was imscribe's own, in Python**, and this
 file opened by describing it. On the branch this file is on, it is deleted
@@ -99,58 +101,110 @@ frozen application, on a GPU, at a display density other than 1, or against
 GitHub, and the CI workflow has never run.** The sections below were brought
 level by the builder of the task O-REL, an agent.
 
+**On 2026-10-13 imtypeset was published and imscribe took it as an ordinary
+dependency.** The owner, that day: "I'm happy to announce that imtypeset is
+available on PyPI." imscribe now requires `imtypeset==0.4.1.192900` beside
+`imgui-bundle==1.92.900`, both exact, the first under a platform marker;
+`pip install --pre imscribe` is meant to bring the library on the two
+platforms it has wheels for, and nothing is set in the environment.
+imtypeset 0.4 lays code out on the device's whole-pixel grid by default, so
+the diff view's `cell="pixel"` option of the day before is gone (accepted,
+ignored, a `DeprecationWarning`), and a fenced block and inline code are on
+that grid too. The version is `0.2.0b1`; `make dist` has built real files
+for the first time (of a scratch commit); `.github/workflows/release.yml`
+publishes a pushed tag to PyPI by trusted publishing. All of it by agents.
+**imscribe is not on PyPI: the owner publishes, and had not when this was
+written. `release.yml` has never run, nor has any other workflow of this
+repository on GitHub. Nothing has run on macOS. No person has looked at what
+0.4.1 draws.** [`docs/status.md`](docs/status.md) section 0i is the account
+and the newest; the sections below were brought level with it by the builder
+of the task ADOPT-FINAL, an agent.
+
 ## Thirty seconds
 
-    make typeset-lib IMTYPESET_COMMIT=v0.3.0 IMTYPESET_HEADERS=stand-in   # once: build the library the text is set by
-    make run TYPESET=1      # the ImGui demo: a sidebar of fourteen pages
-    make shot TYPESET=1     # one page of it as a PNG, without watching a window open
-    make check TYPESET=1    # ruff + black --check, mypy --strict, pytest with the library
-    make check              # the same without it: green, and the tests that need it skip
+To use it in an application (a beta, so pip must be asked for it; **not
+uploaded yet when this was written**, see "Packaging"):
+
+    pip install --pre imscribe   # brings imgui-bundle 1.92.900 and, on Linux x86-64 (glibc) and macOS arm64, imtypeset 0.4.1.192900
+
+To work on this tree:
+
+    make bootstrap          # ./.venv, with imscribe editable and its dependencies: imtypeset's wheel among them
+    make run                # the ImGui demo: a sidebar of fourteen pages
+    make shot               # one page of it as a PNG, without watching a window open
+    make check              # ruff + black --check, mypy --strict, pytest: with the installed imtypeset
+    IMSCRIBE_NO_TYPESET=1 make check   # the same with no library looked for: the tests that need it skip
     make svg                # the reference layout with no GPU, no display and no ImGui
     make dist               # a wheel and an sdist of HEAD with their sha256 (see "Packaging")
     make help               # every target, and which interpreter it will use
 
-**`TYPESET=1` is not optional if you want to see text.** Without it the demo
-opens and every page is one line: `imtypeset is not drawing: ` and the reason.
+**Nothing is set in the environment.** Since 2026-10-13 imtypeset is a
+dependency in `pyproject.toml`, `make bootstrap` installs its wheel from
+PyPI, and imscribe finds it by itself. `python -m imscribe.typesetter`
+prints one line of JSON saying which imtypeset was found and exits 0 when it
+is accepted. Where no imtypeset is installed (Windows, Linux on arm64, macOS
+on Intel: it has no wheel there) or `IMSCRIBE_NO_TYPESET=1` is set, the demo
+opens and every page is one line: `imtypeset is not drawing: ` and the
+reason. (That reason still reads `IMTYPESET_LIBRARY is not set`, which names
+the developer's variable and not the missing wheel; open, `docs/status.md`
+0i.)
 
-`make typeset-lib` builds into `build/imtypeset-bundle/`, and takes
-imtypeset's source one of three ways:
+**The developer's route: an imtypeset that is not released.** `TYPESET=1`
+and `make typeset-lib` are what this tree ran on until 2026-10-13 and are
+kept for building imtypeset from source:
 
-    make typeset-lib IMTYPESET_COMMIT=v0.3.0 IMTYPESET_HEADERS=stand-in   # that commit of the sibling checkout ../imtypeset
+    make typeset-lib IMTYPESET_COMMIT=v0.4.1    # that commit of the sibling checkout ../imtypeset
     make typeset-lib                            # the sibling's working tree, as it is
-    make typeset-lib IMTYPESET_REF=2fd705e2bc358c7dbfda1eb60bd9b71609869e1d   # that commit, fetched from GitHub
+    make typeset-lib IMTYPESET_REF=e6160c0f83bbb6c7c41dba62ff0736a956ba7d9b   # that commit, fetched from GitHub
+    make check TYPESET=1                        # the gate against the pair that built
+    make run TYPESET=1
 
-imtypeset's `v0.3.0`, commit `2fd705e`, is what this tree is built and gated
-against (since 2026-10-12; `c9f8902` and then `03b5cd4` before it, the same
-day). Its full hash is the one line of `imtypeset.ref`, which the CI workflow
-reads. The Makefile does not read that file: `IMTYPESET_REF` has no default,
-and a plain `make typeset-lib` fetches nothing. `IMTYPESET_REF` is a tag, a
-branch or a FULL 40-character hash (an abbreviated one cannot be fetched),
-taken from `IMTYPESET_REPO`, which defaults to
-`https://github.com/WalterCReel3/imtypeset.git`. **The tag `v0.3.0` exists in
-the sibling checkout and, by the other team's own file, is not pushed**; so
-the third form cannot work until the user pushes it, and it has only ever
-been run against a `file://` clone of the sibling, never against GitHub.
+It builds into `build/imtypeset-bundle/`, and `TYPESET=1` sets
+`IMTYPESET_LIBRARY` and `IMTYPESET_PYTHON` to that pair. **`TYPESET=1`
+selects the built pair only in a virtualenv with NO imtypeset installed.**
+An installed imtypeset reads neither variable and is found first: with the
+wheel in `./.venv`, `make check TYPESET=1` runs against the wheel, and
+`pairing()["ignored_environment"]` names both variables (ADOPT-DIST's
+builder, an agent, ran it, 2026-10-13). So to gate against a built pair:
 
-**Which Dear ImGui headers the library is compiled against is said on the
-command line** (`IMTYPESET_HEADERS`). Left out, imtypeset's build script
+    .venv/bin/python -m pip uninstall -y imtypeset
+    make check TYPESET=1
+    .venv/bin/python -m pip install --no-deps "imtypeset==0.4.1.192900"
+
+pytest's first lines say which imtypeset a run used. The built pair cannot
+be loaded from a second virtualenv either: imtypeset's gate answers that it
+found two copies of imgui-bundle.
+
+imtypeset's tag `v0.4.1`, commit `e6160c0`, is what this tree is gated
+against since 2026-10-13, as the wheel `imtypeset==0.4.1.192900` from PyPI
+(`v0.3.0`, commit `2fd705e`, built from source, before that). The full hash
+is the one line of `imtypeset.ref`, which the CI workflow's by-hand
+`sidecar` job reads. The Makefile does not read that file: `IMTYPESET_REF`
+has no default, and a plain `make typeset-lib` fetches nothing.
+`IMTYPESET_REF` is a tag, a branch or a FULL 40-character hash (an
+abbreviated one cannot be fetched), taken from `IMTYPESET_REPO`, which
+defaults to `https://github.com/WalterCReel3/imtypeset.git`. The third form
+has only ever been run against a `file://` clone of the sibling, never
+against GitHub.
+
+**Which Dear ImGui headers a built library is compiled against is said on
+the command line** (`IMTYPESET_HEADERS`). Left out, imtypeset's build script
 fetches the wheel's own headers from GitHub, and with no network it stops
 there and installs nothing. `IMTYPESET_HEADERS=stand-in` compiles against
 upstream Dear ImGui's from a clone of `ocornut/imgui` (`../imgui`, or
-`IMTYPESET_IMGUI_CLONE=`): **every library this tree has ever run was built
-that way**, and `pairing()["headers"]` says `stand-in:...` of it. Nobody,
-here or in imtypeset's sessions, has compiled the library against the
-wheel's own headers. A clone of `pthom/imgui_bundle` (`../imgui_bundle`, or
-`IMGUI_BUNDLE_CHECKOUT=`) is read in place of one download when it is there;
-it has been there for every build made here, and a build without it and
-without network was not tried.
+`IMTYPESET_IMGUI_CLONE=`): every library this tree ran before 2026-10-13 was
+built that way, and `pairing()["headers"]` says `stand-in:...` of such a
+one. The published wheel, and the pair the lead built from `cf7466e` that
+day, are compiled against the wheel's own headers (`pairing()["headers"]`
+begins `fork:`). A clone of `pthom/imgui_bundle` (`../imgui_bundle`, or
+`IMGUI_BUNDLE_CHECKOUT=`) is read in place of one download when it is there.
 
 `make shot` is the one to reach for when you want to *see* something and cannot
 sit in front of a window — it drives the real app through the real `immapp.run`,
 counts frames, and grabs the framebuffer:
 
-    make shot TYPESET=1 ARGS="--tab columns:3 --width 1400 --out artifacts/columns-3.png"
-    make shot-all TYPESET=1   # every page in each state it names for itself: 25 PNGs
+    make shot ARGS="--tab columns:3 --width 1400 --out artifacts/columns-3.png"
+    make shot-all             # every page in each state it names for itself: 25 PNGs
 
 It needs a display and numpy. `make shot-headless` is the Xvfb fallback for a
 machine with neither. With the library asked for and not drawing when the
@@ -186,35 +240,49 @@ examples use nothing else of the package except the module
     python examples/chat_transcript.py   # finished messages and one streaming
     python examples/diff_minimal.py      # a diff from before/after text; --side-by-side, --edits
 
-Each needs `IMTYPESET_LIBRARY` and `IMTYPESET_PYTHON` in the environment (what
-`make ... TYPESET=1` sets: the library `build/imtypeset-bundle/LIBRARY` names,
-whose file name differs by platform, and `build/imtypeset-bundle/pysnap`;
-`make typeset-lib` ends by printing both). Without them an example says why
-on standard error and exits 1 before any window opens.
+Each needs imtypeset installed, which it is wherever imscribe was installed
+on a platform imtypeset has a wheel for; nothing is set in the environment.
+Without the library (none installed, or `IMSCRIBE_NO_TYPESET=1`) an example
+says why on standard error and exits 1 before any window opens.
 
-**How the library is found** (`imscribe.typesetter.module()`, since
-2026-10-11), in this order:
+**How the library is found** (`imscribe.typesetter.module()`; the routes
+since 2026-10-11, which of them is normal since 2026-10-13):
 
-1. `IMTYPESET_LIBRARY` set, with `IMTYPESET_PYTHON`: the development
-   override, and the only route the suite or the demo has drawn through.
+1. **An installed `imtypeset` distribution: the normal route.** Known by its
+   metadata or by `imtypeset/_attestation.json` beside the package (so a
+   freezer that drops `dist-info` does not hide it), imported with no
+   variable set; `pairing()["route"]` is `"distribution"`. An installed
+   imtypeset reads neither variable below: where both it and the variables
+   are present it is the installed one that loads, and
+   `pairing()["ignored_environment"]` names the variables. Run with the
+   wheel from PyPI in `./.venv` and nothing set (ADOPT-DIST's builder, an
+   agent, 2026-10-13, Linux x86-64): `kind` ready, `imtypeset_route`
+   installed, `headers` `fork:c9a0a84f...`, exit 0. `IMSCRIBE_NO_TYPESET=1`
+   (`imscribe.typesetter.DISABLE_VARIABLE`) stops this route being looked
+   for and nothing else: a library the two variables name still loads.
+2. `IMTYPESET_LIBRARY` set, with `IMTYPESET_PYTHON`, **where no imtypeset is
+   installed**: the developer's route, for a pair `make typeset-lib` built.
    It works only when `IMTYPESET_PYTHON` names a package directory with NO
    library in it (what `make typeset-lib` stages). After a first load by
    this route a host may remove both variables: `reset()` and the next
    `module()` use the pair that was loaded (`pairing()["named_by"]` is then
    `"remembered"`; `imscribe.typesetter.forget_pair()` ends that).
-2. Otherwise an installed `imtypeset` distribution, known by its metadata or
-   by `imtypeset/_attestation.json` beside the package (so a freezer that
-   drops `dist-info` does not hide it), imported with no variable set.
-   **From imtypeset `v0.3.0` on an installed imtypeset reads neither
-   variable**: where both it and the variables are present it is the
-   installed one that loads, `route` is `"distribution"`, and
-   `pairing()["ignored_environment"]` names the variables. This route has
-   met imtypeset's real wheel twice, outside the suite, on Linux x86-64,
-   by imscribe's N-IMT and O-IMT2 builders (agents): a stand-in-headers wheel
-   from the sibling's build directory, `pip install --no-index --no-deps
-   --target`, with `imgui_bundle` symlinked beside it; accepted by its
-   attestation, fonts loaded, nothing drawn. No such wheel is published.
-3. Otherwise not loaded, and `reason()` is `IMTYPESET_LIBRARY is not set`.
+3. Otherwise not loaded, `kind()` is `Kind.NOT_INSTALLED`, and `reason()` is
+   `IMTYPESET_LIBRARY is not set` (the sentence is the old one and does not
+   mention the wheel; open).
+
+**A library older than 0.4 is refused** (`imscribe.typesetter.MINIMUM`),
+before anything is drawn: `Kind.REFUSED`, "the imtypeset at <dir> is 0.3.0
+and this imscribe needs 0.4 or later; the two were not installed together".
+
+**The suite does not run the way a user's process does.** `tests/conftest.py`
+sets `IMTYPESET_LIBRARY` to the installed library's path and
+`IMSCRIBE_NO_TYPESET=1` for every test, so that the fifty files that ask
+"is the library there" by the variable stay true; the installed package
+ignores the variable. Route 1 with nothing set is run by two tests, one
+command-line check and one install into a scratch virtualenv. If a view
+behaved differently under it, most of the suite would not see it
+(ADOPT-DIST's builder's own caution).
 
 `imscribe.typesetter.pairing()` answers what a host puts in an About box or a
 bug report, as a `dict` of strings and `None` with always the same seventeen
@@ -240,7 +308,7 @@ calls, in the order it calls it:
 | columns | `TypesetView.set_columns(3, height=...)` or `(3, balance=True)` |
 | a document that arrives in pieces | `MarkdownStream`, `TypesetStreamView` |
 | find | `MarkdownConverter(theme).describe(blocks)` → `Description`; `FindIndex.of`, `Finder`, `Match`; `view.set_marks(finder.marks())`, `view.scroll_to` |
-| a diff | `Diff.from_texts`, `Diff.from_edits` (several edits), `Diff.from_unified` (text that arrives as a diff), `UnifiedDiffStream`; `TypesetDiffView`, `DiffLayout`, `DiffPalette` |
+| a diff | `Diff.from_texts`, `Diff.from_edits` (several edits), `Diff.from_unified` (text that arrives as a diff), `UnifiedDiffStream`; `TypesetDiffView`, `DiffLayout`, `DiffPalette`. Since 2026-10-13 its cell is the whole pixel the device draws the code face at, asked of the library; `cell=` is accepted, ignored and warns (`DeprecationWarning`), and goes in the release after |
 | a fenced `diff` drawn as one, or any widget in a block's place | `host_for=TypesetDiffFences(...)` on a view; `HostFor`, `Hosted`, `HostedDiff` |
 | `$...$` and `$$` | `TypesetView(markdown, math=True)`: the library sets the formula, and shows what it refuses as its source |
 
@@ -326,15 +394,17 @@ imtypeset's setting of the same kinds of material, which has its own tests in
 
 ## `make run` needs a display, and the library
 
-The ImGui demo is real and `make run TYPESET=1` launches it: one window,
+The ImGui demo is real and `make run` launches it (with imtypeset's wheel
+installed, which `make bootstrap` does; `make run TYPESET=1` is the
+developer's route of "Thirty seconds"): one window,
 1300x800 by default, with a sidebar list on the left and the chosen page on
 the right. The pages are modules under `imscribe/ui/pages/`, found by scanning
 the package; adding one edits no list anywhere. To open on a page, or to
 photograph every one:
 
-    make run TYPESET=1 ARGS="--tab diff"
-    make run TYPESET=1 ARGS="--tab stream:table,done"
-    make shot-all TYPESET=1
+    make run ARGS="--tab diff"
+    make run ARGS="--tab stream:table,done"
+    make shot-all
 
 A name after `--tab` is a page's name in lower case, optionally with option
 words of its own after a colon; `python scripts/shot.py --list` prints the 25
@@ -373,7 +443,12 @@ From the sandbox these sessions ran in, `DISPLAY=:1` was set and unreachable
 (`socket(AF_UNIX)` refused), and every window was on an Xvfb in a user
 namespace over TCP with a software rasteriser — `scripts/mouse_probe.py`'s
 `xvfb_command` builds that shell, and `tests/conftest.py`'s `window` fixture
-uses it. No window of this branch has been opened on a GPU.
+uses it. No window of this branch has been opened on a GPU. Since
+2026-10-13 the sandbox is off and `DISPLAY=:1` is the owner's real screen;
+the `window` fixture starts its own Xvfb all the same, because a real
+pointer moving over a test's window turned tests red that day (four in one
+builder's run, seven in another's; each passed under Xvfb)
+(`IMSCRIBE_TEST_DISPLAY=1` asks for the session's display instead).
 
 **What a test can and cannot say here.** A frame needs no window: a Dear
 ImGui context with no backend runs frames, and the library writes vertices
@@ -392,9 +467,9 @@ below the fold, and a drag that ends on a line beneath the bottom of the
 window and is then copied. Eighteen checks, with expectations built from the
 texts described to the library and the markdown source:
 
-    IMTYPESET_LIBRARY=... IMTYPESET_PYTHON=... python scripts/mouse_probe.py --xvfb
+    python scripts/mouse_probe.py --xvfb
 
-`tests/test_mouse_probe.py` runs it under `make check TYPESET=1`. **Its
+`tests/test_mouse_probe.py` runs it under `make check`. **Its
 limit, in its own words**: where a character is on screen is asked of the same
 library that then hit-tests the click, so a defect the two share is not seen.
 
@@ -416,20 +491,20 @@ markdown, not a picture of what the window shows.
 Until that runs there is no interpreter: every target that needs one stops and
 names `make bootstrap`. `make venv-info` says what the others will use.
 `pyproject.toml` states floors for `markdown-it-py`, `fonttools` and the dev
-tools, and **one exact pin, `imgui-bundle==1.92.900`** (since 2026-10-11; it
-was the floor `>=1.92.900` before). The imtypeset library is built for ONE
-installed imgui-bundle wheel and checks at import that it is the one
-running, so a range promised what the pairing cannot keep. An upgrade is
-three acts: change the pin, `make typeset-lib` against the new wheel,
-`make check TYPESET=1`. imtypeset itself is not listed as a dependency: it
-is on no index a resolver reaches, and a requirement that cannot be resolved
-would break `pip install` for everyone ("Packaging" below says what to pin
-beside imscribe instead). `pip install` with the pin has not been run on any
-machine by the sessions that wrote it (no index was reachable), and
-`./.venv`'s own editable install predates both the pin and the version: its
-metadata still says `imscribe 0.1.0` and `imgui-bundle>=1.92`. Read
-`imscribe.__version__`, not `importlib.metadata`, until `make bootstrap` is
-run again.
+tools, and **two exact pins that move together: `imgui-bundle==1.92.900`**
+(since 2026-10-11; it was the floor `>=1.92.900` before) **and
+`imtypeset==0.4.1.192900`** (since 2026-10-13, under a platform marker;
+"Packaging" below). An imtypeset wheel is built for ONE imgui-bundle wheel,
+says which in its fourth number, and checks at import that it is the one
+running, so a range promised what the pairing cannot keep. An upgrade
+changes both pins and runs `make check`. `./.venv` was brought level on
+2026-10-13 by ADOPT-DIST's builder without a full bootstrap (imtypeset's
+test oracle runs on this virtualenv and its fontTools 4.66.0, markdown-it-py
+4.2.0 and imgui-bundle 1.92.900 are held): `pip list` there says
+`imscribe 0.2.0b1` (editable) and `imtypeset 0.4.1.192900`. **`make
+bootstrap` from nothing, with the new dependency line, has not been run**;
+an install of the built wheel into a new virtualenv has (it resolved
+fontTools 4.66.1, newer than what everything here was measured on).
 
 ## Packaging
 
@@ -438,20 +513,26 @@ For whoever packages an application that draws through imscribe. Written
 imtypeset's `docs/sidecar.md` (sections 8, 10 and 11, at its `v0.3.0`) and
 from the result files of the builders named. **Read it as a list of what is
 known and by what means, not as a tested procedure: no application has been
-packaged with any of this.**
+packaged with any of this.** Brought level on 2026-10-13 by the builder of
+ADOPT-FINAL, an agent, from ADOPT-DIST's and ADOPT-API's result files: the
+version, the pins, what `make dist` did when it was run, and how a release
+is published.
 
 ### The version, and a file to require
 
-`imscribe.__version__` is `0.2.0.dev0`, the same string as `pyproject.toml`'s
-and as `pairing()["imscribe_version"]`. `0.1.0` was imscribe with its own
-Python layout core; `0.2` draws through imtypeset and nothing else. `.devN`
-means there is no release and **nothing is promised from one commit to the
-next**, so a requirement names a commit or a file's hash, never the version
-alone; N goes up when an artefact is cut for a host to pin. `0.2.0` without
-`.dev` is for the first tagged release, which is the user's to make; from
-there the middle number changes when a name in `imscribe.__all__` is removed
-or changes meaning, or when the imgui-bundle pin or the imtypeset line
-changes. (An agent's decision; `docs/decisions.md`, "A release artefact".)
+`imscribe.__version__` is `0.2.0b1` (since 2026-10-13; `0.2.0.dev0` the day
+before), the same string as `pyproject.toml`'s and as
+`pairing()["imscribe_version"]`. `0.1.0` was imscribe with its own Python
+layout core; `0.2` draws through imtypeset and nothing else. `b1` is a beta,
+the first version meant for PyPI: pip installs it only when asked
+(`pip install --pre imscribe`, or `imscribe==0.2.0b1`). **It is not
+uploaded: publishing is the owner's, and `ASSIGNMENTS.md` has the steps.**
+Until it is, a requirement names a commit or a file's hash. `0.2.0` without
+a suffix is for the first release that is not a beta; from there the middle
+number changes when a name in `imscribe.__all__` is removed or changes
+meaning, or when the imgui-bundle pin or the imtypeset line changes. (Agents'
+decisions; `docs/decisions.md`, "A release artefact" and "imtypeset 0.4.1
+from PyPI".)
 
     make dist    # dist/imscribe-<version>-py3-none-any.whl, .tar.gz, <file>.sha256, BUILT-FROM
 
@@ -462,35 +543,70 @@ commit's time, and installs the two files into `dist/` only if the two
 builds are byte for byte the same and the wheel holds `imscribe/` and its
 metadata and nothing else. It then prints the requirement strings:
 
-    imscribe @ git+https://github.com/WalterCReel3/imgui-adv-text.git@<full commit>
-    imscribe @ https://github.com/WalterCReel3/imgui-adv-text/releases/download/v<version>/<wheel>#sha256=<hash>
+    imscribe @ git+https://github.com/WalterCReel3/imscribe.git@<full commit>
+    imscribe @ https://github.com/WalterCReel3/imscribe/releases/download/v<version>/<wheel>#sha256=<hash>
     imscribe==<version> --hash=sha256:<wheel> --hash=sha256:<sdist>
 
-The first works today for a commit that is on GitHub (pip clones and builds;
-it needs network and `hatchling`). The second resolves only once somebody
+(The script prints whatever `pyproject.toml`'s `Repository` URL is; it was
+`imgui-adv-text` until 2026-10-13 and GitHub redirects the old one.) The
+first works today for a commit that is on GitHub (pip clones and builds; it
+needs network and `hatchling`). The second resolves only once somebody
 publishes a release at that URL holding that file. The third is for a
-directory or a mirror that holds the files. It publishes nothing, tags
-nothing and reaches no network.
+directory or a mirror that holds the files, and for PyPI once the version is
+there. `make dist` itself publishes nothing, tags nothing and reaches no
+network.
 
-**`make dist` has never built anything.** The session that wrote it had
-neither `build` nor `hatchling` in `./.venv` and no index to fetch them
-from; run there, it stops with exit 2 and one line, before writing anything.
-Both tools are now in the `dev` extra, so `make bootstrap` on a machine with
-network installs them. What is tested (`tests/test_dist.py`) is the script
-against a stand-in builder: the commit and not the working tree, two builds
-compared and a difference said and refused, contents checked, hashes
-written, the strings. **Not known, because it was not run: whether
-hatchling's two builds are in fact the same bytes; what exactly its wheel
-holds; whether the sdist's own tests pass when unpacked** (`demo/` and
-`HANDOFF-pptmstr.md` were added to the sdist's list on this day, by
-reading). The name `imscribe` is not claimed on PyPI and nothing here claims
-it; that, a tag and a GitHub release are the user's.
+**`make dist` has built real files once, of a scratch commit** (ADOPT-DIST's
+builder, an agent, 2026-10-13, hatchling 1.32.4, build 1.6.1). It builds a
+commit and a builder may not commit here, so the working tree was copied
+into `build/adopt-dist-scratch/repo`, committed there, and
+`scripts/make_dist.py --root` run on that. What that run showed: two builds
+from two exports were the same bytes; the wheel holds `imscribe/` (54 files)
+and `imscribe-0.2.0b1.dist-info/` (`METADATA`, `WHEEL`, `RECORD`,
+`licenses/LICENSE`), `Metadata-Version: 2.5`; `twine check --strict` passed
+on the two files (twine 7.0.0). **`twine check dist/*` fails** on
+`dist/*.sha256` ("Unknown distribution format"): name the two files. The
+wheel installed into a new virtualenv with everything else from PyPI
+(imgui-bundle 1.92.900, imtypeset 0.4.1.192900, fontTools 4.66.1,
+markdown-it-py 4.2.0; `pip check` clean), `python -P -m imscribe.typesetter`
+answered ready by route distribution, and `examples/typeset_minimal.py
+--frames 5` drew in a window. Run again later that day by REVIEW-FIX's
+builder (an agent) after the sdist was narrowed, twice, with the same three
+results; that wheel was not installed anew. **Not run: `make dist` on the
+commit that will be released (its hashes will not be the scratch
+commit's).** `tests/test_dist.py` still holds the script against a stand-in
+builder.
 
-What the wheel is meant to hold, by `pyproject.toml`: the package `imscribe`
-with `imscribe/py.typed`; no `tests/`, no `demo/`, no `examples/`, no
-`docs/`, no handoff files (those are in the sdist only). The demo
-application is inside the package (`imscribe.ui.app`, `imscribe.ui.pages`) and
-its pages say so themselves when `demo/` is not there.
+**Publishing is `.github/workflows/release.yml`, and it has never run.** A
+pushed tag `v<version>` builds with `scripts/make_dist.py`, refuses a tag
+that is not `pyproject.toml`'s version, installs the built wheel from the
+index (after installing the two system libraries `import imgui_bundle`
+needs on Linux and no wheel carries, libX11 and libXext) and asks it for its
+library, and only then uploads the wheel and the
+sdist to PyPI by trusted publishing (OIDC, no stored token) in the GitHub
+environment `pypi`. A run started by hand with `testpypi` ticked uploads to
+TestPyPI and never to PyPI. What it needs that only the owner can do, a
+pending publisher on PyPI and the environment on GitHub, is in
+`ASSIGNMENTS.md`. On 2026-10-13 at 14:21 `https://pypi.org/pypi/imscribe/json`
+answered 404: the name was free then, and nothing holds it until the first
+upload.
+
+What the wheel holds, by `pyproject.toml` and by those runs: the package
+`imscribe` with `imscribe/py.typed`, and the licence (58 members); no
+`tests/`, no `demo/`, no `examples/`, no `docs/`, no handoff files. **Since
+later on 2026-10-13 the sdist holds none of those either** (they were in it
+until a review that day: seven of its files named a `/home/` path, and the
+working notes are not a release): it is `imscribe/`, `pyproject.toml`,
+`LICENSE`, `README-pypi.md`, `PKG-INFO`, and `.gitignore`, 59 files, and
+`make dist` refuses an sdist that holds anything else. `.gitignore` is
+there because hatchling puts it there whatever the include list says; its
+comments describe this repository's working arrangements, and keeping it
+out (a `.gitattributes` with `export-ignore`) is left to the owner. So the
+suite cannot be run from the sdist; it is in the repository. The page PyPI
+shows is `README-pypi.md`, not this file. The
+demo application is inside the package (`imscribe.ui.app`,
+`imscribe.ui.pages`) and its pages say so themselves when `demo/` is not
+there.
 
 ### The pins to hold together
 
@@ -500,19 +616,28 @@ none (imtypeset's rule, its `docs/sidecar.md` section 11; imscribe's T7):
 | what | pin | why exact |
 |---|---|---|
 | `imgui-bundle` | `==1.92.900` | the imtypeset library is linked against that wheel's extension module and refuses any other at import. imscribe's own metadata states this pin |
-| `imtypeset` | `==0.3.0.192900` | the fourth number is the imgui-bundle line the wheel was built for (`1.92.900`). `imtypeset==0.3.0` matches nothing. **Never upgrade imtypeset alone** (`pip install -U imtypeset`): the resolver takes the newest line and replaces the application's imgui-bundle. Move the two pins together |
-| `imscribe` | a commit, or a file by its sha256 (above) | a `.dev` version names no one commit |
+| `imtypeset` | `==0.4.1.192900` | the fourth number is the imgui-bundle line the wheel was built for (`1.92.900`), and that wheel itself requires `imgui-bundle==1.92.900`. `imtypeset==0.4.1` matches nothing. **Never upgrade imtypeset alone** (`pip install -U imtypeset`): the resolver takes the newest line and replaces the application's imgui-bundle. Move the two pins together. imscribe's own metadata states this pin since 2026-10-13, and refuses a library older than 0.4 at its gate |
+| `imscribe` | `==0.2.0b1` once it is on PyPI (with `--pre`, or the exact version); until then a commit, or a file by its sha256 (above) | a beta is not installed unless asked for |
 
-imscribe's metadata does **not** list imtypeset (it is on no index, and the
-other team's file says no licence is chosen and nothing is to be published
-from `v0.3.0`); when it can be resolved from somewhere, imscribe will state
-`imtypeset==0.3.*` and the application keeps the exact pin. The wheels
-imtypeset has built are **stand-in builds**, version
-`0.3.0.192900.dev0+standin`: a development release, which `==0.3.0.192900`
-does not match and `pip install --pre` takes by name. No wheel compiled
-against the wheel's own Dear ImGui headers exists. What they are called per
-platform, by the other team's file: `imtypeset-<version>-cp311-none-manylinux_2_28_x86_64.whl`
-on this machine; one per platform, CPython version and imgui-bundle version.
+imscribe's metadata lists imtypeset as a **hard dependency under a platform
+marker** (since 2026-10-13; not an extra, because there is no other
+renderer):
+
+    imtypeset==0.4.1.192900; python_version >= '3.11' and python_version < '3.15' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'darwin' and platform_machine == 'arm64'))
+
+The marker is where imtypeset has wheels, copied from its `docs/releasing.md`
+section 5: CPython 3.11 to 3.14; Linux x86-64 with glibc 2.28 or later;
+macOS 14 or later on arm64. Everywhere else it is false: pip leaves
+imtypeset out, `pip install imscribe` still succeeds,
+`imscribe.typesetter.kind()` is `Kind.NOT_INSTALLED` and a view says so and
+draws nothing. What no marker can say: Linux with musl (Alpine) is Linux on
+x86-64, has no wheel, and the install fails there at that line. The wheel on
+PyPI is compiled against the imgui-bundle wheel's own Dear ImGui headers
+(`pairing()["headers"]` begins `fork:`); its sha256 for CPython 3.11 on
+Linux is `4e7b1477bb9482eb0b99e0a244e7d97383cb77ecee05747cfee70a0434ec43ca`
+(ADOPT-DIST's builder read it on 2026-10-13, with its attestation: GitHub
+Actions run 38434871056 of WalterCReel3/imtypeset at `e6160c0`). **Read, not
+run by imscribe: every wheel but that one**, macOS's among them.
 
 On Linux **`imtypeset/` and `imgui_bundle/` must be in one directory**: an
 imtypeset wheel installed with `pip --target` into a directory of its own
@@ -628,20 +753,29 @@ called again.
   in five places (the Mac audit's count, by reading), and nobody has looked
   at either.
 - **Anything against GitHub**: the fetch of imtypeset by tag or hash, a
-  `pip install` of imscribe from a git reference, the CI workflow.
+  `pip install` of imscribe from a git reference, the CI workflow, the
+  release workflow. **Any upload** to PyPI or TestPyPI.
+- **A display density that is not a whole number**, for the device grid of
+  2026-10-13: the views round an origin, a pane and a code block's indent to
+  whole units, the diff view snaps its cell to whole framebuffer pixels, and
+  the two agree only at 1, 2 and 3. imtypeset measured its side at 1.5;
+  nobody has measured imscribe's.
 - **Whether two builds of the imtypeset library are the same bytes**: they
   are not (two builds of `2fd705e` differing only in the output directory's
   name gave different files; `HANDOFF-imtypeset.md`, H45), so a library is
   identified by its own checksum and its attestation, not by its commit.
 
-**Continuous integration** is `.github/workflows/ci.yml`: a job for
-`make check` with no imtypeset anywhere, and a job that builds the pair from
-the ref in `imtypeset.ref` and runs `make check TYPESET=1`, both on Ubuntu
-under `xvfb-run`. **It has never run.** It was written without network;
-`tests/test_ci_workflow.py` holds its text to the Makefile's targets and
-variables, and the text of its fetch-and-build steps was run here against
-local clones. `.github/workflows/macos.yml` is a placeholder that cannot
-start by itself.
+**Continuous integration** is `.github/workflows/ci.yml`, three jobs since
+2026-10-13: `plain` (`IMSCRIBE_NO_TYPESET=1 make check`, no library looked
+for), `typeset` (`make check` with imtypeset's wheel installed from PyPI as
+a dependency), and `sidecar`, started by hand only, which builds the pair
+from the ref in `imtypeset.ref` and runs `make check TYPESET=1` with no
+wheel installed. **No job of it has ever run on GitHub**, and no workflow of
+this repository has. `tests/test_ci_workflow.py` holds its text to the
+Makefile's targets and variables; its files were read by this project's own
+subset reader and by PyYAML, not by `actionlint`. `.github/workflows/macos.yml`
+is a macOS arm64 job that starts by hand only and has never run.
+`.github/workflows/release.yml` is above.
 
 **A Mac.** Nothing in this tree has run on macOS. An audit by reading
 (`docs/status.md` section 0e) found three things in the way of an install:
@@ -670,8 +804,8 @@ The four scripts this section listed (`bench_reflow.py`, `bench_draw.py`,
 `verify_advances.py`, `verify_ascent.py`) measured the old ImGui draw backend
 and went with it. They are in `main`. What measures the tree now:
 
-    make check TYPESET=1                      # the suite prints the Stress page's own per-frame figures
-    make run TYPESET=1 ARGS="--tab stress"    # the same figures, live
+    make check                      # the suite prints the Stress page's own per-frame figures
+    make run ARGS="--tab stress"    # the same figures, live
     python scripts/visual_diff.py --help      # compare two shots of a page region by region
 
 No test asserts a time. Every figure in `docs/status.md` section 0d names who
@@ -688,8 +822,10 @@ They are orientation and route into the documents below, which carry the
 measurements.
 
 - [`docs/status.md`](docs/status.md) — what is true today. Start here, at
-  section 0g (2026-10-12, later still: P21 to P33, imtypeset `v0.3.0`, the
-  version and `make dist`), then section 0f (what the first host, pptmstr,
+  section 0i (2026-10-13: imtypeset 0.4.1 from PyPI as a dependency, code on
+  the device grid, version `0.2.0b1`, what is written and never run), then
+  0h (the rename), then section 0g (2026-10-12, later still: P21 to P33,
+  imtypeset `v0.3.0`, the version and `make dist`), then section 0f (what the first host, pptmstr,
   asked for first and what of it was built), then section 0e (the pin, how the
   library is found and built, CI, the Mac audit), then section 0d: the swap
   of 2026-10-11, what was deleted,

@@ -723,6 +723,12 @@ def pairs(line):
     return out
 
 worst = {}
+# The one line of LINES whose tab follows a character that takes no cell (a combining mark):
+# since imtypeset 0.4 a tab goes to a multiple of four CELLS, where `expandtabs` counts
+# characters. [how far its characters after the tab are from the expansion's, one cell] each.
+MARKED = "e\u0301\tz"
+assert MARKED in LINES
+marked = {}
 for name, sized in (("em 13", Theme.build(13.0)), ("em 16", Theme.build(16.0)),
                     ("em 20", Theme.build(20.0)), ("pixel height 16", Theme.at_pixel_height(16.0))):
     style = sized.style(BlockKind.CODE)
@@ -735,15 +741,27 @@ for name, sized in (("em 13", Theme.build(13.0)), ("em 16", Theme.build(16.0)),
             ], theme=sized, code_overflow=overflow)
             doc = view.native_document
             tops = [doc.block_geometry(0).min[1], doc.block_geometry(1).min[1]]
+            mine = 0.0
             for at, moved in pairs(line):
                 if line[at] == "\n":
                     continue
                 a, b = doc.caret_rect((0, at)), doc.caret_rect((1, moved))
-                far = max(far, abs(a[0] - b[0]), abs((a[1] - tops[0]) - (b[1] - tops[1])))
+                mine = max(mine, abs(a[0] - b[0]), abs((a[1] - tops[0]) - (b[1] - tops[1])))
+            if line == MARKED:
+                # Signed, of the one character after the tab; the mark's own width; and a cell.
+                marked[f"{name} {overflow}"] = [
+                    doc.caret_rect((0, 3))[0] - doc.caret_rect((1, 4))[0],
+                    doc.caret_rect((0, 2))[0] - doc.caret_rect((0, 1))[0],
+                    doc.caret_rect((1, 4))[0] - doc.caret_rect((1, 3))[0],
+                    (doc.caret_rect((0, 3))[0] - doc.caret_rect((0, 0))[0])
+                    / (doc.caret_rect((1, 4))[0] - doc.caret_rect((1, 3))[0]),
+                ]
+            else:
+                far = max(far, mine)
             assert view.texts[0] == line
             view.close()
         worst[f"{name} {overflow}"] = far
-report["p29"] = {"worst": worst}
+report["p29"] = {"worst": worst, "marked": marked}
 # The comparison can fail: eight columns to a tab is somewhere else.
 style = code
 EIGHT = "abc\td".expandtabs(8)
@@ -973,14 +991,35 @@ def test_p29_a_tab_is_set_where_the_spaces_it_was_expanded_to_were(drawn: dict[s
     """
     Fifteen awkward lines, four sizes, three overflows: every character
     after a tab at the same place as after `expandtabs(4)`, to a thousandth
-    of a pixel, by caret and by drawn quad. And the comparison can fail:
-    against eight columns it is four cells out.
+    of a pixel, by caret and by drawn quad -- on fourteen of them. And the
+    comparison can fail: against eight columns it is four cells out.
+
+    **Restated on imtypeset 0.4.1: one line of the fifteen is no longer where
+    `expandtabs(4)` puts it, and that is the library's grid.** Until then all
+    fifteen were within 0.001 px. The line is `e`, U+0301 (a combining
+    acute), a tab, `z`. `str.expandtabs` counts CHARACTERS: two before the
+    tab, so two spaces, and `z` is the fifth character. The library now sets
+    a code face on a grid of cells in which a combining mark takes none
+    (imtypeset's H34), and a tab goes to the next multiple of four CELLS: `z`
+    starts at cell 4 with the tab and at cell 3 after the expansion (`e`, no
+    cell, two spaces). Measured in all twelve cases: exactly one cell (7, 8,
+    10 and 7 px) to the right. The stop is where a terminal puts it; the
+    other fourteen lines, an ideograph and an emoji among them (one cell
+    each in the bundled faces: U+FFFD), are where they were.
     """
     got = drawn["p29"]
     assert len(got["worst"]) == 12
     assert max(got["worst"].values()) < 0.001, got["worst"]
+    assert got["marked"].keys() == got["worst"].keys()
+    for case, (further, mark, cell, stop) in got["marked"].items():
+        assert mark == 0.0, case  # the combining mark takes no cell
+        assert cell == pytest.approx(round(cell), abs=1e-3) and cell >= 6.0, case
+        assert further == pytest.approx(cell, abs=1e-3), case  # one cell right of the expansion
+        assert stop == pytest.approx(4.0, abs=1e-3), case  # and on the fourth cell of the line
     assert got["eight"] == pytest.approx(4 * got["cell"], abs=0.01) and got["cell"] > 5.0
-    assert got["quads"] == [True] * 14 and got["quads_eight"] is False
+    # The drawn quads say the same. Was `[True] * 14`; the thirteenth line is the one with
+    # the combining mark, drawn a cell further right than its expansion (the docstring).
+    assert got["quads"] == [True] * 12 + [False, True] and got["quads_eight"] is False
 
 
 def test_p29_a_recipe_copied_out_of_a_view_has_its_tabs(drawn: dict[str, Any]) -> None:

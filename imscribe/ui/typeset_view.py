@@ -892,6 +892,32 @@ def library_failed(exc: BaseException) -> bool:
     )
 
 
+def _code_on_a_pixel(block: BlockDescription) -> BlockDescription:
+    """
+    A code block with its left indent on a whole pixel; any other block as it is.
+
+    The library sets a code face on the device's grid (imtypeset 0.4) and
+    draws each glyph on a whole pixel. Under a whole origin (`draw` rounds
+    the cursor) and a whole indent the glyphs stand exactly on the rectangles
+    the library answers for them; with a fractional indent the whole block is
+    drawn up to half a pixel from them, glyphs, marks and hit tests still
+    agreeing with each other (imtypeset's `docs/advtext-swap-status.md`, "What
+    advtext must set for a diff view", point 3). Measured in a window on
+    imtypeset 0.4.1 with a fenced block under `Theme.at_pixel_height(P,
+    faces=Faces.mono())`, P from 12 to 24: the worst glyph was 0.44 px from
+    its rectangle at 12 (an indent of 11.44 px) before this, and 0.0015 px
+    after (`tests/test_mono_acceptance.py`). A block a host draws in a code
+    block's place (`host_for`) takes this indent too.
+
+    Whole UNITS: whole framebuffer pixels at a display density of 1, 2 or 3,
+    and not at 1.5, which nothing here has been run at.
+    """
+    if block.kind != KIND_CODE:
+        return block
+    whole = float(int(block.left_indent + 0.5))
+    return block if whole == block.left_indent else block._replace(left_indent=whole)
+
+
 def raise_failed(exc: Exception) -> NoReturn:
     """
     Raise what a call into the library raised, as what a host should see of it.
@@ -1347,7 +1373,7 @@ class TypesetView:
         described = self._converter.describe(fresh, base=first)
         removed = len(old) - first
         self._blocks = blocks
-        self._described[first:] = described.blocks
+        self._described[first:] = [_code_on_a_pixel(block) for block in described.blocks]
         self._texts[first:] = described.texts
         self._converted[first:] = [block.style for block in described.blocks]
         self._links = [row for row in self._links if row.block < first] + described.links

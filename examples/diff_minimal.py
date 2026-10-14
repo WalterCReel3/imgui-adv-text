@@ -14,14 +14,16 @@ one line to standard error, `imtypeset is not drawing: <the reason>`, and
 exits with status 1, before any window opens. Everything is imported from the
 package root, the module `typesetter` included. Run it with:
 
-    make typeset-lib                                 # once: builds the library
-    IMTYPESET_LIBRARY=<the library it built, in $PWD/build/imtypeset-bundle> \
-    IMTYPESET_PYTHON=$PWD/build/imtypeset-bundle/pysnap \
+    pip install --pre imscribe                       # brings imtypeset where it has a wheel
     python examples/diff_minimal.py                  # one file, unified
 
     python examples/diff_minimal.py --side-by-side
     python examples/diff_minimal.py --edits          # several edits, one diff
-    python examples/diff_minimal.py                  # no library: says why and exits 1
+    IMSCRIBE_NO_TYPESET=1 python examples/diff_minimal.py   # no library: says why and exits 1
+
+(Nothing is set in the environment: since 2026-10-13 the installed imtypeset
+wheel is found by itself. `examples/typeset_minimal.py` says what a developer
+building imtypeset from source does instead.)
 
 ## The three steps
 

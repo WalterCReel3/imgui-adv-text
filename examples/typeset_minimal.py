@@ -5,15 +5,18 @@ r"""
 (branch `experimental/imtypeset-adoption`). It is the smallest program that
 shows what a host does to draw through the imtypeset library:
 
-    make typeset-lib                       # once: builds the sidecar library
-    IMTYPESET_LIBRARY=<the library it built, in $PWD/build/imtypeset-bundle> \
-    IMTYPESET_PYTHON=$PWD/build/imtypeset-bundle/pysnap \
+    pip install --pre imscribe             # brings imtypeset where it has a wheel
     python examples/typeset_minimal.py
 
-(The library's file name is the build's and differs by platform; `make
-typeset-lib` says where it installed the pair.)
+Nothing is set in the environment: since 2026-10-13 imtypeset is a
+dependency, installed as a wheel and found by itself. (A developer building
+an unreleased imtypeset from source uses `make typeset-lib` and the two
+variables `IMTYPESET_LIBRARY` and `IMTYPESET_PYTHON` instead, in a
+virtualenv with NO imtypeset installed: an installed one ignores both.
+`README.md`, "Thirty seconds".)
 
-    python examples/typeset_minimal.py     # no library: says why, exits 1, opens no window
+    # no library: says why, exits 1, opens no window
+    IMSCRIBE_NO_TYPESET=1 python examples/typeset_minimal.py
 
 **There is no other renderer.** Without the library the example prints one
 line to standard error, `imtypeset is not drawing: <the reason>`, and exits

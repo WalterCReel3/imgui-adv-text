@@ -23,9 +23,12 @@ both forms. What it does, in order, and it stops at the first thing wrong:
     HANDOFF-imtypeset.md, H45).
 4.  Hold the wheel to what `pyproject.toml` says it is: `imscribe/` and its
     own metadata and nothing else, `imscribe/py.typed` present; and the sdist
-    to carrying what the wheel must not (`examples/`, `tests/`, `demo/`, the
-    two handoff files). The version in the file names, in the export's
-    `pyproject.toml` and in its `imscribe/__init__.py` must be one string.
+    to `imscribe/`, `pyproject.toml`, `LICENSE`, `README-pypi.md` and what
+    the backend adds (`PKG-INFO`, `.gitignore`) and nothing else: no tests,
+    no docs, no handoff files (2026-10-13, before the first upload; until
+    then the sdist was REQUIRED to carry those). The version in the file
+    names, in the export's `pyproject.toml` and in its `imscribe/__init__.py`
+    must be one string.
 5.  Put the two files into `--out` (default `dist/`) with `<file>.sha256`
     beside each (`sha256sum -c` reads them) and `BUILT-FROM`, and print the
     requirement strings.
@@ -37,12 +40,26 @@ refused what it built (the two builds differ, or the contents are wrong).
 
 **The builder is `build` with `hatchling`, from the interpreter that runs
 this script, with no isolated environment and so no network.** Both are in
-`pyproject.toml`'s `dev` extra. When this was written (2026-10-12) neither
-was installed in `./.venv` and the session could reach no index, so the real
-builder HAS NOT BEEN RUN by its author: `tests/test_dist.py` runs every step
-above against a stand-in builder that writes a zip and a tar the way the real
-one is expected to. What that leaves unknown is named in `README.md`,
-"Packaging".
+`pyproject.toml`'s `dev` extra. `tests/test_dist.py` runs every step above
+against a stand-in builder that writes a zip and a tar the way the real one
+does.
+
+**The real builder was first run on 2026-10-13** (build 1.6.1, hatchling
+1.32.4, CPython 3.11.2), on version `0.2.0b1`. What it makes, which the checks
+here were written to from memory and now hold as measured:
+`imscribe-0.2.0b1-py3-none-any.whl` and `imscribe-0.2.0b1.tar.gz` (a
+pre-release keeps its `b1` in both names as written); the sdist's one top
+directory is `imscribe-0.2.0b1/`; the wheel's metadata is
+`imscribe-0.2.0b1.dist-info/` with `METADATA`, `WHEEL`, `RECORD` and
+`licenses/LICENSE` (where metadata 2.4 and later put a `License-File`); two
+builds from two exports were the same bytes. The check for the licence was
+added that day.
+
+**`--out` holds more than the two files**: `<file>.sha256` beside each, and
+`BUILT-FROM`. An upload names the two (`dist/*.whl dist/*.tar.gz`), never
+`dist/*`: `twine check dist/*` fails on the `.sha256` files ("Unknown
+distribution format", measured), and `.github/workflows/release.yml` copies
+the two into a directory of their own for the same reason.
 """
 
 from __future__ import annotations
@@ -61,7 +78,7 @@ import zipfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-REPOSITORY = "https://github.com/WalterCReel3/imgui-adv-text"
+REPOSITORY = "https://github.com/WalterCReel3/imscribe"
 """Where a requirement string points. Nothing here contacts it."""
 
 NAME = "imscribe"
@@ -69,17 +86,23 @@ NAME = "imscribe"
 TOOLS = ("build", "hatchling")
 """What the default builder imports. Asked for by name before anything is written."""
 
-SDIST_ONLY = (
-    "examples/",
-    "tests/",
-    "demo/",
-    "docs/",
-    "HANDOFF-imtypeset.md",
-    "HANDOFF-pptmstr.md",
+SDIST_HOLDS = (
     "pyproject.toml",
-    "README.md",
+    "README-pypi.md",
+    "LICENSE",
 )
-"""What the sdist must carry, relative to its one top directory. None of it may be in the wheel."""
+"""
+The files the sdist must carry beside `imscribe/`, relative to its one top
+directory: what a build of the wheel reads. `pyproject.toml`'s sdist `include`
+is these and `/imscribe` (`tests/test_dist.py` holds the two equal).
+"""
+
+SDIST_ADDED = ("PKG-INFO", ".gitignore")
+"""
+What hatchling puts in an sdist whatever `include` says. `PKG-INFO` must be
+there; `.gitignore` is there when the source has one (measured on a
+`git archive` export, hatchling 1.32.4) and is allowed, not required.
+"""
 
 EXIT_CANNOT_START = 2
 EXIT_REFUSED = 3
@@ -341,7 +364,8 @@ def pins(source: Path) -> list[str]:
         text = (source / "pyproject.toml").read_text(encoding="utf-8")
     except OSError:
         return []
-    return re.findall(r'^\s*"([A-Za-z0-9._-]+==[^";\s]+)"', text, re.MULTILINE)
+    # With or without an environment marker after it (imtypeset's has one).
+    return re.findall(r'^\s*"([A-Za-z0-9._-]+==[^";\s]+)\s*(?:;[^"]*)?"', text, re.MULTILINE)
 
 
 def wheel_problems(names: Sequence[str], version: str) -> list[str]:
@@ -357,7 +381,14 @@ def wheel_problems(names: Sequence[str], version: str) -> list[str]:
             f"the wheel holds {len(strangers)} member(s) outside {allowed[0]} and "
             f"{allowed[1]}: {shown}"
         )
-    for needed in (f"{NAME}/__init__.py", f"{NAME}/py.typed", f"{allowed[1]}METADATA"):
+    for needed in (
+        f"{NAME}/__init__.py",
+        f"{NAME}/py.typed",
+        f"{allowed[1]}METADATA",
+        # `license-files = ["LICENSE"]`: an MIT package that ships without its
+        # notice is not what pyproject.toml describes.
+        f"{allowed[1]}licenses/LICENSE",
+    ):
         if needed not in names:
             problems.append(f"the wheel has no {needed}")
     compiled = sorted(name for name in names if "__pycache__" in name or name.endswith(".pyc"))
@@ -367,20 +398,36 @@ def wheel_problems(names: Sequence[str], version: str) -> list[str]:
 
 
 def sdist_problems(names: Sequence[str], version: str) -> list[str]:
-    """What is wrong with an sdist's member list; empty when it carries what it should."""
+    """
+    What is wrong with an sdist's member list; empty when it is the package,
+    what builds it and what describes it, and nothing else.
+
+    An sdist's file name is never accepted twice by an index, so what should
+    not have gone out in one cannot be taken back: a member that is not on
+    the list is a refusal here, before there is a file to upload.
+    """
     top = f"{NAME}-{version}/"
     problems: list[str] = []
     outside = sorted(name for name in names if not (name + "/").startswith(top))
     if outside:
         problems.append(f"the sdist holds members outside {top}: {', '.join(outside[:4])}")
     inside = [name[len(top) :] for name in names if name.startswith(top)]
-    for needed in (*SDIST_ONLY, f"{NAME}/__init__.py", f"{NAME}/py.typed", "PKG-INFO"):
-        if needed.endswith("/"):
-            present = any(name.startswith(needed) for name in inside)
-        else:
-            present = needed in inside
-        if not present:
+    for needed in (*SDIST_HOLDS, f"{NAME}/__init__.py", f"{NAME}/py.typed", "PKG-INFO"):
+        if needed not in inside:
             problems.append(f"the sdist has no {needed}")
+    allowed = {*SDIST_HOLDS, *SDIST_ADDED, NAME}
+    strangers = sorted(
+        name for name in inside if name and name not in allowed and not name.startswith(f"{NAME}/")
+    )
+    if strangers:
+        shown = ", ".join(strangers[:8]) + (" ..." if len(strangers) > 8 else "")
+        problems.append(
+            f"the sdist holds {len(strangers)} member(s) that are not {NAME}/, "
+            f"{', '.join(SDIST_HOLDS)} or the backend's own: {shown}"
+        )
+    compiled = sorted(name for name in inside if "__pycache__" in name or name.endswith(".pyc"))
+    if compiled:
+        problems.append(f"the sdist holds compiled files: {', '.join(compiled[:4])}")
     return problems
 
 
@@ -412,9 +459,15 @@ def requirement_strings(
     if held:
         lines += [
             "",
-            "  Held exactly by this artefact's metadata, so pin the same in the application:",
+            "  Held exactly by this artefact's metadata, so pin the same in the application",
+            "  (the two move together: the imtypeset wheel is built for that imgui-bundle):",
             *(f"    {pin}" for pin in held),
-            "  and the imtypeset line built for that imgui-bundle (README.md, 'Packaging').",
+        ]
+    if re.search(r"(a|b|rc)\d+", version):
+        lines += [
+            "",
+            f"  {version} is a pre-release: pip takes it only when asked (--pre, or the exact",
+            "  version as above).",
         ]
     if ".dev" in version:
         lines += [

@@ -34,6 +34,7 @@ from typing import Any
 
 import material_frozen
 import pytest
+from conftest import HIDE_INSTALLED
 
 from imscribe import typesetter
 from imscribe.theme import Align, BlockKind, Theme
@@ -81,7 +82,10 @@ def _child(code: str, env: dict[str, str], *args: str) -> dict[str, Any]:
         text=True,
         timeout=300,
         check=False,
-        env={**env, "PYTHONPATH": str(_ROOT)},
+        # The second directory: a child that names a library that is not
+        # there is not handed an installed imtypeset in its place
+        # (`tests/conftest.py`, "An installed imtypeset is hidden").
+        env={**env, "PYTHONPATH": os.pathsep.join([str(_ROOT), str(HIDE_INSTALLED)])},
         cwd=str(_ROOT),
     )
     assert result.returncode == 0, f"the child failed:\n{result.stdout}\n{result.stderr}"

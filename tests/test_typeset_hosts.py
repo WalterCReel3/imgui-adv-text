@@ -1133,8 +1133,11 @@ def test_in_a_window_the_hosted_diff_is_drawn_in_its_block_s_rectangle(
     assert text.startswith("replay.py  +")
     assert warning == "" and 0.0 < width <= available and fits is True
     assert available == pytest.approx(shown["block_width"], abs=1.0)
-    # Eight cells is the least a view is drawn at, in whole pixels (a cell is 7.99999 px).
-    assert shown["narrow"] == [[63.0, False]]
+    # Eight cells is the least a view is drawn at, in whole pixels. Restated on imtypeset
+    # 0.4.1: this was `[[63.0, False]]`, because the cell was the face's own advance
+    # (7.99999 px: eight of them are 63.99991, cut to whole pixels). The cell is the
+    # device's whole pixel now, 8.0 exactly, and eight of them are 64.
+    assert shown["narrow"] == [[64.0, False]]
     side = windowed["side"]
     assert side["layout"] == "side-by-side" and side["documents"] == 4
     assert side["hosts_drawn"] == 1 and side["answered"] is True and side["vertices"] > 100

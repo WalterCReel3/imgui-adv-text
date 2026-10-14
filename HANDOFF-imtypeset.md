@@ -65,7 +65,7 @@ before (`c9f8902`); what it said is in the file's history.
 
 | | |
 |---|---|
-| imtypeset ref built and gated against | your tag `v0.3.0`, commit `2fd705e` (full hash `2fd705e2bc358c7dbfda1eb60bd9b71609869e1d`). Both gates against the pair built from it, on 2026-10-12: the lead's run at advtext `5939683` (an agent; load not given): `make check` 3589 passed, 395 skipped, 4 xfailed; `make check TYPESET=1` 3976 passed, 8 skipped, 4 xfailed. And O-REL's builder (an agent), alone on the tree, with its own work added: `make check` 3609 passed, 395 skipped, 4 xfailed (199 s, load 0.33 to 1.46); `make check TYPESET=1` 3996 passed, 8 skipped, 4 xfailed (289 s, load 1.91 to 3.08). **The pin's history, all on 2026-10-12, each move after both gates on the pair moved to**: `c9f8902` (PH-FIX's builder: 3362 and 3687 passed) to `03b5cd4` (advtext commit `04a51c8`; N-METRICS's builder, alone on the tree: 3445 and 3786 passed) to `v0.3.0` (advtext commit `5939683`) |
+| imtypeset ref built and gated against | **Since 2026-10-13:** your tag `v0.4.1`, commit `e6160c0` (full hash `e6160c0f83bbb6c7c41dba62ff0736a956ba7d9b`, the lead ran `git rev-parse`), consumed as the wheel `imtypeset==0.4.1.192900` installed from PyPI; gate counts follow in the dated section for 2026-10-13. *Before that:* your tag `v0.3.0`, commit `2fd705e` (full hash `2fd705e2bc358c7dbfda1eb60bd9b71609869e1d`). Both gates against the pair built from it, on 2026-10-12: the lead's run at advtext `5939683` (an agent; load not given): `make check` 3589 passed, 395 skipped, 4 xfailed; `make check TYPESET=1` 3976 passed, 8 skipped, 4 xfailed. And O-REL's builder (an agent), alone on the tree, with its own work added: `make check` 3609 passed, 395 skipped, 4 xfailed (199 s, load 0.33 to 1.46); `make check TYPESET=1` 3996 passed, 8 skipped, 4 xfailed (289 s, load 1.91 to 3.08). **The pin's history, all on 2026-10-12, each move after both gates on the pair moved to**: `c9f8902` (PH-FIX's builder: 3362 and 3687 passed) to `03b5cd4` (advtext commit `04a51c8`; N-METRICS's builder, alone on the tree: 3445 and 3786 passed) to `v0.3.0` (advtext commit `5939683`) |
 | the ref in use | the full hash above, in `imtypeset.ref` at advtext's root (one line; `tests/test_ci_workflow.py` holds it to a full hash and to the short hash in this table). The Makefile does not read that file: a person passes the ref, and the CI workflow reads the file and passes it. **Your file says the tag is not pushed; advtext has no way to check and has fetched nothing from GitHub** |
 | how it is built | Three ways, one recipe after the source is in hand (`python/host/build_bundle_library.sh`, and a snapshot of `python/imtypeset` beside the library). `make typeset-lib IMTYPESET_REF=<tag \| branch \| full hash>`: one commit fetched with `git fetch --depth 1` from `IMTYPESET_REPO` (default `https://github.com/WalterCReel3/imtypeset.git`) into a cache under `build/`, then `git archive`. `make typeset-lib IMTYPESET_COMMIT=<rev>`: `git archive` of that commit of the sibling checkout. `make typeset-lib`: the sibling's working tree. **The first has been run against `file://` clones only; nobody has run it against GitHub.** The headers choice is handed to your script (`IMTYPESET_HEADERS=`, passed on as `IMTYPESET_BUNDLE_HEADERS`; T1) with a header cache under advtext's `build/`; the library's file name is read from `<out>/LIBRARY`, which the recipe rewrites to the installed path (T2); `<library>.attestation.json` is carried, and nothing writes or expects `<library>.gate` (T3). **The pair the gates run against, `build/imtypeset-bundle`, was built by `make typeset-lib IMTYPESET_COMMIT=v0.3.0 IMTYPESET_HEADERS=stand-in`** (its `BUILT-FROM`: commit `2fd705e2...`, 0 uncommitted paths, 2026-10-12T07:25:19Z) |
 | how it is found | `advtext/typesetter.py`, in this order: (1) `IMTYPESET_LIBRARY` (the shared library) with `IMTYPESET_PYTHON`, a package directory with NO library in it (T8); the pair is remembered after the first accepted load, so a host may then remove both variables. (2) Otherwise an installed `imtypeset`, recognised by its metadata or by `_attestation.json` beside `find_spec("imtypeset").origin` (T5), imported with no variable set; where such a package is what gets imported although the variables are set, `pairing()` says `route: "distribution"` and names them in `ignored_environment`, from your `host_info()`. (3) Otherwise not loaded, and `reason()` is `IMTYPESET_LIBRARY is not set`. `typesetter.pairing()` answers seventeen keys, among them your own words as `imtypeset_kind` and `imtypeset_route`. Route 2 has met your real stand-in wheels twice, outside the suite, installed with `pip --target` and `imgui_bundle` symlinked beside (N-IMT's and O-IMT2's builders); the suite itself still uses stand-ins and the pinned pair laid out as a wheel |
@@ -778,3 +778,100 @@ under the old name, so a fetch by the old URL keeps working; change yours
 when convenient. Sections of this file dated before today give the old URL
 and are left as written. **The local checkout's path has NOT changed:** it is
 still `~/Source/imgui-adv-text`, and will stay so while sessions are running.
+
+### imtypeset 0.4.1 from PyPI: what imscribe consumes now, H34 and H35 accepted, three questions (2026-10-13)
+
+By imscribe's ADOPT-FINAL builder, an agent, from the result files of the
+ADOPT-API and ADOPT-DIST builders (agents, the same day) and its own gate
+runs. Everything here was in imscribe's working tree, uncommitted and not
+pushed, when written. **This section is the current position.** Of the
+table "What advtext consumes today" at the top, the first row was brought
+level by the lead; the rows under it ("the ref in use", "how it is built",
+"how it is found") describe 2026-10-12 and are superseded by what follows.
+
+**What imscribe consumes now.**
+
+| | |
+|---|---|
+| the library | the wheel **`imtypeset==0.4.1.192900`, installed from PyPI**, your tag `v0.4.1`, commit `e6160c0` (full hash `e6160c0f83bbb6c7c41dba62ff0736a956ba7d9b`, the one line of `imtypeset.ref`). The file in imscribe's `./.venv` since 13:52 on 2026-10-13: `imtypeset-0.4.1.192900-cp311-none-manylinux_2_28_x86_64.whl`, sha256 `4e7b1477bb9482eb0b99e0a244e7d97383cb77ecee05747cfee70a0434ec43ca`, whose attestation says GitHub Actions run 38434871056 of WalterCReel3/imtypeset at `e6160c0` |
+| how it is declared | a hard dependency in `pyproject.toml`, with your marker from `docs/releasing.md` section 5, beside `imgui-bundle==1.92.900`; both exact; a test holds the fourth number to the imgui-bundle pin. Not an extra (your T21's alternative for musl was not taken: there is no other renderer) |
+| how it is found | the installed distribution, with nothing set (`pairing()["route"]` `distribution`, your `imtypeset_route` `installed`, `headers` `fork:c9a0a84f8a4ddae794a9e1acf6a93afce73d5057`). `IMTYPESET_LIBRARY` and `IMTYPESET_PYTHON` are the developer's route and work only where no imtypeset is installed. imscribe's own switch `IMSCRIBE_NO_TYPESET=1` keeps it from looking for an installed one |
+| the floor | a library older than 0.4 is refused at imscribe's gate (`typesetter.MINIMUM = (0, 4)`), before anything is drawn. `device_glyph_advance` is on imscribe's list of required names |
+| of the 0.4 API | `device_glyph_advance(Face.Code, "0", style, scale)` for the diff view's cell, asked again when the size or `io.display_framebuffer_scale.x` changes; `Style.Advances` and `BlockStyle.Advances` left at Default everywhere. Of "What advtext must set for a diff view": point 1, point 3 (a whole origin and a whole `LeftIndent`) and the cell half of point 4 were taken up today; the columns half of point 4 was not (columns are still counted, not asked: H50 below). The other points were not re-read against the view today |
+| imscribe's version | `0.2.0b1`; **not on PyPI when this was written**: the owner publishes |
+| gates | 2026-10-13, 21:24 to 21:36, alone on the tree, the fixture's own Xvfb, against the imtypeset 0.4.1.192900 wheel installed from PyPI (logs read by the lead): `make check` 4301 passed, 18 skipped, 4 xfailed, exit 0; `IMSCRIBE_NO_TYPESET=1 make check` 3645 passed, 674 skipped, 4 xfailed, exit 0; lint, format and mypy clean in both. The sidecar gate (`make check TYPESET=1` with the wheel uninstalled) is not part of this record. |
+
+**The wheel was changed once under the day's work**, and the two have the
+same file name: until 13:50 imscribe developed against your local
+`build/pypi-release/wheelhouse/imtypeset-0.4.1.192900-cp311-none-manylinux_2_28_x86_64.whl`
+(sha256 `942c9a17e31d399b9db0423d82b32a67c0b2c7ae8e5fbff0d4ab7973035d17c0`,
+built from `cf7466e`); from 13:52 against the file on PyPI, hash above. The
+first whole run of the acceptance tests was on a sidecar pair the lead
+built from `cf7466e` against the real headers.
+
+**H3 is closed** by the asking side: `pip install` brings the library with
+no environment variable, and imscribe depends on it.
+
+**H34 and H35 are accepted: 105 of 105.** (ADOPT-API's builder's sentences,
+placed whole.)
+
+> imscribe's 105 strict xfails (`tests/test_mono_acceptance.py` at
+> `3ae7562`: five assertions on 21 pages, its diff view's default and a
+> fenced block, 14 to 20 px) all XPASSed on 0.4.1 (imscribe's ADOPT-API
+> builder, an agent, 2026-10-13; `cf7466e` built against the real headers,
+> then the installed wheel `0.4.1.192900`; FreeType, density 1, Xvfb;
+> vertices read). They are plain tests now and hold both at 12 to 24: one
+> step, 0 px between rows, every inked glyph on `ImDrawList::AddText`'s pens
+> in your own entry and in a second copy of the file, the quarter /
+> three-quarter caret answers for all 274 to 288 glyphs a page, the
+> selection fill on the pens, R6. imscribe's `cell="pixel"` workaround is
+> gone (deprecated, ignored).
+
+The file is 279 tests now and all pass in the gate runs above. **Both
+requests are closed by the asking side on that evidence: at density 1,
+FreeType, Linux, the bundled Inconsolata.** Not covered by it: a density
+other than 1, stb_truetype, a GPU, macOS, another code face.
+
+**Three measurements, each a question** (the same builder's sentences;
+numbered here as new requests).
+
+| # | measurement and question |
+|---|---|
+| H49 | **`device_glyph_advance` and layout answer near the whole pixel, not on it.** `device_glyph_advance(Face.Code, "0", style, scale)` with no window, framebuffer scale 1, for the em of pixel heights 12 to 24: 6.000001430511475, (13: the same), 7.0000152587890625, (15: the same), 8.000008583068848, 8.000008583068848, 9.00000286102295, (19: the same), 10.000016212463379, (21: the same), 11.000009536743164, (23: the same), 12.00000286102295; Dear ImGui's `GetCharAdvance` for the same entry is 6.0, 7.0, 8.0 ... exactly. A tenth of ten characters' `caret_rect` is 8.000009155273437 at 16. Your notes say "a whole number of framebuffer pixels". **The answer is within 1e-5 of a whole pixel and not on it.** The DRAWN pens are exact (the 74th character is 584.0 px from the first at 16), so nothing is displaced; but a host that multiplies the cell by a column count gets 696.0007 for 696 and a host that compares it with ImGui's advance for equality fails. imscribe snaps an answer within 0.001 px of a whole framebuffer pixel to it. Is the residue intended (the em handed in is itself a rounded number: 15.2526 for 16 / 1.049), and can the answer be the atlas's number itself? |
+| H50 | **A borrowed Greek or Cyrillic letter takes two cells.** With imgui-bundle's Inconsolata as Code and its Roboto as Regular, at a 16 px em (cell 8 px): U+03C0 and U+0416 take 16.0 px each, eight of either are 16 cells; U+4E2D and U+1F600 (in no face: U+FFFD) take one cell; U+2192, which the code face has, one. That is your stated rule ("as many cells as hold it in the face it is borrowed from": Roboto's U+03C0 is 9.53 px). It means a comment in Russian in a code block is set at twice the pitch of the code around it, where a terminal gives those letters one cell. Reported as measured; whether one cell with the glyph overhanging or scaled is better is yours and the hosts' to say. **imscribe's diff view counts one cell a character and is wrong for such a line today**: its `content_width` and scroll range are a cell short for each (your point 4, "columns by asking", not yet followed there). Ours to fix; open; not run in a window. |
+| H51 | **A tab after a character that takes no cell.** `e`, U+0301, tab, `z` in a Code block: the mark is 0 wide, the tab goes to cell 4, `z` starts at cell 4; `str.expandtabs(4)` of the same text puts `z` at cell 3. Fourteen other lines (tabs after ASCII, after U+00E9, after two ideographs, after an emoji, a tab opening a second line, a tab after 82 characters, wrapped, clipped and grown, four sizes) are where `expandtabs(4)` puts them to 0.001 px. Taken here as right (the stop is a column, not a count of code points); said so you know a host's P29 test met it. No change asked. |
+
+**Still open from before, seen again today:** H27. `caret_rect` for the
+offset at the END of a line inside a Code block answers x = 0, the start of
+the next line (`ab\n\ty`: offsets 0..5 are at cells 0, 1, 0, 0, 4, 5).
+
+**Not a request:** point 3 of "What advtext must set for a diff view" (a
+whole `LeftIndent`) mattered for a fenced block too. With imscribe's theme
+indent of one em (11.44 px at a 12 px height) every glyph of the block was
+0.44 px from `range_rects`; with the indent rounded, 0.0002 px. imscribe's
+view now rounds a code block's indent to a whole unit.
+
+**Answers to your T21 to T24** (read at your `docs/advtext-swap-status.md`,
+"For imscribe at `v0.4.1`").
+
+| # | answer | state |
+|---|---|---|
+| T21 | **Done.** The line is in `pyproject.toml` as you wrote it, marker included, as a hard dependency. The musl hole is stated in the file, in `README.md` and on the PyPI page; it was not made an extra. | done |
+| T22 | **Done, and confirmed by a run**: with your wheel installed and both variables naming a pair built from source, the installed library loads and `ignored_environment` names both. A consequence for a developer, measured: `make typeset-lib` is usable only in a virtualenv with no imtypeset installed, and the pair it builds cannot be loaded from a second virtualenv either (your gate: "imtypeset found two copies of imgui-bundle in this application ... A library built by python/host/build_bundle_library.sh is for the interpreter it was built with."). **A developer who wants an unreleased imtypeset beside a released one has no route today except uninstalling the wheel.** | done; the last sentence is a notice |
+| T23 | Noted; imscribe's is MIT with the same copyright line. | noted |
+| T24 | **Written**: `README.md` "The pins to hold together", `README-pypi.md` and `HANDOFF-pptmstr.md` say never to upgrade imtypeset alone. | written |
+
+**One thing your status file said that was not yet so** (ADOPT-DIST's
+builder): at your commit `5142d93` it said "at tag v0.4.1" while
+`git tag -l` listed `v0.3.0` and `v0.4.0` only (about 13:15); the tag exists
+now, at `e6160c0`.
+
+**Not run by imscribe, by anyone:** any workflow on GitHub (its `ci.yml`,
+`macos.yml` and the new `release.yml` have never run); any upload; anything
+on macOS; CPython 3.12 to 3.14; a framebuffer scale other than 1 (imscribe
+rounds to whole units and snaps the cell to framebuffer pixels: the two
+agree at 1, 2 and 3 and not at 1.5, which you measured on your side and
+nobody has on ours); a GPU. imscribe's suite reaches your installed library
+with `IMTYPESET_LIBRARY` set to its path (which you ignore) and not as a
+user's process does; the route with nothing set rests on two tests, one
+command-line check and one install into a scratch virtualenv.

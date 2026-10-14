@@ -1,5 +1,56 @@
 """
-Shared fixtures. There are two, and a guard, and each earns its place.
+Shared fixtures. There are two, a guard, and which imtypeset the session runs with.
+
+**Which imtypeset (`TYPESET`, set when this file is imported).** About fifty
+test files decide "the library is here" the same way, each for itself: by
+`IMTYPESET_LIBRARY` being set, which is what `make ... TYPESET=1` does; and
+they make a child that has no library by taking that variable and
+`IMTYPESET_PYTHON` out of its environment. Both were the whole truth while the
+library could only be built beside the tree. Since 2026-10-13 imtypeset is a
+dependency, installed in the virtualenv, and found with nothing set
+(`imscribe/typesetter.py`, route 2): the first rule would skip every
+with-library test in the normal install, and the second would no longer make a
+child without one. So, for the length of the session and for every process it
+starts:
+
+- `IMSCRIBE_NO_TYPESET=1` is put in the environment: imscribe does not LOOK
+  for an installed imtypeset (`typesetter.DISABLE_VARIABLE`). A child with the
+  two variables taken out is then a child without the library, as it always
+  was.
+- Where `IMTYPESET_LIBRARY` is not set, an imtypeset distribution is
+  installed, and the caller did not set `IMSCRIBE_NO_TYPESET` itself,
+  `IMTYPESET_LIBRARY` is set to the installed library's own path. Every
+  file's test for the variable is then true, and what loads in a child that
+  keeps it is the installed package with its own library (an installed
+  imtypeset reads no variable; `typesetter.pairing()` says route
+  `distribution` and names the variable under `ignored_environment`).
+
+- **An installed imtypeset is hidden from a test that names another
+  library, or stand-ins of its own** (`tests/data/not_installed`). An
+  installed imtypeset reads no variable and comes before any directory
+  `IMTYPESET_PYTHON` names, so a test that names a library that is not there
+  and expects a refusal would be handed a working one. In this process, and
+  in every child that has that directory on its `PYTHONPATH` (`Window.run`
+  puts it there), the installed package is invisible unless
+  `IMTYPESET_LIBRARY` names the library inside it.
+
+Which gives three runs, and the line pytest prints at the top says which one
+this is:
+
+    make check                          the installed wheel, when there is one;
+                                        without one, the no-library run
+    IMSCRIBE_NO_TYPESET=1 make check    the no-library run, wheel or no wheel
+    make check TYPESET=1                the library `make typeset-lib` built
+                                        -- ONLY in a virtualenv with no
+                                        imtypeset installed. With one, the
+                                        installed library is what loads
+                                        (measured 2026-10-13) and the header
+                                        says so.
+
+What this costs: inside this suite the route with NO variable at all, which
+is the one a user gets, is run only by the tests that ask for it by taking
+`IMSCRIBE_NO_TYPESET` out of a child's environment
+(`tests/test_typesetter_pairing.py`).
 
 **`bundled_fonts`.** Every metrics test needs the directory imgui-bundle ships
 its fonts in. That path is long, environment-derived, and wrong to write down:
@@ -24,14 +75,26 @@ gated on `DISPLAY` being *set* and went red wherever it was set and
 unreachable, which is every sandboxed session this tree has been built in:
 `DISPLAY=:1` names a unix socket and `socket(AF_UNIX)` is refused there. They
 were red at the start of the adoption session for that reason and no other. The
-fixture decides where a window can open by **asking**, in this order:
+fixture decides where a window can open by **asking**, in this order
+(`choose_window`):
 
-1. the session's own `DISPLAY` accepts a connection: run on it, unchanged;
-2. else `Xvfb` is installed and `unshare -rm` can make a user namespace: run on
-   an Xvfb over TCP inside one, which is the recipe
+1. `Xvfb` is installed and `unshare -rm` can make a user namespace: run on an
+   Xvfb of the fixture's own, over TCP inside one, which is the recipe
    `scripts/mouse_probe.py::xvfb_command` builds and
    `tests/test_mouse_probe.py` / `tests/test_examples.py` already use;
+2. else the session's own `DISPLAY` accepts a connection: run on it;
 3. else skip, naming which of the three probes failed.
+
+**Until 2026-10-13 the first two were the other way round**, and a reachable
+`DISPLAY` won. Where that display is a person's desktop its pointer is real:
+a test that puts the mouse somewhere and reads what is under it then meets a
+second pointer. Measured that day on `DISPLAY=:1` while two sessions worked:
+four tests of `tests/test_typeset_view.py` failed in four runs of four on it
+and the file passed with `DISPLAY` unset; seven window tests that failed in a
+whole-suite run on it passed alone on the fixture's Xvfb. A server nobody
+else can reach is the better default wherever one can be started.
+`IMSCRIBE_TEST_DISPLAY=1` asks for the session's own display when it is
+reachable (CI sets it: `xvfb-run` gives each job a display of its own).
 
 That reverses a position `tests/test_shot.py` used to argue -- that a
 set-but-broken `DISPLAY` should go red and not be pre-flighted. The argument
@@ -83,6 +146,98 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 _PROBE = _ROOT / "scripts" / "mouse_probe.py"
+
+_LIBRARY_VARIABLE = "IMTYPESET_LIBRARY"
+_DISABLE_VARIABLE = "IMSCRIBE_NO_TYPESET"
+HIDE_INSTALLED = _ROOT / "tests" / "data" / "not_installed"
+"""On a child's `PYTHONPATH`, the module docstring's last rule holds in the child too."""
+_HIDE_VARIABLE = "IMSCRIBE_TEST_NO_INSTALLED_IMTYPESET"
+
+
+def _hide_installed_typeset() -> None:
+    """
+    The rule of `tests/data/not_installed/sitecustomize.py`, in this process and its children.
+    """
+    os.environ[_HIDE_VARIABLE] = "1"
+    spec = importlib.util.spec_from_file_location(
+        "_not_installed_for_tests", HIDE_INSTALLED / "sitecustomize.py"
+    )
+    assert spec is not None and spec.loader is not None
+    hider = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hider)
+    hider.hide()
+
+
+def installed_typeset_library() -> Path | None:
+    """
+    The shared library inside an installed imtypeset distribution, or `None`.
+
+    Found without importing the package (an import is the library's gate and
+    maps the library into this process): the distribution by its metadata, the
+    package by its spec, and the library as the file the package's own
+    `_attestation.json` names, or the one `libimtypeset_bundle.*` beside it.
+    A source directory of imtypeset on the path is not an installed one.
+    """
+    from importlib import metadata
+
+    try:
+        metadata.distribution("imtypeset")
+        spec = importlib.util.find_spec("imtypeset")
+    except Exception:  # noqa: BLE001 -- not installed, or not readable: there is none
+        return None
+    if spec is None or not spec.origin:
+        return None
+    package = Path(spec.origin).parent
+    try:
+        import json
+
+        named = json.loads((package / "_attestation.json").read_text(encoding="utf-8"))
+        file = named["library"]["file"]
+        if isinstance(file, str) and (package / file).is_file():
+            return package / file
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    found = sorted(package.glob("libimtypeset_bundle.*"))
+    libraries = [path for path in found if path.suffix in (".so", ".dylib")]
+    return libraries[0] if len(libraries) == 1 else None
+
+
+def _choose_typeset() -> str:
+    """
+    Settle which imtypeset this session runs with; the sentence for pytest's header.
+
+    The module docstring has the rule. Writes `os.environ`, once, at import of
+    this file, which is before any test module is imported.
+    """
+    # The reading `imscribe.typesetter._not_looking` makes: blanks alone are nothing.
+    asked_without = (os.environ.get(_DISABLE_VARIABLE) or "").strip() not in ("", "0")
+    named = os.environ.get(_LIBRARY_VARIABLE) or ""
+    installed = installed_typeset_library()
+    os.environ[_DISABLE_VARIABLE] = "1"
+    if installed is not None:
+        _hide_installed_typeset()
+    if named and installed is not None:
+        return (
+            f"imtypeset: {_LIBRARY_VARIABLE}={named} is set AND a distribution is installed: "
+            f"the INSTALLED library is what loads ({installed}); the one named is ignored by it"
+        )
+    if named:
+        return f"imtypeset: the library {_LIBRARY_VARIABLE} names ({named})"
+    if asked_without:
+        return f"imtypeset: none ({_DISABLE_VARIABLE} was set): the no-library run"
+    if installed is not None:
+        os.environ[_LIBRARY_VARIABLE] = str(installed)
+        return f"imtypeset: the installed distribution ({installed})"
+    return "imtypeset: none (not installed, and no library named): the no-library run"
+
+
+TYPESET = _choose_typeset()
+"""Which imtypeset the session runs with, as pytest's header says it."""
+
+
+def pytest_report_header() -> str:
+    return TYPESET
+
 
 XVFB_DISPLAY = 94
 """
@@ -258,7 +413,7 @@ class Window:
         """
         Run `python argv...` where the window can open; never raises on a non-zero exit.
         """
-        env = {**os.environ, "PYTHONPATH": str(_ROOT)}
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(_ROOT), str(HIDE_INSTALLED)])}
         if self.where == "display":
             return subprocess.run(
                 [sys.executable, *argv],
@@ -305,6 +460,25 @@ class Window:
         )
 
 
+DISPLAY_VARIABLE = "IMSCRIBE_TEST_DISPLAY"
+"""Set (not empty, not 0): the `window` fixture runs on the session's `DISPLAY` when it answers."""
+
+
+def choose_window(*, asked: bool, reachable: bool, xvfb: bool) -> str | None:
+    """
+    `"display"`, `"xvfb"`, or `None` for nowhere: the order of the module docstring.
+
+    `asked` is `DISPLAY_VARIABLE`; `reachable` is whether the session's
+    `DISPLAY` accepts a connection; `xvfb` is whether an Xvfb can be started
+    in a user namespace.
+    """
+    if asked and reachable:
+        return "display"
+    if xvfb:
+        return "xvfb"
+    return "display" if reachable else None
+
+
 @pytest.fixture(scope="session")
 def window() -> Iterator[Window]:
     """
@@ -314,20 +488,21 @@ def window() -> Iterator[Window]:
     probe at all.
     """
     display = os.environ.get("DISPLAY", "")
-    if display and display_is_reachable(display):
-        where = "display"
-    elif shutil.which("Xvfb") is None:
+    asked = (os.environ.get(DISPLAY_VARIABLE) or "0").strip() != "0"
+    reachable = bool(display) and display_is_reachable(display)
+    installed = shutil.which("Xvfb") is not None
+    where = choose_window(asked=asked, reachable=reachable, xvfb=installed and _namespaces_work())
+    if where is None and not installed:
         pytest.skip(
             f"DISPLAY={display or '(unset)'} accepts no connection and Xvfb is not "
             "installed, so there is nowhere to open a window"
         )
-    elif not _namespaces_work():
+    if where is None:
         pytest.skip(
             f"DISPLAY={display or '(unset)'} accepts no connection and `unshare -rm` "
             "cannot make a user namespace here, which the Xvfb recipe needs"
         )
-    else:
-        where = "xvfb"
+    assert where is not None
     # A unique directory, not one named for the pid: inside a sandbox every
     # session's pytest can be pid 3, and two runs sharing a name delete each
     # other's PNGs at teardown (measured by C-page-tables, 2026-10-07).

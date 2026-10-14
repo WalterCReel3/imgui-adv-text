@@ -1658,6 +1658,40 @@ changes is `HANDOFF-pptmstr.md`, "Renamed", and `docs/status.md`, 0h.
 
 ---
 
+## imtypeset 0.4.1 from PyPI (2026-10-13)
+
+**The owner's words**, 2026-10-13: "We are close to publishing imtypeset to
+PyPI. After that is done what will need to change in this repo to adopt it.
+I would also like to get this project renamed and published to PyPI around
+lunch today." And, later: "I'm happy to announce that imtypeset is available
+on PyPI." **Every row below is an agent's decision** (the lead's where it
+says so; otherwise the builder's of ADOPT-API or ADOPT-DIST), **awaiting the
+owner, who has been told the first five and may reverse any.** Written by
+the builder of ADOPT-FINAL, an agent; uncommitted when written.
+`docs/status.md` 0i has what was measured and what is open.
+
+| decision | reason |
+|---|---|
+| **imtypeset is a hard dependency, `imtypeset==0.4.1.192900`, under imtypeset's platform marker, beside `imgui-bundle==1.92.900`; not an extra** (the lead) | there is no other renderer, so imscribe without it draws nothing. Exact, because an imtypeset wheel is built for one imgui-bundle and requires it exactly: the two pins move together and a test holds them to each other. The marker is copied from imtypeset's `docs/releasing.md` section 5 so that `pip install imscribe` succeeds on a platform with no wheel. **Cost: on musl the install fails at that line, and no marker can say so** |
+| **The first upload is `0.2.0b1`, a beta** (the lead) | pip does not install it unless asked, so a first release nobody has looked at cannot arrive by a plain `pip install imscribe`. This supersedes "the version stays `0.2.0.dev0`" of the rename section above |
+| **PyPI's page is a short `README-pypi.md`, not `README.md`** (the lead) | `README.md` is the repository's working record, long and dated; the page states the two pins, where it draws and what is not known |
+| **`cell="pixel"` is removed as machinery and kept for one release as an accepted, ignored keyword with a `DeprecationWarning`** (the lead; ADOPT-API's builder found the default meets every acceptance assertion) | with the library on the device grid the option fought it; pptmstr had been told to pass it the day before, so it is not an error yet. **`cell="font"` is deprecated the same way** (the builder): there is no font-file cell to give any more. `view.cell` reads `"pixel"`: a host that reads it back gets the name of what it has. This supersedes the monospace decision that `ASSIGNMENTS.md` section 7 put to the owner |
+| **`make typeset-lib` and `TYPESET=1` stay as the developer's route; an installed wheel is the normal one; the Makefile's gate semantics are not reworked** (the lead) | time: the owner wanted to publish that day. Consequence, measured and documented and not designed: `TYPESET=1` selects the built pair only where no imtypeset is installed |
+| **The view snaps the library's cell to the whole framebuffer pixel it is within 0.001 px of** | `device_glyph_advance` answers 8.000008583068848 for 8; without the snap `content_width` is 696.0007 for 696, pane edges are not multiples of the cell, and the frozen `DiffView` answers are 34 of 51. Put to imtypeset as a question in `HANDOFF-imtypeset.md` |
+| **Where the library refuses the device question, the cell is the laid-out advance** (`_advance_at`), not a refusal to draw | a renderer backend without textures. It has only met a stand-in |
+| **A code block's left indent is rounded to a whole pixel, in the view and not in the converter**, and for a `Description` a host hands in as well | a description is the theme's lengths and the pixel is the view's: with the rounding in the converter, 54 tests that compare a description with the frozen material path's went red. Without it every glyph of a fenced block is up to 0.44 px from `range_rects`. **Cost: a host comparing what it handed in with `block_rect` sees up to half a pixel** |
+| The acceptance pages run 12 to 24 and R1 is asserted at 0.01 px | they pass there; pptmstr's 14 to 20 and 0.5 px were what was needed, not what holds |
+| **The suite decides "the library is available" in `tests/conftest.py`, by setting `IMTYPESET_LIBRARY` to the installed library and `IMSCRIBE_NO_TYPESET=1` for every test** | about fifty test files ask by that variable and make a no-library child by removing two variables; changing one file keeps both idioms true. **Cost, and the thing its builder is least sure of: no with-library test runs as a user's process does** |
+| **`IMSCRIBE_NO_TYPESET` stops the installed distribution being looked for, and nothing else**; its `reason()` is the old sentence, `IMTYPESET_LIBRARY is not set` | about fifteen files assert the sentence. **Known wrong for a user with no wheel**; open |
+| **A floor on the library, `typesetter.MINIMUM = (0, 4)`, and no ceiling** | a 0.3 library lacks `device_glyph_advance` and lays code out off the grid; the wheel is pinned exactly, and a named library is a developer's |
+| **The `window` fixture prefers its own Xvfb to the session's display** | on the owner's real display a moving pointer turned windowed tests red (four in ADOPT-API's run, seven in ADOPT-DIST's), and each passed under Xvfb. `IMSCRIBE_TEST_DISPLAY=1` asks for the real one |
+| **`release.yml` installs the built wheel from the index and asks it for its library before publishing; it uploads two named files, not `dist/*`; the tag must equal the version** | a tag pushed before its pinned imtypeset is on PyPI then publishes nothing; `twine` stops on the `.sha256` files; PyPI never takes a file name twice, so a wrong upload is a version number spent |
+| **`macos.yml` and `ci.yml`'s `sidecar` job start by hand only** | a job that has never passed should not turn a push red on a release day |
+| **Nothing is uploaded or pushed by an agent** (the lead) | publishing is the owner's act; `ASSIGNMENTS.md` has the steps |
+| Older sections of this file and of `docs/status.md` are not edited; `README.md` and the examples' docstrings were brought level | the files' own rule: a dated section is a record |
+
+---
+
 ## Correcting the brief
 
 The research brief asked for "the 4/5 and 1/5 x-height clamps" in

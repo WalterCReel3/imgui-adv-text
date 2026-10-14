@@ -462,9 +462,9 @@ class NotDrawing(ProbeError):
     No `TypesetView` drew a frame, so there was nothing to play a mouse at.
 
     The message is the Document page's own sentence
-    (`imscribe.ui.pages.typeset.why_not`). `main` exits 2 on this when the
-    library was never asked for, and 1 when it was: the first is an absence,
-    the second a failure.
+    (`imscribe.ui.pages.typeset.why_not`). `main` exits 2 on this when no
+    library was found (`typesetter.kind()` is `NOT_INSTALLED`), and 1 when
+    one was: the first is an absence, the second a failure.
     """
 
 
@@ -1046,7 +1046,8 @@ NO_LIBRARY = """\
 There is nothing to play a mouse at: {reason}
 
 The Document page draws its text through the imtypeset library and draws one
-line without it. Build the pinned library and run with it:
+line without it. Install it with the other dependencies (`make bootstrap`),
+or build the pinned library and run with it:
 
   make typeset-lib
   IMTYPESET_LIBRARY=<the library it built, in build/imtypeset-bundle> \\
@@ -1124,7 +1125,13 @@ def main(argv: list[str] | None = None) -> int:
     print(report(outcome.checks))
     if outcome.error is not None:
         print(f"the probe stopped early: {type(outcome.error).__name__}: {outcome.error}")
-    if isinstance(outcome.error, NotDrawing) and not os.environ.get("IMTYPESET_LIBRARY"):
+    from imscribe import typesetter
+
+    # An absence only where nothing was FOUND. Until 2026-10-13 this read
+    # `IMTYPESET_LIBRARY`, and an installed imtypeset, which is found with
+    # nothing set, was an absence (exit 2) when it failed to draw.
+    nothing_found = typesetter.kind() is typesetter.Kind.NOT_INSTALLED
+    if isinstance(outcome.error, NotDrawing) and nothing_found:
         print(NO_LIBRARY.format(reason=outcome.error), file=sys.stderr)
         return 2
     return 0 if outcome.passed else 1

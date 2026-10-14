@@ -1701,9 +1701,25 @@ def test_the_library_says_which_block_holds_a_formula_it_will_not_set(
     assert told["copies"] == told["texts"]
 
 
-def test_a_character_left_in_the_face_that_lacks_it_is_set_where_the_borrowed_one_was(
+def test_a_character_left_in_the_code_face_that_lacks_it_takes_whole_cells_of_the_code_grid(
     library: dict[str, Any],
 ) -> None:
+    """
+    `` `aπb` and → and `c中d` ``: directly, the π and the ideograph stay in
+    the code-face run that inline code is; through the (frozen) material path
+    they were moved to a run in the prose face.
+
+    **Restated on imtypeset 0.4.1.** This was
+    `test_a_character_left_in_the_face_that_lacks_it_is_set_where_the_borrowed_one_was`
+    and asserted every character as wide either way ("the library borrows
+    for itself what the old core borrowed for it"): π 9.531 px and the
+    ideograph 16.414 px both ways. The library now sets a code face on the
+    device's grid, inline code too, and a character the face lacks takes
+    whole cells there (imtypeset's H34): **π, borrowed from the prose face
+    at 9.531 px, takes two 8 px cells (16.0); U+4E2D, which no bundled face
+    has, takes one (8.0) where the prose face's missing glyph is 16.414.**
+    Everything else is as wide either way, as before.
+    """
     directly, through_material = library["carets"]
     text = "a\u03c0b and \u2192 and c\u4e2dd"
     assert len(directly) == len(through_material) == len(text) + 1
@@ -1712,10 +1728,16 @@ def test_a_character_left_in_the_face_that_lacks_it_is_set_where_the_borrowed_on
         return [round(b - a, 3) for a, b in zip(carets, carets[1:], strict=False)]
 
     ours, theirs = advances(directly), advances(through_material)
-    # Every character is as wide either way: the library borrows for itself
-    # what the old core borrowed for it.
+    cell = ours[0]
+    assert cell == theirs[0] == 8.0  # `a` in the code face, at the theme's 16 px em
     for at, character in enumerate(text):
-        if character != " ":
+        if character == "\u03c0":
+            # Borrowed: as many cells as hold it in the face it comes from.
+            assert theirs[at] == 9.531 and ours[at] == 2 * cell, (at, ours[at], theirs[at])
+        elif character == "\u4e2d":
+            # In no face: one cell.
+            assert theirs[at] == 16.414 and ours[at] == cell, (at, ours[at], theirs[at])
+        elif character != " ":
             assert ours[at] == theirs[at] > 0, (at, character)
     # And directly every space is the paragraph's own. (Through the material
     # the space after the arrow is the math face's: the run that borrowed

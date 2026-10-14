@@ -1051,6 +1051,15 @@ def advance(doc, text, word):
     at = text.index(word) + 1
     return doc.caret_rect((0, at + 1))[0] - doc.caret_rect((0, at))[0]
 
+from imscribe import em_size_for_pixel_height
+EM_PER_PIXEL = em_size_for_pixel_height(Face.CODE, 1.0)
+def device(em_px):
+    # What Dear ImGui has baked for the library's own code font as the advance of `m` at an em
+    # of `em_px` pixels: [the pixel height that em is, the whole pixel height baked, the advance].
+    height = em_px / EM_PER_PIXEL
+    baked = typesetter.font(Face.CODE).get_font_baked(height)
+    return [height, float(baked.size), float(baked.get_char_advance(ord("m")))]
+
 # 1. A run's scale is a multiple of ITS BLOCK's size: a paragraph (the body's
 #    size) and a level-one heading (1.953 times it), each at several scales.
 base = Theme.build()
@@ -1065,7 +1074,8 @@ for name, source, kind in (
         doc, described, _ = laid(source, theme)
         text = described.texts[0]
         (run,) = described.blocks[0].runs
-        rows.append([scale, run.scale, advance(doc, text, "mmmm"), advance(doc, text, "xx")])
+        rows.append([scale, run.scale, advance(doc, text, "mmmm"), advance(doc, text, "xx"),
+                     device(px_from_sp(base.style(kind).font.size) * (scale or 1.0))])
         doc.close()
     size = base.style(kind).font.size
     # What the code face's `m` advances at the block's own size, from the font file.
@@ -1079,6 +1089,10 @@ for source in ("xx `mmmm` yy", "# xx `mmmm` yy"):
     doc, described, _ = laid(source, theme)
     report["step"].append(advance(doc, described.texts[0], "mmmm"))
     doc.close()
+report["step_device"] = [
+    device(px_from_sp(base.style(kind).font.size) - 2.0)
+    for kind in (BlockKind.PARAGRAPH, BlockKind.HEADING_1)
+]
 
 # 3. pptmstr's case: prose 16 px tall as ImGui means it, and a code span the
 #    same 16 px tall inside it, then 14 px tall (its INLINE_CODE at -2).
@@ -1106,6 +1120,11 @@ for step_px in (0.0, -2.0):
             # code face's height per em, that is how tall the span is.
             "span_tall_px": advance(doc, described.texts[0], "mmmm") / m * c,
             "unscaled_tall_px": block_em * c,
+            "span_advance_px": advance(doc, described.texts[0], "mmmm"),
+            "span_scale": described.blocks[0].runs[0].scale,
+            # The same, at the em whose height is the block's height and the step.
+            "device": device((block_em * (p if kind is BlockKind.PARAGRAPH else h) + step_px) / c),
+            "unscaled_device": device(block_em),
         })
         doc.close()
 
@@ -1169,34 +1188,81 @@ def test_the_library_sets_a_scaled_run_at_that_multiple_of_its_blocks_size(
     `imtypeset.h` says of a run's `Scale`: "Size, as a multiple of the
     paragraph's. 0 is 1." Measured here, because "the paragraph's" could be
     read as the document's body: the advance of a monospace character in a
-    run of scale s is s times what the font file says it advances at the size
-    of the BLOCK the run is in, in a paragraph and in a level-one heading
-    alike, and the prose beside it does not move.
+    run of scale s is what the DEVICE advances it at s times the size of the
+    BLOCK the run is in, in a paragraph and in a level-one heading alike, and
+    the prose beside it does not move.
+
+    **Restated on imtypeset 0.4.1.** Until then the advance asserted was the
+    font FILE's: `code == approx(metric * scale, abs=0.01)`, `metric` being
+    half the block's em (8.0 px in a 16 px paragraph, 15.625 in the heading).
+    A code-face run is now measured on the device (imtypeset's H34): its
+    advance is the one Dear ImGui has baked for the face at the WHOLE pixel
+    height the scaled size comes to, a whole pixel. So a scale still chooses
+    the size, and the advance moves in whole pixels with the raster the
+    glyphs come from: at the paragraph's 16 px em, scales 1, 1.25, 0.5 and 2
+    give 8, 10, 4 and 16 px where the file says 8, 10, 4 and 16; in the 31.25
+    px heading 16, 20, 8 and 32 where the file says 15.625, 19.531, 7.813 and
+    31.25. Asserted: the device's number exactly, asked of Dear ImGui at that
+    size; and that it is the file's to within a pixel, so the scale is
+    still what sizes the run.
     """
     told = library["scales"]
     assert told["heading"]["block_px"] == pytest.approx(told["paragraph"]["block_px"] * 1.25**3)
+    seen = {}
     for name in ("paragraph", "heading"):
         metric = told[name]["metric"]
         assert metric == pytest.approx(told[name]["block_px"] / 2.0, abs=1e-3), "Inconsolata's m"
         rows = told[name]["rows"]
         prose = {round(row[3], 3) for row in rows}
         assert len(prose) == 1, (name, prose)
-        for theme_scale, run_scale, code, _ in rows:
+        for theme_scale, run_scale, code, _, (height, baked, device) in rows:
             assert run_scale == theme_scale
-            assert code == pytest.approx(metric * (theme_scale or 1.0), abs=0.01), (
+            assert baked == float(int(height + 0.5)), (name, theme_scale, height, baked)
+            assert device == float(int(device)), (name, theme_scale, device)
+            assert code == pytest.approx(device, abs=1e-3), (name, theme_scale)
+            # Was `abs=0.01`: the file's advance. Now the nearest raster's.
+            assert code == pytest.approx(metric * (theme_scale or 1.0), abs=1.0), (
                 name,
                 theme_scale,
             )
+            seen[name, theme_scale] = round(code, 3)
+    assert [seen["paragraph", scale] for scale in (0.0, 1.0, 1.25, 0.5, 2.0)] == [
+        8.0,
+        8.0,
+        10.0,
+        4.0,
+        16.0,
+    ]
+    assert [seen["heading", scale] for scale in (0.0, 1.0, 1.25, 0.5, 2.0)] == [
+        16.0,
+        16.0,
+        20.0,
+        8.0,
+        32.0,
+    ]
 
 
 def test_a_step_is_the_same_length_in_a_paragraph_and_in_a_heading(
     library: dict[str, Any],
 ) -> None:
+    """
+    **Restated on imtypeset 0.4.1.** Was: "Two pixels of em less, so one
+    pixel of advance less, in both", by the font file's advance to 0.01 px
+    (7.0 in the paragraph, 14.625 in the heading). The step is still two
+    pixels of em in both; the advance is now the device's at the stepped
+    size, a whole pixel: 7.0 and 15.0 (the heading's 29.25 px em is a 30.68
+    px pixel height, baked at 31, where Dear ImGui advances `m` 15).
+    """
     told = library["scales"]
     paragraph, heading = library["step"]
-    # Two pixels of em less, so one pixel of advance less, in both.
-    assert paragraph == pytest.approx(told["paragraph"]["metric"] - 1.0, abs=0.01)
-    assert heading == pytest.approx(told["heading"]["metric"] - 1.0, abs=0.01)
+    for got, (height, baked, device), name in zip(
+        (paragraph, heading), library["step_device"], ("paragraph", "heading"), strict=True
+    ):
+        assert baked == float(int(height + 0.5)) and device == float(int(device)), name
+        assert got == pytest.approx(device, abs=1e-3), name
+        # Was `abs=0.01`: one pixel of advance less than the block's, by the file.
+        assert got == pytest.approx(told[name]["metric"] - 1.0, abs=0.5), name
+    assert [round(paragraph, 3), round(heading, 3)] == [7.0, 15.0]
 
 
 def test_inline_code_is_the_proses_height_inside_prose_of_that_height(
@@ -1209,16 +1275,41 @@ def test_inline_code_is_the_proses_height_inside_prose_of_that_height(
     with `inline_code_scale = p / c` the span is the height of the text it is
     in, in a paragraph and in a heading, and with `inline_code_step` it is
     that many pixels off it.
+
+    **Restated on imtypeset 0.4.1.** Until then the span's height was READ
+    OFF ITS ADVANCE ("the em the span was set at, from its measured advance;
+    times the code face's height per em") and asserted within 0.02 px of the
+    block's height and the step: 16.0 and 14.0 in the paragraph. That reading
+    needs the advance to be the font file's, and a code-face run is now
+    measured on the device: a whole pixel (8.0 where the file says 7.626 at a
+    16 px height), from which the same arithmetic reads 16.78. So what is
+    asserted is the thing itself, two ways: the scale the run is given is the
+    one that makes the span's height the block's and the step (theme
+    arithmetic, no library), and the advance the library sets it at is the
+    one Dear ImGui has baked for the code face at exactly that pixel height
+    (8 at 16, 7 at 14: the pens of `ImDrawList.add_text` in the face at the
+    prose's height). The old reading is kept as a number, so the change of
+    its meaning stays visible.
     """
     told = library["heights"]
     assert told["p"] == pytest.approx(told["h"]), "Roboto's regular and bold are one height per em"
     for case in told["cases"]:
         assert case["unscaled_tall_px"] < case["block_tall_px"] * 0.92, "what the block's em gives"
         want = case["block_tall_px"] + case["step_px"]
-        assert case["span_tall_px"] == pytest.approx(want, abs=0.02), case
+        # The size asked for: the run's scale times the block's em, in the code face's height.
+        asked = case["span_scale"] * case["unscaled_tall_px"]
+        assert asked == pytest.approx(want, abs=0.02), case
+        # The size set: the device's advance at that pixel height, which is a whole one.
+        height, baked, device = case["device"]
+        assert height == pytest.approx(want, abs=0.02), case
+        assert baked == float(int(want + 0.5)), case
+        assert case["span_advance_px"] == pytest.approx(device, abs=1e-3), case
     paragraph = [case for case in told["cases"] if case["kind"] == "PARAGRAPH"]
     assert [round(case["block_tall_px"], 2) for case in paragraph] == [16.0, 16.0]
-    assert [round(case["span_tall_px"], 1) for case in paragraph] == [16.0, 14.0]
+    assert [case["device"][1] for case in paragraph] == [16.0, 14.0]
+    assert [round(case["span_advance_px"], 3) for case in paragraph] == [8.0, 7.0]
+    # Was `[16.0, 14.0]`, the height read off the file's advance; off the device's it is:
+    assert [round(case["span_tall_px"], 1) for case in paragraph] == [16.8, 14.7]
     assert round(paragraph[0]["unscaled_tall_px"], 1) == 14.3
 
 

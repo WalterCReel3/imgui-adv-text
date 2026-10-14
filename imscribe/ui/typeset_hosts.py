@@ -144,11 +144,14 @@ class TypesetDiffFences:
     A `TypesetView.host_for` that draws fenced `diff` and `patch` blocks as diffs.
 
     The keyword arguments are `TypesetDiffView`'s and are given to each view
-    as it is made; `layout`, `height_cap`, `syntax` and `cell` may be changed
+    as it is made; `layout`, `height_cap` and `syntax` may be changed
     afterwards and apply to the fences met from then on (`set_layout` also
-    switches the ones already made). `cell="pixel"` puts each diff on a
-    whole-pixel cell (`imscribe.ui.typeset_diff_view`, "A whole-pixel cell");
-    the default, `"font"`, is the code face's own advance. `source` is the markdown the blocks were
+    switches the ones already made). **`cell=` is deprecated, accepted and
+    ignored** (a `DeprecationWarning`; a name that is neither `"font"` nor
+    `"pixel"` is still a `ValueError`): since imtypeset 0.4 every diff is on
+    the device's whole-pixel cell by default (`imscribe.ui.typeset_diff_view`,
+    "The cell is the device's"), and the attribute `cell` is always
+    `"pixel"`. `source` is the markdown the blocks were
     read from, or a callable giving it, for a view that does not hold it
     (one given blocks); a view given a string, and a stream view, are asked
     for their own.
@@ -167,13 +170,15 @@ class TypesetDiffFences:
         syntax: Any = None,
         pixel_height: float | None = None,
         expand_step: int = 20,
-        cell: str = "font",
+        cell: str | None = None,
     ) -> None:
-        if not isinstance(cell, str):
-            raise TypeError(f"cell= takes 'font' or 'pixel', not {type(cell).__name__}")
-        if cell not in ("font", "pixel"):
-            raise ValueError(f"cell= takes 'font' or 'pixel', not {cell!r}")
-        self.cell = cell
+        if cell is not None:
+            # Here and not at the top: see `_hosted`. The check is the view's.
+            from imscribe.ui.typeset_diff_view import cell_given
+
+            cell_given(cell, "TypesetDiffFences")
+        #: Deprecated: what `cell=` used to choose. Always the device's cell now.
+        self.cell = "pixel"
         self.source = source
         self.languages = tuple(word.lower() for word in languages)
         self.layout = layout
@@ -300,7 +305,6 @@ class TypesetDiffFences:
                 height_cap=self.height_cap,
                 expand_step=self.expand_step,
                 palette=view.palette,
-                cell=self.cell,
             )
         )
 

@@ -19,8 +19,10 @@ imgui-bundle wheel, with a ctypes package in front of it. It is looked for in
 this order, and `pairing()` says which was taken:
 
 1.  **The environment** (`ROUTE_ENVIRONMENT`), when `IMTYPESET_LIBRARY` names
-    the library: the development override, and until imtypeset can be
-    installed the only route there is. The package is found on `sys.path`, or
+    the library: the development override (an unreleased imtypeset built by
+    `make typeset-lib`), and **only where no imtypeset is installed**: an
+    installed one is what the import finds and it reads neither variable
+    (below). The package is found on `sys.path`, or
     in the directory `IMTYPESET_PYTHON` names (`<imtypeset>/python`), which is
     added to the END of `sys.path` at that moment and not before; `make ...
     TYPESET=1` sets both variables. A variable of its own rather than
@@ -50,9 +52,30 @@ this order, and `pairing()` says which was taken:
     itself. One of the two, and not merely a package that can be imported,
     because a source directory of imtypeset on the path -- which is what
     route 1 leaves behind in a process -- is importable too and carries no
-    library. No distribution is published (2026-10-12); the route is tested
-    with stand-ins (`tests/test_typesetter_pairing.py`).
+    library. **The normal route since 2026-10-13**: imscribe declares
+    `imtypeset==0.4.1.192900` beside its exact imgui-bundle pin
+    (`pyproject.toml`), so where imtypeset has a wheel `pip install imscribe`
+    brings the library and nothing has to be set. Tested with the real wheel
+    where one is installed and with stand-ins everywhere
+    (`tests/test_typesetter_pairing.py`).
 3.  **Neither**: not loaded, and `reason()` says `IMTYPESET_LIBRARY is not set`.
+
+**`IMSCRIBE_NO_TYPESET`** (`DISABLE_VARIABLE`; set to anything but an empty
+string or `0`, blanks around the value not counted): an installed
+distribution is NOT looked for. Route 2 is then never taken, and with no
+`IMTYPESET_LIBRARY` either the answer is route 3 with
+its sentence unchanged. It is how a host runs without the library where one is
+installed, and how this project's suite gets its no-library run in a
+virtualenv that has the wheel (`tests/conftest.py`). It switches off the
+LOOKING and nothing else: where `IMTYPESET_LIBRARY` names a library that is
+an explicit request and the import is made, and what that import finds first
+on the path, an installed imtypeset included, is what loads.
+
+**The library's version has a floor** (`MINIMUM`, 0.4): this imscribe is
+written to imtypeset 0.4's layout (code set on the device's grid by default)
+and names. An older library is `Kind.REFUSED` at `module()`, with a sentence
+of the same form as the one for missing names, before anything is drawn. A
+package that cannot say its version is held to `REQUIRED` alone.
 
 `import imtypeset` checks the
 library against the wheel that is running and raises `ImportError` with a
@@ -175,6 +198,7 @@ __all__ = [
     "BlockDescription",
     "CellDescription",
     "ColumnDescription",
+    "DISABLE_VARIABLE",
     "Description",
     "FACE_DEFAULT",
     "FACE_ROLE",
@@ -196,6 +220,7 @@ __all__ = [
     "ROUTE_ENVIRONMENT",
     "ROUTE_NONE",
     "LinkRow",
+    "MINIMUM",
     "RUN_DISPLAY_FORMULA",
     "RUN_FORMULA",
     "RUN_NO_BREAK",
@@ -232,6 +257,16 @@ _with_tags = with_tags
 
 LIBRARY_VARIABLE = "IMTYPESET_LIBRARY"
 PACKAGE_VARIABLE = "IMTYPESET_PYTHON"
+# Set (to anything but "" or "0"): an installed imtypeset is not looked for.
+# The module docstring says what that does and does not switch off.
+DISABLE_VARIABLE = "IMSCRIBE_NO_TYPESET"
+
+# The oldest imtypeset this imscribe is written to, as (major, minor): the
+# library's own version (`imtypeset.version()`, "0.4.1"), not the wheel's
+# four-part one. `module()` refuses an older library (`_too_old`). No ceiling
+# is held here: `pyproject.toml` pins the wheel exactly, and a library named
+# by IMTYPESET_LIBRARY is a developer's own, newer one included.
+MINIMUM: tuple[int, int] = (0, 4)
 
 SPACINGS: dict[str, int] = {"EXTRA_SPACE_ONLY": 0, "FRENCH": 1, "NONFRENCH": 2}
 """
@@ -270,14 +305,16 @@ class Kind(enum.Enum):
       wheel, and it has every name imscribe calls. `module()` is not `None`.
       **It says nothing of fonts**: `ready()` does.
     - `NOT_INSTALLED`: `IMTYPESET_LIBRARY` is not set and no `imtypeset`
-      distribution is installed. Nothing was imported and nothing is
+      distribution is installed, or `IMSCRIBE_NO_TYPESET` says not to look
+      for one. Nothing was imported and nothing is
       remembered. A normal state where a product ships without the library.
       Also, by imtypeset's own word (`no-library`): what was taken for an
       installed distribution turned out to carry no library.
     - `REFUSED`: something was found and cannot be used: the import raised
       (the library's gate against the running wheel, a library that is not
       there, a package that is not on the path), or the package lacks names
-      this imscribe calls (`missing`). A fault somebody has to act on.
+      this imscribe calls (`missing`), or the library is older than
+      `MINIMUM`. A fault somebody has to act on.
     - `FAILED`: it was accepted, and a library error has since switched it
       off (`disable`): a font it would not take in `load_fonts`, or a draw.
     - `UNSUPPORTED`: there is no library for this platform. Two ways of
@@ -348,6 +385,9 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "create_context",
         "current_context",
         "destroy_context",
+        # From imtypeset 0.4.0: a code face's advance as the DEVICE sets it,
+        # which is what the diff view's cell is (`typeset_diff_view`).
+        "device_glyph_advance",
         "face_has_glyph",
         "font_atlas_index",
         "font_metrics",
@@ -565,7 +605,7 @@ def module() -> Any:
         library, where = _pair
         by = NAMED_BY_MEMORY
     named = bool(library)
-    if not named and not _distribution():
+    if not named and (_not_looking() or not _distribution()):
         _reason = _unsupported or _NOT_SET
         _why = Kind.UNSUPPORTED if _unsupported else Kind.NOT_INSTALLED
         return None
@@ -624,6 +664,12 @@ def module() -> Any:
     # Kept whether or not it is accepted: `pairing()` then says which package
     # and which library were refused, and `unload()` can still be asked.
     _package = loaded
+    old = _too_old(loaded, said)
+    if old:
+        _reason = old
+        _why = Kind.REFUSED
+        _say(f"imtypeset is not in use: {_reason}")
+        return None
     lacking = missing(loaded)
     if lacking:
         _reason = _lacks(loaded, lacking)
@@ -755,6 +801,41 @@ def _lacks(package: Any, lacking: list[str]) -> str:
     )
 
 
+def _not_looking() -> bool:
+    """
+    Whether `DISABLE_VARIABLE` says an installed distribution is not to be looked for.
+
+    Blanks around the value are not part of it: unset, empty, blanks alone and
+    `0` all say "look".
+    """
+    return (os.environ.get(DISABLE_VARIABLE) or "").strip() not in ("", "0")
+
+
+def _too_old(package: Any, said: dict[str, Any]) -> str:
+    """
+    The refusal for a library older than `MINIMUM`; empty when it is not, or cannot say.
+
+    The version is the library's own, `host_info()["imtypeset_version"]`
+    (`said` is that answer), and only its first two numbers are read. A
+    package that does not give it, or gives something that is not a version,
+    is not refused HERE: `missing` still holds it to every name.
+    """
+    version = said.get("imtypeset_version")
+    if not isinstance(version, str):
+        return ""
+    try:
+        major, minor = (int(part) for part in version.split(".")[:2])
+    except ValueError:
+        return ""
+    if (major, minor) >= MINIMUM:
+        return ""
+    where = os.path.dirname(getattr(package, "__file__", None) or "") or "(no file)"
+    return (
+        f"the imtypeset at {where} is {version} and this imscribe needs "
+        f"{MINIMUM[0]}.{MINIMUM[1]} or later; the two were not installed together"
+    )
+
+
 def _distribution() -> str:
     """
     The installed `imtypeset` distribution as `imtypeset <version>`; empty when there is none.
@@ -834,7 +915,8 @@ def pairing() -> dict[str, str | None]:
       `ROUTE_ENVIRONMENT` with a distribution also installed this is where to
       see which of the two packages met the library.
     - `distribution`: `imtypeset <version>` when one is installed, whichever
-      route was taken.
+      route was taken. `None` under `IMSCRIBE_NO_TYPESET` while nothing is
+      loaded: it was not looked for.
     - `imtypeset_version`: the library's own version.
     - `imgui_version`: the Dear ImGui the library was compiled against.
     - `wheel_version`: the imgui-bundle that is running, which the library's
@@ -894,7 +976,8 @@ def pairing() -> dict[str, str | None]:
         "kind": found.value,
         "library": None,
         "package": None,
-        "distribution": _distribution() or None,
+        # Not said while nothing is loaded and imscribe was told not to look.
+        "distribution": None if package is None and _not_looking() else _distribution() or None,
         "imtypeset_version": None,
         "imgui_version": None,
         "wheel_version": None,
@@ -1529,14 +1612,17 @@ def font(face: Face) -> Any:
     which Dear ImGui made 17) and 116 by 15 px in `Face.PROSE` (18.75, made
     19). Pushed at 16 the native ink was 11 and 13 px high.
 
-    **The same font at the same size is not the same advances.** Native text
-    is placed by Dear ImGui on its own whole-pixel advances, typeset text by
-    the font file's. They agree where the file's advance is a whole pixel
-    (`Face.CODE` at em 16: 8 px a character both ways) and not elsewhere:
-    at em 21 the library lays those thirteen characters of `Face.CODE` out
-    136.5 px wide and Dear ImGui 143. A native line beside typeset text is
-    the same face at the same height; a native COLUMN lines up with a typeset
-    one only at such a size.
+    **The advances: `Face.CODE` agrees with native text since imtypeset 0.4;
+    nothing is held for any other face.** Native text is placed by Dear
+    ImGui on its own whole-pixel advances. From 0.4 the library measures a
+    code face on the device by default, on that same grid: the thirteen
+    characters of `Face.CODE` are 104 px wide both ways at em 16 and 143 px
+    both ways at em 21 (measured 2026-10-13 on imtypeset 0.4.1;
+    `tests/test_typesetter_kinds.py`). With imtypeset 0.3 the second was
+    136.5 px typeset, the font file's advance, against 143 native, and a
+    native column lined up with a typeset one only where the file's advance
+    was a whole pixel. Prose faces are still laid out on the font file's
+    advances, and their widths against native text are not measured here.
     """
     faces = importlib.import_module("imscribe.primitives").Face
     if not isinstance(face, faces):

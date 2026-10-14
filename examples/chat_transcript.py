@@ -7,10 +7,11 @@ one arriving a few characters at a time; one scrollbar for the lot; text that
 can be selected across a message and copied; the end kept in sight while the
 reader is at the end. It is drawn by the imtypeset library:
 
-    IMTYPESET_LIBRARY=... python examples/chat_transcript.py
+    python examples/chat_transcript.py
 
-(`examples/typeset_minimal.py` has the whole command line; `make typeset-lib`
-builds the library.)
+(With imscribe installed, imtypeset is too and nothing is set in the
+environment; `examples/typeset_minimal.py` says what a developer building
+imtypeset from source does instead.)
 
 Everything is set in **one monospace face, ragged right**, because that is
 what such a host looks like and it is the hardest case for a layout library

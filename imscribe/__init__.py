@@ -243,7 +243,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers; see the module docstr
     from imscribe.ui.typeset_stream_view import TypesetStreamView
     from imscribe.ui.typeset_view import Hosted, HostFor, SetLine, TypesetUnavailable, TypesetView
 
-__version__ = "0.2.0.dev0"
+__version__ = "0.2.0b1"
 """
 This imscribe's version, as a host reads it at run time.
 
@@ -265,10 +265,13 @@ What the number says (an agent's decision, 2026-10-12; `docs/decisions.md`):
   prints both), and never the version alone. `N` goes up when an artefact is
   cut for a host to pin, so that two artefacts a host was given never share a
   file name.
-- `0.2.0` without `.dev` is for the first tagged release, which is the
+- `0.2.0b1` (2026-10-13) is the first version made for PyPI: a beta, which
+  `pip` installs only when asked for (`--pre`, or the exact version). It is
+  one commit, the one tagged `v0.2.0b1`.
+- `0.2.0` without a suffix is for the first full release, which is the
   user's to make. From there until 1.0: the middle number changes when a
   name in `__all__` is removed or changes what it means, or when the
-  imgui-bundle pin or the imtypeset line (`0.3.*` today) changes; the last
+  imgui-bundle pin or the imtypeset line (`0.4.*` today) changes; the last
   number changes for anything else.
 
 Not in `__all__`: it is not one of the names of the surface, and

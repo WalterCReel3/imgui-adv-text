@@ -2100,15 +2100,21 @@ def test_widths_follow_the_library_s_cell_and_the_scrollbar_s_room_is_the_same(
     report: dict[str, Any],
 ) -> None:
     """
-    The cell is the face's own advance: at 16 px it is DiffView's 8 px to a
-    few millionths, so widths agree to a hundredth of a pixel and `height_for`
-    (which adds the scrollbar exactly when a line is too long) agrees exactly.
+    The cell is the device's whole pixel, which at the theme's size is
+    DiffView's 8 px exactly, so widths agree exactly and so does `height_for`
+    (which adds the scrollbar exactly when a line is too long).
+
+    **Tightened on imtypeset 0.4.1.** Until then the cell was the face's own
+    advance, DiffView's 8 px "to a few millionths" (7.999988555908203), and
+    this asserted `approx(old_cell, abs=1e-3)` and widths to a hundredth of a
+    pixel (695.9990 for 696). The grid now takes the cell from
+    `device_glyph_advance` on the whole pixel it is within 2e-5 of.
     """
     for name, entry in report["sizes"].items():
         old_cell, new_cell = entry["cell"]
-        assert new_cell == pytest.approx(old_cell, abs=1e-3), name
+        assert new_cell == old_cell == 8, name
         old_width, new_width = entry["content_width"]
-        assert new_width == pytest.approx(old_width, abs=0.01), name
+        assert new_width == old_width, name
         for theirs, ours in entry["height_for"]:
             assert ours == theirs, name
 
@@ -2418,23 +2424,32 @@ def test_a_raw_file_and_a_folded_one_are_drawn_and_the_fold_opens_on_a_click(
     assert with_cr == 3 and with_lf == 6
 
 
-def test_at_an_odd_size_the_cell_is_the_face_s_advance_and_a_press_still_finds_its_column(
+def test_at_an_odd_size_the_cell_is_diff_view_s_whole_pixel_and_a_press_still_finds_its_column(
     report: dict[str, Any],
 ) -> None:
     """
-    A stated difference, measured: at `pixel_height=13` the code face's
-    advance is 6.196 px; `DiffView` draws on a 6 px pitch (its rounded cell)
-    and the library sets the face at its own advance. Rows and heights are
-    the same; the column under a press is the library's (cell 14 is 2.7 px
-    further right here than in `DiffView`).
+    At `pixel_height=13` the code face's advance in the font file is 6.196
+    px; `DiffView` drew on a 6 px pitch (its rounded cell), and so does this
+    view: 6.0 exactly. Rows and heights are the same; the column under a
+    press is the library's.
+
+    **Restated on imtypeset 0.4.1.** This was
+    `test_at_an_odd_size_the_cell_is_the_face_s_advance_and_a_press_still_finds_its_column`
+    and asserted the DIFFERENCE: `new_cell == approx(old_advance)` (6.196)
+    and `abs(new_cell - old_cell) > 0.1`, "the library sets the face at its
+    own advance ... cell 14 is 2.7 px further right here than in `DiffView`".
+    The library now lays the code face out on the advance the rasteriser
+    bakes (imtypeset's H34), which at 13 px is `DiffView`'s 6, so the stated
+    difference is gone and the equality is what is held.
     """
     small = report["small"]
     assert small["rows"][0] == small["rows"][1]
     assert small["content_height"][0] == small["content_height"][1]
     assert small["row"][0] == small["row"][1]
     old_cell, old_advance, new_cell = small["cell"]
-    assert new_cell == pytest.approx(old_advance, abs=0.01)
-    assert old_cell == round(old_advance) and abs(new_cell - old_cell) > 0.1
+    assert old_advance == pytest.approx(6.196368, abs=1e-5)
+    assert old_cell == round(old_advance) == 6
+    assert new_cell == old_cell
     selection, expected = small["press"]
     assert selection == [expected, expected] and expected[3] == 14
     assert small["steady"]["answered"] is True and small["steady"]["vertices"] > 100

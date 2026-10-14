@@ -1,191 +1,220 @@
 # Assignments for the owner
 
-Things only you can do, in the order I would do them. Written 2026-10-12 by
-the imscribe session's lead (an agent). The agent sessions cannot reach
-GitHub or PyPI, cannot run anything on a Mac, and do not make the decisions
-at the end.
+Things only you can do, in the order I would do them. First written
+2026-10-12 by the imscribe session's lead (an agent); **sections 1 to 6
+rewritten 2026-10-13** by the builder of the task ADOPT-FINAL (an agent) to
+what is true that day, after imtypeset went to PyPI. The agent sessions do
+not push, do not upload, cannot run anything on a Mac, and do not make the
+decisions at the end.
 
 Tick a box, or tell the session, when one is done; several unblock work on
 the other side.
 
-## 1. Push what exists (do this first; it loses nothing and unblocks the most)
+**Where things stand (2026-10-13).** Your words that day: "I'm happy to
+announce that imtypeset is available on PyPI." imscribe now depends on it
+(`imtypeset==0.4.1.192900`), is version `0.2.0b1`, and has a release
+workflow. **imscribe is not on PyPI. Publishing it is section 1, and it is
+the next thing to do.** `.github/workflows/release.yml` has never run; the
+first tag you push is its first run.
 
-Three repositories, three directories. **Each block must be run in its own
-directory**: a tag or branch of one repository does not exist in another
-(`git push origin v0.3.0` here answers "src refspec v0.3.0 does not match
-any", because `v0.3.0` is imtypeset's tag).
+## 1. Publish imscribe 0.2.0b1 to PyPI (the next thing to do)
 
-### 1a. In `~/Source/imgui-adv-text` (imscribe; still named `imgui-adv-text` on GitHub)
+Nothing below was done by an agent. The steps are ADOPT-DIST's builder's
+(an agent), who ran what could be run without GitHub or PyPI: the build,
+`twine check`, and an install of the built wheel from a scratch commit. On
+2026-10-13 at 14:21 `https://pypi.org/pypi/imscribe/json` and the same on
+test.pypi.org answered 404: the name was free then, and **a pending
+publisher does not reserve it; only the first upload does.**
 
-- [ ] The branch, about 30 commits ahead of the remote. Work in progress: do
-      not merge.
+- [ ] **Have the lead commit, then push the branch.** The work is
+      uncommitted in the working tree, and three files are untracked and
+      must be in that commit: `.github/workflows/release.yml`,
+      `README-pypi.md` and `tests/data/not_installed/` (also `CLAUDE.md`,
+      if you want it tracked). `make dist` and the release workflow build a
+      COMMIT, so nothing can be released before this.
 
       ```sh
       cd ~/Source/imgui-adv-text
-      git push -u origin experimental/imtypeset-adoption
+      git push origin experimental/imtypeset-adoption
       ```
 
-- [ ] Optional: this repository's one tag, `advtext-reference`. imtypeset's
-      test oracle is pinned to it; it points at a commit already on `main`,
-      so nothing depends on pushing it.
+      This push also starts `ci.yml` (jobs `plain` and `typeset`) for the
+      first time; see section 3.
+
+- [ ] **PyPI: add a pending publisher.** Your account (with two-factor
+      authentication on) → **Publishing** → *Add a pending publisher*,
+      GitHub tab:
+
+      | field | value |
+      |---|---|
+      | PyPI project name | `imscribe` |
+      | Owner | `WalterCReel3` |
+      | Repository name | `imscribe` |
+      | Workflow name | `release.yml` |
+      | Environment name | `pypi` |
+
+- [ ] **GitHub: create the environment.** The repository → Settings →
+      Environments → New environment → `pypi`. (A required reviewer there
+      makes every release wait for an approval on the run's page;
+      imtypeset's has one.)
+
+- [ ] **Pre-flight, on the commit to be released:**
+
+      ```sh
+      cd ~/Source/imgui-adv-text
+      make dist
+      .venv/bin/python -P -m twine check --strict dist/*.whl dist/*.tar.gz
+      ```
+
+      Name the two files: `twine check dist/*` fails on the `.sha256` files
+      beside them. The hashes `make dist` prints will not be the ones in
+      the builder's notes, which were of a scratch commit.
+
+- [ ] **Tag and push the tag.** The tag must be the version in
+      `pyproject.toml` with a `v`; the workflow refuses any other before
+      building anything.
+
+      ```sh
+      git tag -a v0.2.0b1 -m "imscribe 0.2.0b1" <the commit>
+      git push origin v0.2.0b1
+      ```
+
+- [ ] **Watch the run `release`** (Actions tab, or `gh run watch`); approve
+      it if the environment has a reviewer. **This is the first time this
+      workflow runs anywhere.** Where its author thinks it is likeliest to
+      fail: the environment / OIDC exchange (one of the five values above
+      not matching), and `scripts/make_dist.py` on the runner's shallow
+      clone. Tell this session the failing step's log.
+
+- [ ] **Verify, in a new environment:**
+
+      ```sh
+      python3 -m venv /tmp/imscribe-check
+      /tmp/imscribe-check/bin/pip install "imscribe==0.2.0b1"
+      /tmp/imscribe-check/bin/python -m imscribe.typesetter
+      ```
+
+      The last command prints one line of JSON with `"kind": "ready"` and
+      exits 0. `pip install imscribe` alone finds nothing: a beta needs
+      `--pre` or the exact version.
+
+**If it goes wrong.** A tag that is not the version is refused before
+anything is built. An upload that stops partway is finished by running the
+failed job again (`skip-existing`). PyPI never takes a file name twice, so a
+wrong upload is fixed by the next version (`0.2.0b2`), not by moving the
+tag.
+
+**TestPyPI first, if you want a dry run** (optional, and worth it once): a
+pending publisher on test.pypi.org with the same five values and
+environment name `testpypi`, a GitHub environment `testpypi`, then Actions
+→ release → Run workflow with `testpypi` ticked. That path never uploads to
+PyPI. Why it is worth it: after a review on 2026-10-13 the workflow's
+actions were moved to newer versions that nothing here can run, and its
+builder is not sure the built files land where the upload step looks for
+them. If they do not, the real run fails without uploading anything and
+costs nothing but the time; the rehearsal shows it first.
+
+**One small decision before the first upload.** The source archive (sdist)
+carries this repository's `.gitignore`, because the build tool adds it;
+its comments describe how the agent sessions work here. Nothing in it is a
+secret or a path under `/home/`. To keep it out, tell the session: it is one
+new tracked file (`.gitattributes`). The sdist otherwise now holds only the
+package, the licence and the PyPI page; tests, docs and the handoff files
+were taken out of it that day.
+
+## 2. Push what exists
+
+Three repositories, three directories; each block is run in its own. As
+`git` answered on 2026-10-13 from this machine:
+
+### 2a. `~/Source/imgui-adv-text` (imscribe)
+
+- [x] The branch `experimental/imtypeset-adoption` is on GitHub (at
+      `bb240c3`).
+- [ ] It is three commits behind the local branch (`a45edd5`, `3ae7562`,
+      `5c9c9b6`), and the day's work is not committed at all. Section 1's
+      first box covers both.
+- [ ] Optional: the tag `advtext-reference` is not on GitHub
+      (`git ls-remote --tags origin` lists no tag). imtypeset's test oracle
+      is pinned to it; it points at a commit already on `main`, so nothing
+      depends on pushing it.
 
       ```sh
       cd ~/Source/imgui-adv-text
       git push origin advtext-reference
       ```
 
-### 1b. In `~/Source/imtypeset`
+### 2b. `~/Source/imtypeset`
 
-- [ ] Its branch AND its tag `v0.3.0`. imscribe's CI fetches imtypeset by
-      commit, and the commit it pins is that tag.
+- [x] Pushed, by the evidence: its branch `publish-0.4.1` is level with its
+      remote, and the wheel on PyPI carries an attestation naming a GitHub
+      Actions run at `e6160c0`, which is its tag `v0.4.1`. (Read, not
+      checked against GitHub by this session.)
+
+### 2c. `~/.pptmstr/worktrees/pptmstr/adv-text-experiment`
+
+- [ ] Sixteen commits ahead of its remote, and one file modified in the
+      working tree:
 
       ```sh
-      cd ~/Source/imtypeset
-      git push origin main
-      git push origin v0.3.0
-      ```
-
-### 1c. In `~/.pptmstr/worktrees/pptmstr/adv-text-experiment` (pptmstr's adoption branch)
-
-- [ ] ```sh
       cd ~/.pptmstr/worktrees/pptmstr/adv-text-experiment
       git push -u origin adv-text-experiment
       ```
 
-## 2. Read what the first CI runs say, and pass it back
+## 3. Read what the first CI runs say, and pass it back
 
-Pushing starts workflows that have never run. Each was written without
-network, so expect the first run of each to fail on something small.
+**No workflow of imscribe's has ever run on GitHub.** Pushing the branch
+starts `ci.yml`; expect the first run to fail on something small.
 
-- [ ] **imtypeset → Actions → `sidecar-probe`.** This is the only way anyone
-      learns whether the library works beside the `imgui-bundle` wheel on
-      macOS (request H1). Its summary page says pass or fail per job. Tell
-      the imtypeset session the result, or paste the failing step's log.
-      Everything about a Mac install waits on this.
-- [ ] **imtypeset → Actions → `ci`.**
-- [ ] **imscribe → Actions → `ci`** (two jobs: `plain` and `typeset`). Tell
-      this session what failed. The likeliest first failures, in the order
-      its author ranked them: newer lint tools on the runner; the tests that
-      start their own virtual display; a package name for the software GL
-      stack.
+- [ ] **imscribe → Actions → `ci`**: two jobs on a push, `plain`
+      (`IMSCRIBE_NO_TYPESET=1 make check`) and `typeset` (`make check` with
+      imtypeset's wheel from PyPI). Tell this session what failed. The
+      likeliest first failures, in the order their authors ranked them:
+      newer lint tools on the runner; the tests that start their own
+      virtual display; a package name for the software GL stack; the
+      `plain` job's guard step under GitHub's `bash -e`.
+- [ ] Optional, by hand (Run workflow): `ci`'s third job `sidecar` (the
+      pair built from source at the ref in `imtypeset.ref`), and `macos`
+      (macOS arm64). Neither has ever run; the second is the only way
+      anyone learns whether imscribe works on a Mac.
+- [x] imtypeset's `ci`, `sidecar-probe` and `wheels`: green at `v0.4.1` by
+      that project's own status file (read, not run here). Its first run on
+      macOS had three failing tests, which it says were faults of the tests
+      and are corrected in `v0.4.1`.
 
-## 3. Rename the GitHub repository to `imscribe`
+## 4. Rename the GitHub repository to `imscribe`
 
-Safe at any time: GitHub redirects the old URL, for the web and for git,
-until a new repository is created under the old name. So do not reuse
-`imgui-adv-text`.
-
-- [x] GitHub → the repository → **Settings → General → Repository name** →
-      `imscribe`. *(Done 2026-10-13; the session set `origin` to the new URL
-      and verified it.)*
-- [x] Point the local checkout at the new URL (done by the session):
-
-      ```sh
-      cd ~/Source/imgui-adv-text
-      git remote set-url origin git@github.com:WalterCReel3/imscribe.git
-      ```
-
-- [x] **Tell this session it is done.** It then changes the URL in both
-      handoff files, in the package metadata and in the README, and the other
-      two sessions pick it up from there.
+- [x] Done 2026-10-13: <https://github.com/WalterCReel3/imscribe>. `origin`
+      points at the new URL; the handoff files, the package metadata and the
+      README say so. GitHub redirects the old URL until a repository is
+      created under the old name, so do not reuse `imgui-adv-text`.
 - [ ] **Do NOT rename the local folder yet.** `~/Source/imgui-adv-text` is
       where this session is rooted, where the imtypeset session reads this
       checkout from (`../imgui-adv-text`, including for its test oracle), and
       where the virtualenv lives (a virtualenv cannot be moved). See step 8.
 
-## 4. Bring the virtualenv level (needs network)
+## 5. The virtualenv, and the first real build: done by the session
 
-The virtualenv still carries the old package's metadata (`advtext 0.1.0`)
-and has no build backend, so `make dist` cannot run.
+- [x] **The virtualenv is level** (ADOPT-DIST's builder, 2026-10-13, without
+      a full bootstrap): `advtext 0.1.0` removed; `imscribe 0.2.0b1`
+      (editable), `imtypeset 0.4.1.192900` from PyPI, `build`, `hatchling`
+      and `twine` added. fontTools 4.66.0, markdown-it-py 4.2.0 and
+      imgui-bundle 1.92.900, which imtypeset's test oracle runs on, are
+      unchanged. **Still do not run `make bootstrap` here while the sessions
+      are working**: it may move fontTools (a new install resolves 4.66.1).
+- [x] **`make dist` has built real files once**, of a scratch commit: two
+      builds the same bytes, `twine check --strict` passed, the wheel
+      installed into a new virtualenv from PyPI and drew. On the commit to
+      be released it is section 1's pre-flight.
+- [x] **The project page**: PyPI shows a short `README-pypi.md`, not the
+      long README (the lead's decision; say if you want it otherwise before
+      the first upload, because a page is fixed per version).
 
-**Do not run `make bootstrap` here while the sessions are working.** The
-imtypeset session's test oracle runs on this exact virtualenv (Python
-3.11.2, imgui_bundle 1.92.900, fontTools 4.66.0, markdown-it-py 4.2.0), and
-a full bootstrap may upgrade fontTools or markdown-it. Install only what is
-missing:
+## 6. imtypeset on PyPI
 
-- [ ] ```sh
-      cd ~/Source/imgui-adv-text
-      .venv/bin/python -m pip uninstall -y advtext
-      .venv/bin/python -m pip install --no-deps -e .
-      .venv/bin/python -m pip install "build>=1.2" "hatchling>=1.27" twine
-      .venv/bin/python -m pip list | grep -i -E "imscribe|fonttools|markdown-it|imgui"
-      ```
-
-      The last line should show `imscribe 0.2.0.dev0` and the three versions
-      above unchanged. If fontTools or markdown-it-py moved, tell the
-      imtypeset session before anything else.
-
-- [ ] Check nothing broke: `make check` (about 3 minutes), and with the
-      library `make check TYPESET=1` (about 5).
-
-A full `make bootstrap` belongs with step 8, when the sessions are stopped.
-
-## 5. Build the release files for the first time
-
-`make dist` has never run for real. It builds a wheel and an sdist from a
-clean export of the last commit, twice, compares the two builds, checks what
-each file holds, and writes hashes beside them.
-
-- [ ] ```sh
-      cd ~/Source/imgui-adv-text
-      make dist
-      ls -l dist/
-      ```
-
-- [ ] If it stops, tell this session the line it printed. One check in it
-      rests on memory of how the build backend names things; if it exits
-      with status 3 on a naming difference, suspect the check, not the build.
-
-## 6. PyPI: hold the names, and set up publishing from GitHub
-
-PyPI has no "reserve". A name is yours when you upload the first release of
-a project with that name, and an empty placeholder can be removed as
-squatting, so the first upload should be a real pre-release.
-
-- [ ] **Account:** turn on two-factor authentication (PyPI requires it to
-      upload).
-- [ ] **Decide the project page.** PyPI shows the README, which today is
-      long and full of working notes. Tell this session if you want a short
-      description for PyPI that links to the repository (recommended); it is
-      a small change and should land before the first upload.
-- [ ] **Dry run on TestPyPI** (https://test.pypi.org, a separate account):
-
-      ```sh
-      .venv/bin/twine upload --repository testpypi dist/*
-      ```
-
-      Look at the page it makes.
-
-- [ ] **First real upload of `imscribe`.** Create an API token under
-      Account settings → API tokens (account-wide, because the project does
-      not exist yet), then:
-
-      ```sh
-      .venv/bin/twine upload dist/*
-      ```
-
-      The version is `0.2.0.dev0`; pip does not install a dev release unless
-      asked with `--pre`. Afterwards, delete that token and make one scoped
-      to the project, or go straight to the next item.
-
-- [ ] **Publishing from GitHub ("trusted publishing"), so no token is stored
-      anywhere.** On PyPI: the `imscribe` project → **Publishing** → add a
-      GitHub publisher with owner `WalterCReel3`, repository `imscribe` (its
-      name after step 3), workflow `release.yml`, environment `pypi`. On
-      GitHub: the repository → Settings → Environments → create `pypi`.
-      **The workflow file does not exist yet: ask this session to write
-      `release.yml`** (build on a tag, publish through the trusted
-      publisher). A publisher can be registered for a project that does not
-      exist yet, but that does NOT hold the name; only an upload does.
-
-- [ ] **`imtypeset` on PyPI: not yet.** Its wheels cannot be uploaded as
-      they are (the version carries a `+standin` label, which PyPI rejects,
-      and they are built against stand-in headers), and they are per
-      platform, so macOS has to be answered first (step 2). Ask the
-      imtypeset session for an uploadable wheel and a `release.yml` of its
-      own when you want the name held. Until then the name is unclaimed; it
-      was free on 2026-10-12.
+- [x] **Done, by you, 2026-10-13**: "I'm happy to announce that imtypeset is
+      available on PyPI." PyPI lists `imtypeset` 0.4.1.192900 and
+      0.4.1.192801 (the lead read it that day). imscribe pins the first.
 
 ## 7. Decisions the sessions are waiting on
 
@@ -195,17 +224,31 @@ None of these blocks the steps above. Each is recorded as open in
 
 - [ ] **Which Macs.** The pinned `imgui-bundle` 1.92.900 has macOS wheels
       for Apple Silicon on macOS 14 or later only. Is that the target?
-- [ ] **Monospace size.** The diff view now keeps exact columns at any size
-      through its `cell="pixel"` option, at the cost of glyphs about 5 %
-      larger at even pixel heights. Code inside an ordinary document, and
-      tool output, do not: they hold columns only when the size is stated as
-      an em of 14, 16, 18 or 20. pptmstr declined to move code to an even em
-      on your behalf (it makes code larger than the surrounding UI) and
-      keeps those on its own renderers until imtypeset's fix (H34, H35)
-      lands. Is an em of 16 for code acceptable in the meantime, or wait?
-- [ ] **imtypeset's licence.** You chose MIT-compatible for imscribe, and it
-      now carries an MIT `LICENSE`. imtypeset has none; its notes say the
-      choice is the owner's. Tell that session.
+- [x] **Monospace size: superseded on 2026-10-13, nothing to decide.** The
+      question was whether to accept code at an em of 16 until imtypeset's
+      fix (H34, H35) landed. It landed in imtypeset 0.4, which imscribe now
+      pins as 0.4.1: the diff view's default, a fenced block in a document
+      and inline code keep exact columns at every pixel height from 12 to
+      24, at the size asked for (all 105 acceptance tests that were waiting
+      on it pass; measured at display scale 1, on Linux, vertices read,
+      nobody looked). The `cell="pixel"` option and its 5 % cost are gone
+      (the keyword is ignored and warns, for one release). What remains is
+      pptmstr's to do: move its pin and drop the option
+      (`HANDOFF-pptmstr.md`, A6). *As asked on 2026-10-12:* "The diff view
+      now keeps exact columns at any size through its `cell="pixel"`
+      option, at the cost of glyphs about 5 % larger at even pixel heights.
+      ... Is an em of 16 for code acceptable in the meantime, or wait?"
+- [ ] **New on 2026-10-13: Greek and Cyrillic in code.** imtypeset 0.4 sets
+      a letter the code font lacks, borrowed from the prose font, TWO cells
+      wide (a comment in Russian inside a code block is at twice the pitch
+      of the code around it; a terminal gives those letters one cell). That
+      is imtypeset's stated rule and has been put to it as a question
+      (H50). imscribe's diff view still counts one column for such a
+      letter, so the end of a long line of them cannot be scrolled to: a
+      known defect here, not fixed. Does it matter for the first release?
+- [x] **imtypeset's licence.** MIT, by that project's own file at `v0.4.1`
+      ("The licence is MIT, the same copyright line as yours"); its wheel
+      carries the `LICENSE`.
 - [ ] **The SVG litmus renderer** (`make svg`). Twenty-two modules of the
       old Python core remain in this tree only for it. Both teams recommend
       it leaves imscribe and becomes tests in imtypeset, rendered as PNG.
@@ -232,13 +275,14 @@ None of these blocks the steps above. Each is recorded as open in
       ```sh
       cd ~/Source/imscribe
       rm -rf .venv && make bootstrap
-      make typeset-lib IMTYPESET_COMMIT=v0.3.0
-      make check && make check TYPESET=1
+      make check && IMSCRIBE_NO_TYPESET=1 make check
       ```
 
-      With network, `make typeset-lib` fetches the wheel's real ImGui
-      headers by itself; the sessions had to pass
-      `IMTYPESET_HEADERS=stand-in`.
+      `make bootstrap` installs imtypeset's wheel from PyPI since
+      2026-10-13; `make typeset-lib` is needed only to build an unreleased
+      imtypeset from source, in a virtualenv with no imtypeset installed.
+      **`make bootstrap` from nothing with the new dependency line has not
+      been run by anyone.**
 - [ ] Tell the imtypeset session the path and the interpreter changed: its
       oracle is pinned to this checkout's tag `advtext-reference` and ran on
       the old virtualenv.
@@ -248,8 +292,11 @@ None of these blocks the steps above. Each is recorded as open in
 Nobody but you has looked at any of this in a window, and you have looked
 once.
 
-- [ ] `make run TYPESET=1` — the demo, fourteen pages. The Diff page, the
-      Typeset page's find box, and a long streamed reply on the Chat page
-      are the ones most worth a minute each.
+- [ ] `make run` — the demo, fourteen pages (no `TYPESET=1` since
+      2026-10-13: the installed wheel is found by itself). The Diff page,
+      the Typeset page's find box, and a long streamed reply on the Chat
+      page are the ones most worth a minute each. **Nobody has looked at
+      what imtypeset 0.4.1 draws**: code, inline code and diffs moved onto
+      whole pixels that day, by measurement only.
 - [ ] pptmstr with the library on, once it has moved its pin: an approval
       with a diff in it, and a long transcript.

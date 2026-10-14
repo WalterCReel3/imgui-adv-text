@@ -58,8 +58,34 @@ SRC := imscribe tests $(wildcard scripts) $(wildcard examples)
 # one line saying so and nothing else, and the suite's with-library tests
 # skip: plain `make check` is green without the library and proves less.
 # (Until that date this paragraph read "and exactly as before when they do
-# not": the old views were the fallback.) Nothing here sets the variables
-# unless the caller asks:
+# not": the old views were the fallback.)
+#
+# SINCE 2026-10-13 THE NORMAL ROUTE IS AN INSTALLED WHEEL. imtypeset is a
+# dependency (pyproject.toml: imtypeset==0.4.1.192900, beside the exact
+# imgui-bundle pin), `make bootstrap` installs it, imscribe finds it with
+# nothing set, and the suite's with-library tests run under plain
+# `make check` (tests/conftest.py says how, and pytest's first lines say
+# which imtypeset a run used). So there are three runs:
+#
+#   make check                         with the installed wheel; where none is
+#                                      installed, the no-library run
+#   IMSCRIBE_NO_TYPESET=1 make check   the no-library run, wheel or no wheel:
+#                                      what plain `make check` was before
+#   make check TYPESET=1               with the pair `make typeset-lib` built
+#                                      -- THE DEVELOPER'S ROUTE, for an
+#                                      imtypeset that is not released
+#
+# TYPESET=1 MEANS THE BUILT PAIR ONLY WHERE NO imtypeset IS INSTALLED. An
+# installed imtypeset reads neither variable and is found before the
+# directory IMTYPESET_PYTHON names, so with the wheel in ./.venv the
+# installed library is what loads, whatever TYPESET=1 says (measured
+# 2026-10-13; `python -m imscribe.typesetter` answers route "distribution"
+# and names both variables under "ignored_environment"). To gate against a
+# pair built from source:  .venv/bin/python -m pip uninstall -y imtypeset
+# first, and `make bootstrap` (or pip install of the pinned wheel) to put it
+# back afterwards.
+#
+# Nothing here sets the variables unless the caller asks:
 #
 #   make typeset-lib              build the library for ./.venv's wheel, from
 #                                 IMTYPESET_ROOT's working tree

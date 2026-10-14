@@ -1785,3 +1785,144 @@ under the old name, so a fetch by the old URL keeps working; change yours
 when convenient. Sections of this file dated before today give the old URL
 and are left as written. **The local checkout's path has NOT changed:** it is
 still `~/Source/imgui-adv-text`, and will stay so while sessions are running.
+
+### imscribe 0.2.0b1 on imtypeset 0.4.1 from PyPI: the pins, `cell="pixel"` dropped, what moved (2026-10-13)
+
+By imscribe's ADOPT-FINAL builder, an agent, from the result files of the
+ADOPT-API and ADOPT-DIST builders (agents, the same day) and its own gate
+runs. In imscribe's working tree, **uncommitted and not pushed** when
+written; the commit will be named here when it exists. **This section is
+the current position**: "How to get it" near the top (build the library
+yourself, set two variables) and "The diff view on a whole-pixel cell"
+above (pass `cell="pixel"`) are superseded by it.
+
+The owner, 2026-10-13: "I'm happy to announce that imtypeset is available
+on PyPI."
+
+**The pins.**
+
+| what | pin |
+|---|---|
+| `imgui-bundle` | `==1.92.900` (unchanged) |
+| `imtypeset` | `==0.4.1.192900` (it was `0.3.0`, built from source). On PyPI. imscribe now requires it itself, under a marker: CPython 3.11 to 3.14, Linux x86-64 (glibc 2.28 or later) and macOS 14 or later on arm64. Move it only together with imgui-bundle; never `pip install -U imtypeset` alone |
+| `imscribe` | `0.2.0b1`. **Not on PyPI yet: the owner publishes, and had not when this was written.** Once it is: `pip install --pre imscribe` or `imscribe==0.2.0b1` (a beta is not installed by a plain `pip install imscribe`). Until then a commit, as before: `imscribe @ git+https://github.com/WalterCReel3/imscribe.git@<full commit>` |
+
+- "imscribe 0.2.0b1 requires `imtypeset==0.4.1.192900` (with an environment
+  marker) and `imgui-bundle==1.92.900`; `pip install` brings the library and
+  nothing has to be set. Both variables are ignored by an installed
+  imtypeset: remove them from your launcher or expect
+  `pairing()['ignored_environment']` to name them."
+- "`IMSCRIBE_NO_TYPESET=1` in the environment keeps imscribe from looking
+  for an installed imtypeset; `typesetter.kind()` is then `not-installed`."
+  A library the two variables name still loads under it.
+- "A library older than 0.4 is `Kind.REFUSED`: 'the imtypeset at <dir> is
+  0.3.0 and this imscribe needs 0.4 or later; the two were not installed
+  together'."
+- `reason()` with no library found still reads `IMTYPESET_LIBRARY is not
+  set`, also when what is missing is the wheel. Known; open.
+
+(The three quoted sentences are ADOPT-DIST's builder's; it ran each.)
+
+**Two requests of you, numbered after A5.**
+
+| # | request | why |
+|---|---|---|
+| A6 | **Drop `cell="pixel"`** at the view `diffs.diff()` makes and at the `TypesetDiffView(Diff(), theme).grid` in `gate._measured_columns`, and at any `TypesetDiffFences(cell="pixel")`, when you move to imtypeset 0.4.1. | The default does it now. The keyword is accepted, ignored and raises a `DeprecationWarning` at your line for one release, and is removed in the release after. If you run with warnings as errors, drop it first. |
+| A7 | **Say whether a line of Cyrillic or Greek in a diff matters to you** (point 4 of "Four things that moved" below). | It is a defect on our side that is recorded and not fixed. |
+
+What follows is ADOPT-API's builder's own text, placed whole.
+
+> **Drop `cell="pixel"`: the default does it now, and better.** On imtypeset
+> 0.4.1 (on PyPI as `imtypeset==0.4.1.192900`) `TypesetDiffView(model, theme,
+> layout=layout)` with nothing passed is on the whole-pixel cell Dear ImGui
+> draws the code face at, **at the em you asked for and from the raster of
+> the pixel height you asked for**. The two places you pass it (the view
+> `diffs.diff()` makes, and the `TypesetDiffView(Diff(), theme).grid` in
+> `gate._measured_columns`) and any `TypesetDiffFences(cell="pixel")` keep
+> working for one release: the keyword is accepted, ignored, and raises a
+> `DeprecationWarning` at your line (`cell="font"` the same). It is removed
+> in the release after. If you run with warnings as errors, drop it first.
+>
+> **Measured** (imscribe's ADOPT-API builder, an agent, 2026-10-13,
+> imtypeset 0.4.1 installed from its wheel, Dear ImGui 1.92.9, FreeType,
+> loader flags 0, density 1, Xvfb; load average 4 to 6; vertices read, no
+> pixel, nobody looked), a theme built as your `diff_theme()` builds it, at
+> every pixel height from 12 to 24, unified and side by side: `grid.cell` 6,
+> 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12; one step on every row; 0 px
+> between rows at a column; characters 1, 10, 20, 30, 40 and 74 on
+> `ImDrawList.add_text`'s pens in the same face at your pixel height; every
+> glyph within 0.0015 px of its rectangle; a quarter and three quarters of a
+> cell into each of 288 glyphs answer the carets either side; a selection's
+> fill on the pens of its first glyph and of the glyph after its last; 0
+> pens off the grid. `grid.em * grid.scale` is 15.2526 at 16 (it was 16.000
+> with the option) and the quads carry the 16 px raster's glyphs (it was the
+> 17 px raster's). Your pitch, the row count and `content_height` are as they
+> were. Not run: your `gate.columns` itself, your fonts, a framebuffer scale
+> other than 1, a GPU.
+>
+> **A fenced code block in a `TypesetView` and inline code are on the same
+> grid now**, with nothing to pass: the same six assertions hold for a
+> fenced block under `Theme.at_pixel_height(P, faces=Faces.mono())` at 12 to
+> 24. A code block's left indent is put on a whole pixel by the view (the
+> theme's one em is 15.25 px at a 16 px height: it is drawn at 15).
+>
+> **Four things that moved and that you may have pinned:**
+> 1. **Inline code's advance is a whole pixel.** A code span's advance is
+>    the one Dear ImGui has baked at the whole pixel height its size comes
+>    to. Your case, prose 16 px tall with `inline_code_scale = p / c`: 8.0 px
+>    a character (it was 7.626), and 7.0 at a step of -2 px (it was 6.673).
+>    A test that reads the span's height off its advance now reads 16.8 for
+>    16. The span's size is still the scale's: the theme arithmetic is
+>    unchanged.
+> 2. **A page set in the code face has rigid spaces.** Under
+>    `Faces.mono()` no space is wider than another, the one after a sentence
+>    included, under every `Spacing`.
+> 3. **Your P29, one case.** A tab goes to the next multiple of four CELLS,
+>    and a combining mark or a zero-width character takes no cell: in `e`,
+>    U+0301, tab, `z` the `z` is one cell right of where `expandtabs(4)`
+>    puts it. Fourteen of your fifteen awkward lines are where they were to
+>    0.001 px.
+> 4. **A character the code face lacks takes whole cells, and a Greek or
+>    Cyrillic letter takes TWO.** With the bundled faces at 16 px: U+03C0
+>    and U+0416, borrowed from the prose face, are 16 px (two 8 px cells)
+>    where they were 9.53; U+4E2D and U+1F600, which no bundled face has, are
+>    one cell. **The diff view still counts one cell a character**, so a
+>    line of Cyrillic in a diff reaches twice as far right as
+>    `content_width` and the horizontal scroll allow for: its end cannot be
+>    scrolled to. Open on our side; say if it matters to you.
+>
+> **Window tests on a real display** fail when a pointer moves over the
+> window (measured here today: four tests of ours red on DISPLAY=:1 with
+> somebody's mouse moving, green under Xvfb). Not a change of the library.
+
+**What the builder did not check and said so:** that your `gate.columns`
+holds without the option. The day before, D-CELL's builder copied that
+function and ran the copy with the option; nobody re-ran the copy with the
+default. By its three criteria (the cell against the baked advance to 1e-4,
+pens on index times the cell to 0.01, the two caret answers) the table
+above says it should. The 1e-4 one is why imscribe snaps the cell: the
+library's own answer is 8.000008583 for 8 (carried to imtypeset as H49).
+
+**Also changed, and yours to know.**
+
+- A code block's left indent is rounded to a whole pixel **also in a
+  `Description` you hand in**: `block_rect` may answer up to half a pixel
+  from the indent you stated.
+- H48 (your P36, the baked size discarded on a long-lived atlas) bears on
+  the new default as it bore on the option: the cell is now asked of the
+  library, which reads the baked advance. Not reproduced or re-measured
+  here.
+- Your "Monospace size" question to the owner (code at an even em, or wait
+  for H34 and H35) has no remaining reason on our side: H34 and H35 are
+  accepted (`HANDOFF-imtypeset.md`, the section of this date), and a fenced
+  block and inline code hold columns at every pixel height from 12 to 24.
+
+**Open on our side, recorded and not fixed:** the two-cell borrowed letter
+in a diff (A7); a framebuffer scale that is not a whole number (the views
+round to whole units, the cell snaps to framebuffer pixels; they agree at 1,
+2 and 3, not at 1.5; nothing here was measured off 1); `reason()`'s
+sentence. **Not run by anyone:** imscribe on macOS; any workflow of
+imscribe's on GitHub, the release workflow among them; any upload; a GPU;
+pptmstr against any of this (your tree was not read today).
+
+**Gates, alone on the tree** (ADOPT-FINAL's builder): 2026-10-13, 21:24 to 21:36, alone on the tree, the fixture's own Xvfb, against the imtypeset 0.4.1.192900 wheel installed from PyPI (logs read by the lead): `make check` 4301 passed, 18 skipped, 4 xfailed, exit 0; `IMSCRIBE_NO_TYPESET=1 make check` 3645 passed, 674 skipped, 4 xfailed, exit 0; lint, format and mypy clean in both. The sidecar gate (`make check TYPESET=1` with the wheel uninstalled) is not part of this record.

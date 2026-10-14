@@ -66,10 +66,11 @@ that reason. Neither carries one now: the pages are found by scanning
 exit 1 naming it, so `make shot-all` stops instead of photographing what is
 left and reporting nothing missing.
 
-**A library that was asked for and is not drawing is a failed shot** (exit 3,
+**A library that was found and is not drawing is a failed shot** (exit 3,
 `NOT_DRAWN_STATUS`, no PNG, the reason on stderr; since 2026-10-11). With
-`IMTYPESET_LIBRARY` unset the shot of each page's one line is taken as before
-and `NO_LIBRARY` says what it is.
+none found (`imscribe.typesetter.kind()` is `NOT_INSTALLED`: no imtypeset
+installed and `IMTYPESET_LIBRARY` unset) the shot of each page's one line is
+taken as before and `NO_LIBRARY` says what it is.
 """
 
 from __future__ import annotations
@@ -79,7 +80,7 @@ import os
 import struct
 import sys
 import zlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -103,33 +104,43 @@ second with IM_ASSERT( glfwInitSuccess ).
 """
 
 
+NOT_INSTALLED = "not-installed"
+"""`imscribe.typesetter.Kind.NOT_INSTALLED.value`, held here so that nothing is imported for it."""
+
 NO_LIBRARY = """\
-IMTYPESET_LIBRARY is not set, so no page of the demo will draw its text: every
+No imtypeset was found (none is installed, or IMSCRIBE_NO_TYPESET is set; and
+IMTYPESET_LIBRARY is not set), so no page of the demo will draw its text: every
 page sets its text through the imtypeset library and shows one line without it.
 
-  make typeset-lib          build the pinned library (once)
+  make bootstrap            install the dependencies, imtypeset among them
+  make typeset-lib          or build the pinned library from source (once)
   make shot TYPESET=1       the same command, with it
 """
 
 
-def library_note(environ: Mapping[str, str]) -> str | None:
+def library_note(kind: str) -> str | None:
     """
-    What to tell someone about to open the demo with no library asked for, or `None`.
+    What to tell someone about to open the demo with no library to be found, or `None`.
+
+    `kind` is `imscribe.typesetter.kind().value`. Until 2026-10-13 this read
+    `IMTYPESET_LIBRARY`, which was the only way to a library; an installed
+    imtypeset is found with nothing set, and the note was then printed over
+    a demo that drew every page.
 
     A note and not a refusal: the window still opens, each page says the
     same thing in one line, and that is a legitimate thing to want to look
     at. It is here because since 2026-10-11 no page falls back to imscribe's
     own layout, so an unadorned `make shot` shows no text at all, and a
     batch of one-line pages should not be the first anyone hears of it.
-    Only the variable is read: whether the library then loads is the app's to
-    say, on each page.
+    Any other kind says nothing here: a library that was found and refused
+    is `not_drawn`'s to say, at exit.
     """
-    return None if environ.get("IMTYPESET_LIBRARY") else NO_LIBRARY
+    return NO_LIBRARY if kind == NOT_INSTALLED else None
 
 
 NOT_DRAWN = """\
-IMTYPESET_LIBRARY is set ({library}) and imtypeset was not drawing when the
-window closed: {reason}
+imtypeset was found ({found}) and was not drawing when the window closed:
+{reason}
 
 Every page then draws that sentence in one line in place of its text.
 """
@@ -137,30 +148,34 @@ Every page then draws that sentence in one line in place of its text.
 
 NOT_DRAWN_STATUS = 3
 """
-The exit status of a shot whose library was asked for and was not drawing.
+The exit status of a shot whose library was found and was not drawing.
 
 Not 0, which is a photograph of the page; not 2, which is "no display"; not
 1, which is what a page that raised ends with (`imscribe.ui.app.PageError`).
 """
 
 
-def not_drawn(environ: Mapping[str, str], reason: str) -> str | None:
+def not_drawn(kind: str, reason: str, library: str = "") -> str | None:
     """
-    What to fail with when the library was ASKED FOR and was not drawing at exit, or `None`.
+    What to fail with when a library was FOUND and was not drawing at exit, or `None`.
 
     `reason` is `imscribe.ui.app.not_drawing_at_exit()`: the sentence the
     pages were showing when the window closed, empty when the library drew.
-    With `IMTYPESET_LIBRARY` unset this is `None` whatever the reason: a shot
+    `kind` is `imscribe.typesetter.kind().value` after the run, and `library`
+    what `IMTYPESET_LIBRARY` holds (named in the sentence; an installed
+    imtypeset is found without it, and until 2026-10-13 one that failed to
+    draw was no failure here because the variable was all that was read).
+    With nothing found this is `None` whatever the reason: a shot
     of the one line is then what was asked for, and `library_note` has said
-    so. With it set and a reason, the shot is refused: until 2026-10-11 a
+    so. With one found and a reason, the shot is refused: until 2026-10-11 a
     library that was refused at import, lost its fonts or failed in the
     middle of the run still ended in a PNG and exit 0, a photograph of a
     sentence under a filename that names a page.
     """
-    library = environ.get("IMTYPESET_LIBRARY")
-    if not library or not reason:
+    if kind == NOT_INSTALLED or not reason:
         return None
-    return NOT_DRAWN.format(library=library, reason=reason)
+    found = f"{kind}, IMTYPESET_LIBRARY={library}" if library else f"{kind}, installed"
+    return NOT_DRAWN.format(found=found, reason=reason)
 
 
 # ----------------------------------------------------------------------
@@ -428,13 +443,14 @@ def main(argv: list[str] | None = None) -> int:
         print(NO_DISPLAY, file=sys.stderr)
         return 2
 
-    note = library_note(os.environ)
-    if note is not None:
-        print(note, file=sys.stderr)
-
     from imgui_bundle import hello_imgui, immapp
 
+    from imscribe import typesetter
     from imscribe.ui import app as imscribe_app
+
+    note = library_note(typesetter.kind().value)
+    if note is not None:
+        print(note, file=sys.stderr)
 
     # The app's own size when none is asked for, so an unadorned shot is a
     # photograph of what `make run` opens. That size is 1300 wide since the
@@ -463,7 +479,11 @@ def main(argv: list[str] | None = None) -> int:
         # here even though it is required on the assignment above.
         immapp.run = real_run
 
-    failure = not_drawn(os.environ, imscribe_app.not_drawing_at_exit())
+    failure = not_drawn(
+        typesetter.kind().value,
+        imscribe_app.not_drawing_at_exit(),
+        os.environ.get("IMTYPESET_LIBRARY") or "",
+    )
     if failure is not None:
         print(failure + "No PNG was written.", file=sys.stderr)
         return NOT_DRAWN_STATUS

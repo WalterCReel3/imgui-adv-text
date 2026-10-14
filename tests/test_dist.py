@@ -81,7 +81,10 @@ def test_the_version_is_one_string_in_the_two_places_it_is_written() -> None:
 def test_the_script_reads_the_two_versions_the_way_this_file_does() -> None:
     """The regular expressions in the script, against the real files and not only a fixture."""
     assert _script().declared_version(_ROOT) == (imscribe.__version__, imscribe.__version__)
-    assert _script().pins(_ROOT) == ["imgui-bundle==1.92.900"]
+    # Until 2026-10-13 this was the imgui-bundle pin alone: imtypeset had no
+    # distribution to name. Its line carries an environment marker, which the
+    # expression has to read past.
+    assert _script().pins(_ROOT) == ["imgui-bundle==1.92.900", "imtypeset==0.4.1.192900"]
 
 
 def test_a_child_asked_for_the_pairing_says_which_imscribe_answered() -> None:
@@ -125,11 +128,14 @@ def test_what_pyproject_says_the_wheel_and_the_sdist_hold() -> None:
     targets = project["tool"]["hatch"]["build"]["targets"]
     assert targets["wheel"] == {"packages": ["imscribe"]}
     assert (_ROOT / "imscribe" / "py.typed").is_file()
-    included = set(targets["sdist"]["include"])
+    # The sdist: the package and the three files a build of the wheel reads,
+    # and nothing else (2026-10-13; until then this test required tests/,
+    # docs/, demo/, examples/, README.md and the two handoff files in it).
     script = _script()
-    for needed in script.SDIST_ONLY:
-        assert "/" + needed.rstrip("/") in included, needed
-    assert "/imscribe" in included
+    included = targets["sdist"]["include"]
+    assert sorted(included) == sorted(["/imscribe", *("/" + n for n in script.SDIST_HOLDS)])
+    assert set(script.SDIST_HOLDS) == {"pyproject.toml", "LICENSE", project["project"]["readme"]}
+    assert project["project"]["license-files"] == ["LICENSE"]
     # The two tools `make dist` runs are what the dev extra installs.
     dev = " ".join(project["project"]["optional-dependencies"]["dev"])
     for tool in script.TOOLS:
@@ -176,12 +182,16 @@ with zipfile.ZipFile(out / f"imscribe-{version}-py3-none-any.whl", "w") as wheel
         wheel.writestr(zipfile.ZipInfo(name, stamp), path.read_bytes())
     wheel.writestr(zipfile.ZipInfo(f"{info_dir}/METADATA", stamp), metadata)
     wheel.writestr(zipfile.ZipInfo(f"{info_dir}/WHEEL", stamp), "Wheel-Version: 1.0\n")
+    if fault != "unlicensed":
+        licence = (source / "LICENSE").read_bytes()
+        wheel.writestr(zipfile.ZipInfo(f"{info_dir}/licenses/LICENSE", stamp), licence)
 
 top = f"imscribe-{version}"
-sdist_tops = ["imscribe", "tests", "docs", "demo", "README.md", "pyproject.toml",
-              "HANDOFF-imtypeset.md", "HANDOFF-pptmstr.md"]
+sdist_tops = ["imscribe", "pyproject.toml", "LICENSE", ".gitignore"]
 if fault != "bare":
-    sdist_tops.append("examples")
+    sdist_tops.append("README-pypi.md")
+if fault == "notes":
+    sdist_tops += ["HANDOFF-pptmstr.md", "tests", "docs"]
 raw = io.BytesIO()
 with tarfile.open(fileobj=raw, mode="w") as sdist:
     def add(name, data):
@@ -222,8 +232,11 @@ _TREE = {
     "demo/sample.md": "# sample\n",
     "docs/status.md": "status\n",
     "README.md": "readme\n",
+    "README-pypi.md": "the page\n",
+    "LICENSE": "MIT\n",
     "HANDOFF-imtypeset.md": "to imtypeset\n",
     "HANDOFF-pptmstr.md": "to pptmstr\n",
+    ".gitignore": "dist/\n",
 }
 
 
@@ -295,8 +308,18 @@ def test_it_builds_the_commit_and_not_the_working_tree(
     assert all(name.startswith(("imscribe/", "imscribe-9.8.7.dev6.dist-info/")) for name in names)
     with tarfile.open(sdist) as archive:
         inside = archive.getnames()
-    for carried in ("examples/minimal.py", "HANDOFF-pptmstr.md", "HANDOFF-imtypeset.md"):
-        assert f"imscribe-9.8.7.dev6/{carried}" in inside
+    # The package, what builds it, what describes it; none of the commit's
+    # tests, examples, demo sources, docs or handoff files.
+    assert sorted(name.removeprefix("imscribe-9.8.7.dev6/") for name in inside) == [
+        ".gitignore",
+        "LICENSE",
+        "PKG-INFO",
+        "README-pypi.md",
+        "imscribe/__init__.py",
+        "imscribe/py.typed",
+        "imscribe/ui/view.py",
+        "pyproject.toml",
+    ]
     assert "2 path(s) of the working tree" in said and "NOT in what is built" in said
 
     # The hashes: beside each file in the form `sha256sum -c` reads, and in the record.
@@ -371,7 +394,13 @@ def test_two_builds_that_differ_are_said_and_nothing_is_installed(
     [
         ("tests", "1 member(s) outside imscribe/ and imscribe-9.8.7.dev6.dist-info/: tests/"),
         ("untyped", "the wheel has no imscribe/py.typed"),
-        ("bare", "the sdist has no examples/"),
+        ("unlicensed", "the wheel has no imscribe-9.8.7.dev6.dist-info/licenses/LICENSE"),
+        ("bare", "the sdist has no README-pypi.md"),
+        (
+            "notes",
+            "the sdist holds 3 member(s) that are not imscribe/, pyproject.toml, README-pypi.md, "
+            "LICENSE or the backend's own: HANDOFF-pptmstr.md, docs/status.md, tests/test_it.py",
+        ),
     ],
 )
 def test_a_build_that_is_not_what_pyproject_describes_is_not_installed(
@@ -552,3 +581,77 @@ def test_the_dist_target_hands_the_script_the_commit_and_the_directory() -> None
         recipe("DIST_DIR=/tmp/else", "DIST_REV=v0.2.0", "ARGS=--stage /tmp/s")
         == 'python-stub -P scripts/make_dist.py --out "/tmp/else" --rev "v0.2.0" --stage /tmp/s'
     )
+
+
+# ---------------------------------------------------------------------------
+# README-pypi.md: the project's page on PyPI
+# ---------------------------------------------------------------------------
+
+_PAGE = _ROOT / "README-pypi.md"
+
+
+def _page_example() -> str:
+    blocks = re.findall(
+        r"^```python\n(.*?)^```$", _PAGE.read_text("utf-8"), re.MULTILINE | re.DOTALL
+    )
+    assert len(blocks) == 1, "the page has one example"
+    return str(blocks[0])
+
+
+def test_the_page_is_the_readme_pyproject_names_and_states_the_pins_pyproject_holds() -> None:
+    project = _pyproject()["project"]
+    assert project["readme"] == "README-pypi.md"
+    assert (
+        "/README-pypi.md" in _pyproject()["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+    )
+    page = _PAGE.read_text(encoding="utf-8")
+    for pin in _script().pins(_ROOT):
+        assert f"\n{pin}\n" in page, f"the page does not state {pin}"
+    assert f"`{project['version']}`" in page
+    assert project["urls"]["Repository"] in page
+    # What the example's assert shows a user with no imtypeset is explained
+    # in the words the package uses (if `_NOT_SET` changes, so does the page).
+    assert typesetter._NOT_SET in " ".join(page.split())
+    # Where the install fails, beside musl (imtypeset's docs/releasing.md,
+    # section 5), and what the system must have for the import (read from the
+    # binaries of the imgui-bundle wheel pyproject.toml pins, 2026-10-13).
+    for said in ("musl", "glibc older than 2.28", "macOS older than 14", "libX11.so.6"):
+        assert said in " ".join(page.split()), said
+    # A page is rendered away from the repository: no link relative to it.
+    assert not re.search(r"\]\((?!https://)", page)
+    # Every name the example imports from the package root is one of its names.
+    imported = re.search(r"^from imscribe import (.+)$", _page_example(), re.MULTILINE)
+    assert imported is not None
+    for name in imported.group(1).split(", "):
+        assert name in imscribe.__all__ or name == "typesetter", name
+
+
+def test_the_example_on_the_page_runs_in_a_window_and_draws(window: Any) -> None:
+    """
+    The example as the page prints it, with one line changed: `immapp.run` is
+    told to stop after five frames and what the view held is printed. Skipped
+    without the library: the example's own first line refuses to start then.
+    """
+    if not os.environ.get(typesetter.LIBRARY_VARIABLE):
+        pytest.skip("no imtypeset in this run: the page's example needs the library")
+    example = _page_example()
+    last = "immapp.run(params)\n"
+    assert example.endswith(last)
+    counted = (
+        "frames = [0]\n"
+        "def counted():\n"
+        "    gui()\n"
+        "    frames[0] += 1\n"
+        "    if frames[0] >= 5:\n"
+        "        hello_imgui.get_runner_params().app_shall_exit = True\n"
+        "params.callbacks.show_gui = counted\n"
+        "params.ini_disable = True\n"
+        + last
+        + "said = (frames[0], len(views[0].texts), typesetter.ready())\n"
+        + "print('frames=%d blocks=%d ready=%s' % said)\n"
+    )
+    script = window.out / "readme_pypi_example.py"
+    script.write_text(example[: -len(last)] + counted, encoding="utf-8")
+    done = window.run([str(script)])
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.strip().splitlines()[-1] == "frames=5 blocks=2 ready=False"

@@ -1357,8 +1357,12 @@ for path in sorted((ROOT / "demo").rglob("*.md")):
     direct = TypesetView(source, theme=theme, math=True)
     material = Material(material_frozen.description(source))
     differing = [n for n, (a, b) in enumerate(zip(direct.texts, material.texts)) if a != b]
+    # A code block's indent is compared as the whole pixel the view puts it on (KIND_CODE is 3;
+    # `imscribe.ui.typeset_view._code_on_a_pixel`); what the view moved is in "code_indents".
     shape = lambda view: [  # noqa: E731
-        (b.kind, b.marker, round(b.left_indent, 3), b.quote_depth, b.flags, b.level, b.extent,
+        (b.kind, b.marker,
+         float(int(b.left_indent + 0.5)) if b.kind == 3 else round(b.left_indent, 3),
+         b.quote_depth, b.flags, b.level, b.extent,
          b.columns, [[cell.text for cell in row] for row in b.rows])
         for b in view._described
     ]
@@ -1370,6 +1374,8 @@ for path in sorted((ROOT / "demo").rglob("*.md")):
             direct.texts[n] == material.texts[n].replace("$", "") for n in differing
         ),
         "same_shape": shape(direct) == shape(material),
+        "code_indents": [[a.left_indent, b.left_indent]
+                         for a, b in zip(direct._described, material._described) if a.kind == 3],
         "same_styles": direct._styles == material._styles,
         "same_links": list(direct.links) == list(material.links),
         "same_tables": list(direct.tables) == list(material.tables),
@@ -1689,6 +1695,16 @@ def test_markdown_source_and_the_old_core_s_blocks_come_to_the_same_document(
     level and extent, a table's columns and its cells' texts, the style
     table, the links (a table's cells' too) and the tables.
 
+    **Restated on imtypeset 0.4.1: a code block's indent is the frozen one on
+    the nearest whole pixel.** Until then every indent was compared to three
+    decimals and a code block's was the theme's length as it came (15.999998
+    px, and 45.6 px inside a list item). The library now sets a code face on
+    the device's whole-pixel grid, and the view gives a code block a whole
+    indent so that its glyphs stand on the rectangles the library answers for
+    them (`_code_on_a_pixel`; `tests/test_mono_acceptance.py` measures it).
+    Asserted below: every code block's indent in the view is whole and within
+    half a pixel of the frozen one, and some did move.
+
     **The one difference allowed, and it is there** (`.concerns/SW-2--builder--
     result.md`, "The space beside a run"): which run a WHITE-SPACE character is
     in. The direct path sets a space in the face of the text it was written
@@ -1706,6 +1722,10 @@ def test_markdown_source_and_the_old_core_s_blocks_come_to_the_same_document(
         assert told["same_shape"] and told["same_styles"], name
         assert told["same_links"] and told["same_tables"], name
         assert told["runs_differing_off_white_space"] == [], name
+        for ours, frozen in told["code_indents"]:
+            assert ours == int(ours) and abs(ours - frozen) <= 0.5, (name, ours, frozen)
+    moved = [pair for told in demos.values() for pair in told["code_indents"] if pair[0] != pair[1]]
+    assert len(moved) > 5, moved
     # The difference is real: a test that compared nothing would pass without it.
     assert sum(told["runs_differ"] for told in demos.values()) > 20
     assert demos["demo/sample.md"]["runs_differ"] > 0

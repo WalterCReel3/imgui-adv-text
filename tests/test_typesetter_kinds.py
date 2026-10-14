@@ -120,7 +120,11 @@ def gate(monkeypatch: pytest.MonkeyPatch) -> Iterator[Gate]:
             raise metadata.PackageNotFoundError(name)
         return types.SimpleNamespace(version=made.installed)
 
-    for name in _VARIABLES:
+    # Not `IMSCRIBE_NO_TYPESET` either, which `tests/conftest.py` sets for the
+    # session: this gate is to look. An imtypeset in site-packages is hidden
+    # from this process while no variable names it (conftest), so "nothing to
+    # find" is true in a virtualenv that has the wheel.
+    for name in (*_VARIABLES, typesetter.DISABLE_VARIABLE):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(metadata, "distribution", distribution)
     monkeypatch.setattr(metadata, "requires", lambda name: [])
@@ -659,7 +663,10 @@ def _command_line(env: dict[str, str], *path: Path) -> subprocess.CompletedProce
         text=True,
         timeout=300,
         check=False,
-        env={**env, "PYTHONPATH": os.pathsep.join([str(_ROOT), *map(str, path)])},
+        env={
+            **env,
+            "PYTHONPATH": os.pathsep.join([str(_ROOT), str(pairing._HIDE), *map(str, path)]),
+        },
         cwd=str(_ROOT),
     )
 
@@ -691,9 +698,14 @@ def _asking(monkeypatch: pytest.MonkeyPatch, *path: Path) -> None:
     """
     This process, as a host that has `path` on its own path and no variable.
     """
-    for name in _VARIABLES:
+    for name in (*_VARIABLES, typesetter.DISABLE_VARIABLE):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(_ROOT), *map(str, path)]))
+    # The children `verdict()` starts inherit this: they look, and an
+    # imtypeset in site-packages is hidden from them (`pairing._without`).
+    monkeypatch.setenv(pairing._HIDDEN, "1")
+    monkeypatch.setenv(
+        "PYTHONPATH", os.pathsep.join([str(_ROOT), str(pairing._HIDE), *map(str, path)])
+    )
 
 
 def test_a_verdict_is_a_childs_answer_and_leaves_the_asking_process_as_it_was(
@@ -1215,9 +1227,19 @@ def test_a_native_line_in_a_typeset_face_is_the_texts_size_at_its_line_height_no
     assert code["typeset_ink"] == code["at_the_line"]["ink"] == [104.0, 14.0]
     assert prose["typeset_ink"] == prose["at_the_line"]["ink"] == [116.0, 15.0]
     assert (code["at_the_em"]["ink"][1], prose["at_the_em"]["ink"][1]) == (11.0, 13.0)
-    # The same advances only where the file's advance is a whole pixel.
     assert code["typeset_laid"] == code["at_the_line"]["wide"] == 104.0
-    assert (larger["typeset_laid"], larger["at_the_line"]["wide"]) == (136.5, 143.0)
+    # Restated 2026-10-13 for imtypeset 0.4. Until then this line was
+    #   == (136.5, 143.0)   "The same advances only where the file's advance
+    #                        is a whole pixel"
+    # and held that typeset code and native text DISAGREE at em 21: imtypeset
+    # 0.3 laid the thirteen characters out on the font file's advance (10.5
+    # px each). imtypeset 0.4 measures a code face on the device by default,
+    # on Dear ImGui's whole-pixel grid (its changelog; HANDOFF-imtypeset.md,
+    # H34), so the typeset run is now as wide as the native one: 11 px a
+    # character, 143. Both are rounded to a thousandth of a pixel where they
+    # are measured (ADOPT-API measured the library's device advance within
+    # 1e-5 of a whole pixel, not exactly on it).
+    assert (larger["typeset_laid"], larger["at_the_line"]["wide"]) == (143.0, 143.0)
 
 
 def test_a_native_line_is_set_in_the_roles_new_file_after_a_later_load(

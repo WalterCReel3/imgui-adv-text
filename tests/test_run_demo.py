@@ -480,24 +480,34 @@ def test_without_the_library_the_launcher_says_so_and_still_runs(
     opened with no `IMTYPESET_LIBRARY` shows one line a page. That is said on
     stderr before the window opens, with the command that has the text, and
     the app is run all the same: exit 0, one call. With the variable set
-    nothing is said. Only the variable is read here; whether the library then
-    loads is the app's to say.
+    nothing is said.
+
+    What is read is `typesetter.kind()` and not the variable (2026-10-13): an
+    installed imtypeset is found with nothing set, and the note was printed
+    over a demo that drew every page. `kind` is replaced here, so that
+    nothing is imported into this process for the question.
     """
+    typesetter = pytest.importorskip("imscribe.typesetter")
+    kinds = typesetter.Kind
     monkeypatch.delenv("IMTYPESET_LIBRARY", raising=False)
+    monkeypatch.setattr(typesetter, "kind", lambda: kinds.NOT_INSTALLED)
     assert run_demo.main(["--tab", "document"]) == 0
     said = capsys.readouterr().err
     assert said.strip() == run_demo.NO_LIBRARY.strip()
     assert "make run TYPESET=1" in said and "make typeset-lib" in said
     assert stub_run == [(None, "document")]
 
-    monkeypatch.setenv("IMTYPESET_LIBRARY", "/some/where/libimtypeset.so")
+    # Found, and still no variable: the installed wheel.
+    monkeypatch.setattr(typesetter, "kind", lambda: kinds.READY)
     assert run_demo.main(["--tab", "document"]) == 0
     assert capsys.readouterr().err == ""
     assert len(stub_run) == 2
 
-    assert run_demo.library_note({}) == run_demo.NO_LIBRARY
-    assert run_demo.library_note({"IMTYPESET_LIBRARY": ""}) == run_demo.NO_LIBRARY
-    assert run_demo.library_note({"IMTYPESET_LIBRARY": "x.so"}) is None
+    assert run_demo.NOT_INSTALLED == kinds.NOT_INSTALLED.value
+    assert run_demo.library_note(run_demo.NOT_INSTALLED) == run_demo.NO_LIBRARY
+    for kind in kinds:
+        if kind is not kinds.NOT_INSTALLED:
+            assert run_demo.library_note(kind.value) is None, kind
 
 
 def test_a_library_that_was_asked_for_and_was_not_drawing_is_said_at_exit(
@@ -514,24 +524,36 @@ def test_a_library_that_was_asked_for_and_was_not_drawing_is_said_at_exit(
     status stays 0: the window was opened and was looked at, which is what
     this script is for; `scripts/shot.py` is the one that fails.
 
-    Without the variable nothing more is said than before, whatever the app
-    reports: one-line pages are what was asked for.
+    With no library found nothing more is said than before, whatever the app
+    reports: one-line pages are what was asked for. "Found" is
+    `typesetter.kind()` (replaced here) and not the variable: an installed
+    imtypeset that failed was not remarked on until 2026-10-13.
     """
     app = pytest.importorskip("imscribe.ui.app")
+    typesetter = pytest.importorskip("imscribe.typesetter")
+    kinds = typesetter.Kind
     monkeypatch.setattr(app, "not_drawing_at_exit", lambda: "Error: add_font: no such file")
 
     monkeypatch.setenv("IMTYPESET_LIBRARY", "/some/where/libimtypeset.so")
+    monkeypatch.setattr(typesetter, "kind", lambda: kinds.FAILED)
     assert run_demo.main(["--tab", "document"]) == 0
     said = capsys.readouterr().err
     assert "Error: add_font: no such file" in said
-    assert "/some/where/libimtypeset.so" in said and "imtypeset was not drawing" in said
+    assert "/some/where/libimtypeset.so" in said and "was not drawing" in said
 
+    # The installed wheel, failed: no variable, and it is said all the same.
     monkeypatch.delenv("IMTYPESET_LIBRARY")
+    assert run_demo.main(["--tab", "document"]) == 0
+    said = capsys.readouterr().err
+    assert "Error: add_font: no such file" in said and "failed, installed" in said
+    assert run_demo.NO_LIBRARY.strip() not in said
+
+    monkeypatch.setattr(typesetter, "kind", lambda: kinds.NOT_INSTALLED)
     assert run_demo.main(["--tab", "document"]) == 0
     assert capsys.readouterr().err.strip() == run_demo.NO_LIBRARY.strip()
 
-    monkeypatch.setenv("IMTYPESET_LIBRARY", "/some/where/libimtypeset.so")
+    monkeypatch.setattr(typesetter, "kind", lambda: kinds.READY)
     monkeypatch.setattr(app, "not_drawing_at_exit", lambda: "")
     assert run_demo.main(["--tab", "document"]) == 0
     assert capsys.readouterr().err == "", "a library that drew is not remarked on"
-    assert len(stub_run) == 3
+    assert len(stub_run) == 4

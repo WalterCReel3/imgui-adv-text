@@ -167,10 +167,27 @@ def test_under_french_spacing_every_space_of_a_ragged_paragraph_is_one_width(
 def test_otherwise_the_space_after_a_sentence_is_a_third_wider_and_no_other_is(
     report: dict[str, Any], faces: str, spacing: str
 ) -> None:
+    """
+    **Restated for the mono page on imtypeset 0.4.1.** Until then this held
+    for both sets of faces: one space, after "waffle.", a third wider than a
+    word space. With `Faces.mono()` the prose is in the code face, which the
+    library now sets on the device's grid, where "spaces never stretch"
+    (imtypeset's H34: a fixed-pitch face on the device is on a grid of whole
+    cells): under every spacing each space of the mono page is ONE CELL, the
+    one after a sentence too. A third of a cell more would put everything
+    after it off the columns, so the grid is what is asserted there; the
+    proportional page is asserted as it was.
+    """
     spaces = report["spaces"][f"{faces} {spacing}"]
     french = report["spaces"][f"{faces} FRENCH"]
     word = french[0][1]
     wider = [(before, width) for before, width in spaces if width != word]
+    if faces == "mono":
+        # Was `== ["."]`, a third wider (above).
+        assert wider == []
+        assert len(spaces) == len(french) > 40
+        assert word == pytest.approx(round(word), abs=1e-3)  # a whole pixel: a cell
+        return
     # One: after "waffle." and not after "LT." or "P.", which end in capitals.
     assert [before for before, _ in wider] == ["."]
     assert wider[0][1] == pytest.approx(word * 4.0 / 3.0, abs=0.002)

@@ -1,0 +1,223 @@
+# imscribe's release: the wheel and the sdist of a tagged commit, to PyPI.
+#
+# WRITTEN WITHOUT BEING RUN ON GITHUB (2026-10-13). What its steps do was run
+# on a developer's machine the same day (scripts/make_dist.py with the real
+# builder, twine check, an install of the built wheel beside imtypeset's
+# wheel); what was never run is everything that is GitHub's or PyPI's: the
+# trigger, the environment, the OIDC exchange, the upload. tests/test_ci_workflow.py
+# holds this file to the shape described here.
+#
+# WHAT LEAVES THIS REPOSITORY, AND WHEN. Two jobs, and no other, send anything
+# anywhere; each needs the build job to have passed:
+#
+#   publish-pypi      a PUSHED TAG v<version>, and nothing else: the two files
+#                     go to PyPI as project `imscribe`, by Trusted Publishing
+#                     (OIDC; no token is stored anywhere), in the GitHub
+#                     environment `pypi`.
+#   publish-testpypi  ONLY a run started by hand with the input `testpypi` set
+#                     to true (it is false unless a person sets it): the files
+#                     built from whatever ref the run was started on go to
+#                     TestPyPI in the environment `testpypi`. Until the owner
+#                     registers a trusted publisher on test.pypi.org and
+#                     creates that environment, this job fails at its upload
+#                     and nothing else is affected.
+#
+# A push to a branch does not start this workflow at all. A run started by
+# hand on a tag does not publish to PyPI either.
+#
+# THE BUILD is scripts/make_dist.py, which is what `make dist` runs: the
+# commit exported twice with `git archive`, built twice, refused unless the
+# two builds are the same bytes and the wheel holds `imscribe/` and its
+# metadata and nothing else. It is called directly and not through `make`,
+# which wants ./.venv; the script needs `build` and `hatchling` and nothing of
+# imscribe.
+#
+# THE TAG MUST BE THE VERSION. A tag `v0.2.0b1` on a commit whose
+# pyproject.toml says another version would publish that other version under
+# a release named for this one. The step "The tag is the version" refuses it.
+# A file name is never accepted twice by PyPI, so a wrong upload is a version
+# number spent: fix and release the next.
+#
+# BEFORE ANYTHING IS SENT the built wheel is installed on the runner from the
+# index, with its dependencies, and asked which imtypeset it found
+# (`python -m imscribe.typesetter`, exit 0 only when the library loads). That
+# needs the imtypeset pyproject.toml pins to be ON PyPI (0.4.1.192900 is,
+# since 2026-10-13): a tag pushed before a pinned version is published fails
+# here and publishes nothing.
+#
+# THE TWO FILES AND NOTHING ELSE are uploaded. `dist/` also holds
+# `<file>.sha256` and `BUILT-FROM`, which an upload of `dist/*` would stop on
+# ("Unknown distribution format", measured with twine 7.0.0), so the two are
+# copied into `upload/`.
+#
+# THE SYSTEM LIBRARIES are installed before that step, the same ones ci.yml's
+# `typeset` job installs (tests/test_ci_workflow.py holds the two lists equal).
+# What needs them, read from the binaries with `objdump -p` on 2026-10-13:
+# imgui-bundle 1.92.900's extension module names libX11.so.6, and the libGLX
+# the wheel carries names libX11.so.6 and libXext.so.6; neither is in the
+# wheel. imtypeset's library names only imgui-bundle's module and the C and
+# C++ runtimes. Whether a bare ubuntu-24.04 runner already has the two is NOT
+# KNOWN; the step makes it not matter.
+#
+# A RE-RUN OF A VERSION THAT IS ALREADY ON THE INDEX GOES GREEN HAVING UPLOADED
+# NOTHING. `skip-existing: true` is there so that an upload which stopped after
+# one of the two files can be finished by running the job again. Its cost: a
+# tag pushed for a version PyPI already holds (the tag moved, or pushed twice)
+# builds, passes, and publishes no file, and the run looks like a release. The
+# files on the index are then the FIRST upload's, not this run's: compare the
+# sha256 in the build job's log (`dist/BUILT-FROM`) with the index's.
+#
+# EVERY ACTION IS NAMED BY A COMMIT, not by a tag that can be moved. The four
+# of GitHub's own are the commits imtypeset's .github/workflows/wheels.yml
+# names (copied from that file on 2026-10-13 by
+# .concerns/REVIEW-FIX-scripts/pin_actions.py; they ran green there that day
+# for its 0.4.1 release): checkout v7.0.1, setup-python v7.0.0,
+# upload-artifact v7.0.2, download-artifact v8.0.2. The version each commit
+# was read as is on the line above its step's `uses`. ci.yml and macos.yml
+# still name major versions: they publish nothing.
+#
+# The publishing action is pypa/gh-action-pypi-publish v1.14.2, named by the
+# commit its tag points at. Read on 2026-10-13 from
+# api.github.com/repos/pypa/gh-action-pypi-publish/commits/v1.14.2, which
+# answered dc37677b2e1c63e2034f94d8a5b11f265b73ba33; the same commit
+# imtypeset's wheels.yml names. It runs on Linux runners only.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      testpypi:
+        description: "true: build this ref and upload it to TestPyPI (needs a trusted publisher there and the environment testpypi). Never PyPI."
+        type: boolean
+        default: false
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "release-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: "Build, check, install"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: "Check out imscribe"
+        # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: "Python 3.11"
+        # v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: "The tag is the version"
+        if: github.event_name == 'push'
+        env:
+          RELEASE_TAG: "${{ github.ref_name }}"
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)"
+          test -n "$version"
+          echo "pyproject.toml says $version; the tag is $RELEASE_TAG"
+          test "v$version" = "$RELEASE_TAG"
+
+      - name: "The tools that build and check"
+        run: python -m pip install "build>=1.2" "hatchling>=1.27" "twine>=6.0"
+
+      - name: "Build the commit twice and compare (what make dist runs)"
+        run: python -P scripts/make_dist.py --out dist --rev HEAD
+
+      - name: "The two files, and whether PyPI will render the description"
+        run: |
+          mkdir upload
+          cp dist/*.whl dist/*.tar.gz upload/
+          ls -l upload
+          cat dist/BUILT-FROM
+          python -m twine check --strict upload/*
+
+      - name: "System libraries (what imgui-bundle's extension loads; the list of ci.yml's typeset job)"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 libglx0 libglx-mesa0 libgl1-mesa-dri \
+            libx11-6 libxext6 libxcb1 libxrandr2 libxinerama1 libxcursor1 libxi6 libxrender1
+
+      - name: "Install the wheel with its dependencies from the index, and ask it for its library"
+        run: |
+          python -m venv installed
+          installed/bin/python -m pip install upload/*.whl
+          installed/bin/python -m pip check
+          cd installed
+          bin/python -P -m imscribe.typesetter
+
+      - name: "Keep the two files for the publishing job"
+        # v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: dist
+          path: upload
+          if-no-files-found: error
+
+  publish-pypi:
+    name: "Publish to PyPI"
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/imscribe/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: "The two files the build job made"
+        # v8.0.2
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: dist
+          path: upload
+
+      # v1.14.2
+      - name: "Upload, by Trusted Publishing"
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+        with:
+          packages-dir: upload
+          skip-existing: true
+
+  publish-testpypi:
+    name: "Publish to TestPyPI (a rehearsal)"
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.testpypi == 'true'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/imscribe/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: "The two files the build job made"
+        # v8.0.2
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: dist
+          path: upload
+
+      # v1.14.2
+      - name: "Upload to TestPyPI, by Trusted Publishing"
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+        with:
+          packages-dir: upload
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true

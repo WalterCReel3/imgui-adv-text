@@ -66,6 +66,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from conftest import HIDE_INSTALLED
 
 _ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts" / "mouse_probe.py"
@@ -389,7 +390,10 @@ def test_a_library_that_was_asked_for_and_does_not_draw_is_a_failure_and_not_an_
     """
     environment = {
         **{k: v for k, v in os.environ.items() if not k.startswith("IMTYPESET_")},
-        "PYTHONPATH": str(_ROOT),
+        # The second directory: an installed imtypeset reads no variable and
+        # would draw; it is hidden from a child that names another library
+        # (`tests/conftest.py`, "An installed imtypeset is hidden").
+        "PYTHONPATH": os.pathsep.join([str(_ROOT), str(HIDE_INSTALLED)]),
         _LIBRARY: str(tmp_path / "absent.so"),
     }
     done = subprocess.run(

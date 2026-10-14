@@ -44,8 +44,9 @@ may take option words of its own, as in `--tab diff:git,side` or
 
 **The pages draw through the imtypeset library and say so in one line when it
 is not loaded.** `make run TYPESET=1` (after `make typeset-lib`) is the demo
-with its text; without `IMTYPESET_LIBRARY` this script prints `NO_LIBRARY` to
-stderr and opens the window all the same. With the variable set and a library
+with its text, and so is `make run` with imtypeset installed; where none is
+found (`imscribe.typesetter.kind()` is `NOT_INSTALLED`) this script prints
+`NO_LIBRARY` to stderr and opens the window all the same. With one found
 that was nonetheless not drawing when the window closed (refused at import,
 no fonts, a failure mid-run), it prints `NOT_DRAWN` with the reason at exit
 (since 2026-10-11) and still exits 0; `scripts/shot.py` fails on the same
@@ -57,7 +58,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from collections.abc import Mapping
 from pathlib import Path
 
 # Run from anywhere without an install. `make bootstrap` does an editable
@@ -67,50 +67,64 @@ from pathlib import Path
 if __package__ in (None, ""):  # pragma: no cover - import shim for direct execution
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+NOT_INSTALLED = "not-installed"
+"""`imscribe.typesetter.Kind.NOT_INSTALLED.value`, held here so that nothing is imported for it."""
+
 NO_LIBRARY = """\
-IMTYPESET_LIBRARY is not set, so no page of the demo will draw its text: every
+No imtypeset was found (none is installed, or IMSCRIBE_NO_TYPESET is set; and
+IMTYPESET_LIBRARY is not set), so no page of the demo will draw its text: every
 page sets its text through the imtypeset library and shows one line without it.
 
-  make typeset-lib          build the pinned library (once)
+  make bootstrap            install the dependencies, imtypeset among them
+  make typeset-lib          or build the pinned library from source (once)
   make run TYPESET=1        the same command, with it
 """
 
 
-def library_note(environ: Mapping[str, str]) -> str | None:
+def library_note(kind: str) -> str | None:
     """
-    What to tell someone about to open the demo with no library asked for, or `None`.
+    What to tell someone about to open the demo with no library to be found, or `None`.
+
+    `kind` is `imscribe.typesetter.kind().value`. Until 2026-10-13 this read
+    `IMTYPESET_LIBRARY`, which was the only way to a library; an installed
+    imtypeset is found with nothing set, and the note was then printed over
+    a demo that drew every page.
 
     A note and not a refusal: the window still opens, each page says the
     same thing in one line, and that is a legitimate thing to want to look
     at. It is here because since 2026-10-11 no page falls back to imscribe's
     own layout, so an unadorned `make run` shows no text at all, and a
     window of one-line pages should not be the first anyone hears of it.
-    Only the variable is read: whether the library then loads is the app's to
-    say, on each page.
+    Any other kind says nothing here: a library that was found and refused
+    is `not_drawn`'s to say, at exit.
     """
-    return None if environ.get("IMTYPESET_LIBRARY") else NO_LIBRARY
+    return NO_LIBRARY if kind == NOT_INSTALLED else None
 
 
 NOT_DRAWN = """\
-IMTYPESET_LIBRARY is set ({library}) and imtypeset was not drawing when the
-window closed: {reason}
+imtypeset was found ({found}) and was not drawing when the window closed:
+{reason}
 
 Every page then draws that sentence in one line in place of its text.
 """
 
 
-def not_drawn(environ: Mapping[str, str], reason: str) -> str | None:
+def not_drawn(kind: str, reason: str, library: str = "") -> str | None:
     """
-    What to say at exit when the library was ASKED FOR and was not drawing, or `None`.
+    What to say at exit when a library was FOUND and was not drawing, or `None`.
 
+    `kind` is `imscribe.typesetter.kind().value` after the run, `library`
+    what `IMTYPESET_LIBRARY` holds (named in the sentence; an installed
+    imtypeset is found without it). `None` when nothing was found
+    (`library_note` has said so) and when there is no reason.
     `reason` is `imscribe.ui.app.not_drawing_at_exit()`. `scripts/shot.py` has
     the same function and fails on it; this script only says it, because its
     window was opened to be looked at and was.
     """
-    library = environ.get("IMTYPESET_LIBRARY")
-    if not library or not reason:
+    if kind == NOT_INSTALLED or not reason:
         return None
-    return NOT_DRAWN.format(library=library, reason=reason)
+    found = f"{kind}, IMTYPESET_LIBRARY={library}" if library else f"{kind}, installed"
+    return NOT_DRAWN.format(found=found, reason=reason)
 
 
 BLOCKED = """\
@@ -217,7 +231,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     text = source.read_text(encoding="utf-8") if source else None
-    note = library_note(os.environ)
+    from imscribe import typesetter
+
+    note = library_note(typesetter.kind().value)
     if note is not None:
         print(note, file=sys.stderr)
     try:
@@ -236,7 +252,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     from imscribe.ui import app
 
-    said = not_drawn(os.environ, app.not_drawing_at_exit())
+    said = not_drawn(
+        typesetter.kind().value,
+        app.not_drawing_at_exit(),
+        os.environ.get("IMTYPESET_LIBRARY") or "",
+    )
     if said is not None:
         print(said, file=sys.stderr)
     return 0

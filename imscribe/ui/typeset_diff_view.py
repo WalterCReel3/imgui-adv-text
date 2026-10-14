@@ -158,73 +158,83 @@ a 20 px pitch:
   (2 px of it inside the clip) was emitted and the quad of U+2502 (1 px) was
   not; with the clip a pixel into the row, or a pixel above it, every quad
   that reached into the clip was emitted. Nobody has looked at pixels.
-- **A character the code face lacks is set from another face at that face's
-  advance**, so on that line, and only there, columns to its right are not on
-  the cell grid (`DiffView` draws the glyph in its own cell and lets it
-  overlap): U+4E2D is 16.4 px wide for an 8 px cell. Nothing is substituted.
-  Hit testing, marks and the selection on that line are the library's and stay
-  right. `code_face_lacks(text)` says which characters of a text these are
-  (U+03C0 and U+0416 are, in the bundled code face; U+2502 and U+FFFD are not).
+- **A character the code face lacks takes a whole number of cells** (since
+  imtypeset 0.4; until then it was set at the other face's advance and the
+  columns to its right on that line were off the grid): as many as hold it
+  in the face it is borrowed from, and one for a character no face has.
+  Measured with the bundled faces at 16 px with no window, cell 8 px
+  (`.concerns/ADOPT-API-scripts/probe_tabs.py`): U+03C0 and U+0416, borrowed
+  from the prose face, take TWO cells each; U+4E2D and U+1F600, which no
+  bundled face has, take one; a combining mark (U+0301) and U+200B take
+  none; a tab goes to the next multiple of four cells. So the columns to the
+  right of such a character are on the grid, **and they are not the
+  columns this view counts**: `content_width`, the horizontal scroll range
+  and the side-by-side panes count one cell a character
+  (`DiffRows`, as `DiffView` does), so a line holding borrowed two-cell
+  characters reaches one cell further right for each than the view allows
+  for. Hit testing, marks and the selection on that line are the library's
+  and stay right. `code_face_lacks(text)` says which characters of a text
+  these are (U+03C0 and U+0416 are, in the bundled code face; U+2502 and
+  U+FFFD are not).
 - A character **no** face has is whatever the library draws for it; `DiffView`
   draws a placeholder there. `face_has_glyph` over every role could tell
   (U+4E2D is in none of the bundled faces); nothing here asks.
 
-## A whole-pixel cell (`cell="pixel"`; the default is `cell="font"`)
+## The cell is the device's (imtypeset 0.4)
 
-**The default is unchanged: a host that passes nothing gets the cell it has
-today**, the code face's own advance at the size asked for. That advance is
-a whole pixel only by luck (the bundled Inconsolata's is half its em: 8.000
-at an em of 16 and 7.626 at a 16 px pixel height), and the library draws on
-whole pixels, so at the sizes a host states -- pixel heights -- a row is a
-mix of two steps, columns do not line up between rows or with Dear ImGui's
-own text in the same face, and a glyph mid-row is drawn up to 23 px from the
-rectangle the library answers for it. That is the typesetting core's to
-mend (imtypeset's H34 and H35); `tests/test_mono_acceptance.py` holds the
-default to it with strict xfails.
+**A column is a whole number of framebuffer pixels wide, at the size asked
+for, with nothing to pass.** Since imtypeset 0.4 the library measures a code
+face on the device -- the advance of the glyph in the atlas entry it is
+drawn from -- and sets it on a grid of whole cells, so what this view lays
+out, what it draws, what it answers for a point and Dear ImGui's own text in
+the same face at the same pixel height are on the same pens.
 
-`TypesetDiffView(..., cell="pixel")` (and `TypesetDiffFences(cell="pixel")`,
-which hands it to each diff it makes; `view.cell` may be set later) is what
-this view can do about it without the library changing: **it draws the face
-at the em whose advance is the whole pixel Dear ImGui draws the face at, and
-keeps the row pitch it was asked for.**
-
-- **The cell is asked of Dear ImGui, not worked out**: the advance it has
-  baked for the library's own code font (`typesetter.font(Face.CODE)`) at
-  the pixel height the size asked for comes to
-  (`ImFont.get_font_baked(height).get_char_advance`). No rounding of the
-  laid-out advance is that number at every height: measured at 10 to 26 px,
-  it is 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12 at 12 to 24 where
-  rounding gives 10 at 22 and 11 at 24 and the ceiling gives 7 at 13.
-  `_whole_cell` says what happens where Dear ImGui cannot be asked.
-- **`grid.cell` is then that whole pixel**, `grid.row` is the pitch asked
-  for, and `grid.em * grid.scale` is the em the face is drawn at.
-  `code_size` still answers the size ASKED for. Rows, `content_height`,
-  `row_px` and `height_for`'s row part do not change; `content_width`, the
-  panes, the horizontal scroll range and `headers()`' widths follow the
-  cell.
+- **The cell is asked of the library, never worked out from the em and never
+  by counting characters**: `imtypeset.device_glyph_advance(Face.Code, "0",
+  style, scale)` (`_device_cell`), once for a size and a display density
+  (`io.display_framebuffer_scale`), and again when either changes.
+  `grid.cell` is that: 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12 px at pixel
+  heights 12 to 24 for the bundled Inconsolata, which is the advance Dear
+  ImGui has baked for the face at each height and is NOT the font file's
+  advance rounded (10.49 at 22 is 11). The library answers within 2e-5 px
+  of the whole pixel and not on it (8.000008583 at 16); the grid takes the
+  whole framebuffer pixel an answer is within 0.001 px of.
+- **Every block is `BlockFlags.FixedLineHeight` with `Advances` left at the
+  library's default**; the documents are drawn at an origin on a whole unit
+  (`draw` rounds the cursor) with panes that start on whole units, and no
+  block has an indent. That is what the library asks of a diff view
+  (imtypeset's `docs/advtext-swap-status.md`, "What advtext must set for a
+  diff view").
+- **`grid.em * grid.scale` is the em asked for** (`code_size`), and the
+  glyphs come from Dear ImGui's raster of the pixel height asked for.
 - **Measured in a window at pixel heights 12 to 24, unified and side by
-  side** (`tests/test_mono_acceptance.py`, which holds it;
-  `.concerns/D-CELL--builder--result.md` has every number): one step on
-  every row, 0 px between rows at a column, characters 1 to 74 on the pens
-  of `ImDrawList.add_text` in the same face at the host's pixel height,
-  every glyph 0.00 px from its rectangle, the selection's fill on the glyph
-  pens, hit tests answering the carets either side of the glyph pointed at.
-- **What it costs: the glyphs are not the size asked for.** At an even
-  pixel height the em grows by 4.9 % (16 px: an em of 15.253 becomes 16.000
-  and the glyphs come from Dear ImGui's 17 px raster, not its 16); at an
-  odd one it moves by -3.2 % (13) to +0.3 % (23) and the raster is the one
-  asked for. On a pitch of 18/16 of the pixel height, and on one of 17/16,
-  no printable ASCII glyph leaves its row at any height from 12 to 24; on a
-  pitch EQUAL to the pixel height one does, by 1 px, at 14. U+2502
-  overhangs under either option ("A glyph taller than the pitch"): by up to
-  4 px above and 3 below at 18/16 with this option, 3 and 2 without.
-- **What it does not do.** A character the code face lacks is still set at
-  another face's advance, and the columns to its right on that line are off
-  the grid. A face whose advance Dear ImGui does not bake as a whole pixel
-  (a loader that does not hint) gets that advance rounded. Text the host
-  draws in ANOTHER font, or in a copy of the face loaded with other loader
-  flags, lines up only if its advance is the same. Not run: a framebuffer
-  scale other than 1, a GPU, another code face than the bundled one.
+  side**, on imtypeset 0.4.1 (`tests/test_mono_acceptance.py`, which holds
+  it; `.concerns/ADOPT-API--builder--result.md` has every number): one step
+  on every row, 0 px between rows at a column, characters 1 to 74 on the
+  pens of `ImDrawList.add_text` in the same face at the host's pixel height,
+  every glyph within 0.001 px of its rectangle, the selection's fill on the
+  glyph pens, hit tests answering the carets either side of the glyph
+  pointed at; with the code scrolled sideways, a press and a drag select the
+  characters under the pointer.
+- **`cell=` is deprecated, accepted and ignored.** For two days before
+  imtypeset 0.4 this view had `cell="pixel"`, which got a whole-pixel cell
+  by drawing the face at another em (glyphs up to 4.9 % larger than asked
+  for), and `cell="font"`, the default, the font file's advance (7.626 px at
+  a 16 px height, a row of 7 and 8 px steps). Neither exists any more: the
+  default is on the device's cell at the size asked for.
+  `TypesetDiffView(cell=...)`, `TypesetDiffFences(cell=...)` and setting
+  `view.cell` take either name with a `DeprecationWarning` and change
+  nothing; `view.cell` reads `"pixel"`. The keyword goes in the release
+  after this one.
+- **What it does not do.** A character the code face lacks takes whole
+  cells, and more than one where the face it comes from is wider ("A glyph
+  taller than the pitch, or not the code face's"). Text the host draws in
+  ANOTHER font, or in a copy of the face loaded with other loader flags,
+  lines up only if its advance is the same. **Not run**: a framebuffer scale
+  other than 1 (at 1.5 a whole unit is not a whole framebuffer pixel, and
+  this view rounds its origin and its panes to whole units), a GPU, another
+  code face than the bundled one, a loader that does not hint, stb_truetype
+  (imtypeset: on Dear ImGui's pens only with `PixelSnapH` at density 1).
 
 ## What is `DiffView`'s, kept
 
@@ -254,19 +264,20 @@ to its release).
   a `RowInfo` of `DiffView`'s works here and one of these works there.
 - **`draw` returns a `bool`** (everything in view was set as asked), not a
   `DrawStats`; `fonts=` is accepted and ignored.
-- **`grid`** (a `DiffGrid`) stands for `metrics_px`. **By default the cell
-  is the code face's own advance, not a whole pixel**: 8.0 px at the theme's
-  16 px, and 6.196 px at `pixel_height=13` where `DiffView` draws on 6 (both
-  measured in a window). Pane edges are rounded to a pixel. With
-  `cell="pixel"` it is `DiffView`'s 6 ("A whole-pixel cell").
+- **`grid`** (a `DiffGrid`) stands for `metrics_px`. **The cell is
+  `DiffView`'s**: 8 px at the theme's 16 px and 6 px at `pixel_height=13`
+  (both measured in a window; until imtypeset 0.4 it was the face's own
+  advance, 7.99999 and 6.196). Of the 51 numbers frozen from `DiffView` in
+  `tests/data/diff_view_answers.json` (cells, rows, heights, widths) this
+  view answers 51 the same. Pane edges are rounded to a pixel.
 - `metrics=` (a `MetricsResolver`) is not taken. `pixel_height` is, and
   asks the library for the face's line metrics once it has its fonts
   (`imscribe.typeset_metrics`); given before that, and only then, it imports
   `imscribe.fontlib`, the one place this module can ask the old core for
   anything. The theme is `imscribe.theme`'s, which loads `fontmetrics` and `units`
   for its own purposes; nothing here calls them.
-- A character the code face lacks is not in its own cell, and a glyph taller
-  than the pitch is not cut to it (above).
+- A character the code face lacks can take two cells where `DiffView` gave
+  it one, and a glyph taller than the pitch is not cut to it (above).
 - The selection highlight does not extend one cell past the end of a line
   that is selected through its end; a selected empty line shows one cell.
 - A file shown as written is clipped to the first pane side by side
@@ -295,15 +306,16 @@ manager, a drag past the edge of the code (the scroll it causes) or past the
 window's (the rows it reaches are made into text then: read, not run), a
 highlighter that raises, a second `load_fonts()` after `unload()` (the
 documents are made again: read, not run). Sizes run: 16 px, and 13 px for
-rows, the cell and one press; with `cell="pixel"`, 12 to 24 px for where
-every glyph, rectangle and fill is (`tests/test_mono_acceptance.py`), and no
-press, drag, scroll or copy. Nobody has looked at what it draws: the tests
+rows, the cell and one press; 12 to 24 px for where every glyph, rectangle
+and fill is, and 13, 16 and 22 px for a sideways scroll, a press and a drag
+(`tests/test_mono_acceptance.py`). Nobody has looked at what it draws: the tests
 count vertices and compare positions, rows and text.
 """
 
 from __future__ import annotations
 
 import math
+import warnings
 from bisect import bisect_right
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -377,13 +389,13 @@ _PT_PER_INCH = 72.27
 _COLUMN = 4096.0
 CELLS = ("font", "pixel")
 """
-What `TypesetDiffView(cell=...)` takes: `"font"`, the code face's own advance
-at the size asked for (the default), or `"pixel"`, the whole-pixel advance Dear
-ImGui draws the face at (the module docstring, "A whole-pixel cell").
+**Deprecated.** The two names `TypesetDiffView(cell=...)` took before
+imtypeset 0.4 and still accepts, with a `DeprecationWarning`, changing
+nothing (the module docstring, "The cell is the device's").
 """
 _UNITY = 1 << 16
-# How near the laid-out advance must come to the whole pixel aimed at for the
-# grid to call it that pixel: the library lays out in C floats.
+# How near the library's answer for a cell must be to a whole framebuffer pixel
+# for the grid to call it that pixel: the library works in C floats.
 _CELL_SLACK = 1e-3
 
 _LANGUAGES = {
@@ -444,12 +456,12 @@ class RowInfo:
 @dataclass(frozen=True, slots=True)
 class DiffGrid:
     """
-    The grid the view draws on. `row` is whole pixels; `cell` is the code
-    face's advance as the library sets it, which need not be -- unless the
-    view was made with `cell="pixel"`, when it is a whole pixel. `em` and
-    `scale` are the document style's em and the code face's size as a
-    multiple of it: the size the face is DRAWN at, which under `cell="pixel"`
-    is not the size asked for (`code_size` answers that one).
+    The grid the view draws on. `row` is whole pixels; `cell` is the width
+    of one cell of the code face on the device, a whole number of
+    framebuffer pixels (module docstring, "The cell is the device's"). `em`
+    and `scale` are the document style's em and the code face's size as a
+    multiple of it: the size the face is drawn at, which is the size asked
+    for (`code_size`).
     """
 
     cell: float
@@ -1636,9 +1648,8 @@ def code_size(
     the library once `typesetter.load_fonts()` has succeeded; before that,
     and only then, the old core's `imscribe.fontlib`, imported at the call).
 
-    This is the size ASKED for, with or without the library. A view made with
-    `cell="pixel"` draws the face at another em (`TypesetDiffView.grid`: its
-    `em * scale`) on the same pitch; nothing here changes for it.
+    This is the size asked for, with or without the library, and the size
+    the view draws the face at (`TypesetDiffView.grid`: its `em * scale`).
     """
     # Here and not at the top: a `Theme` is handed in, and importing its module
     # is the caller's business (`tests/test_typeset_diff_view.py` holds what
@@ -1659,13 +1670,34 @@ def code_size(
     return _px(size, ppi), row, key
 
 
-def _cell_named(given: object) -> str:
-    """`cell=` as a host gave it, or the host's mistake said at the host's call."""
+def cell_given(given: object, where: str = "TypesetDiffView", stacklevel: int = 3) -> None:
+    """
+    `cell=` as a host gave it: **deprecated, accepted and ignored**. `None`
+    (nothing passed) is silent. A name of `CELLS` is a `DeprecationWarning`
+    at the host's call saying what the view does now; anything else is still
+    the host's mistake (`TypeError` for what is no name, `ValueError` for a
+    name that is not one of the two), said with or without the library.
+    """
+    if given is None:
+        return
     if not isinstance(given, str):
         raise TypeError(f"cell= takes one of {CELLS}, not {type(given).__name__}")
     if given not in CELLS:
         raise ValueError(f"cell= takes one of {CELLS}, not {given!r}")
-    return given
+    if given == "pixel":
+        said = (
+            f'{where}(cell="pixel") is deprecated and ignored: with imtypeset 0.4 the view '
+            "is on the whole-pixel cell Dear ImGui draws the code face at by default, at the "
+            "size asked for. Drop the argument; it will be removed in the next release."
+        )
+    else:
+        said = (
+            f'{where}(cell="font") is deprecated and ignored: the cell is no longer the font '
+            "file's advance. With imtypeset 0.4 the code face is laid out on the device's "
+            "whole-pixel grid and `grid.cell` is that cell. Drop the argument; it will be "
+            "removed in the next release."
+        )
+    warnings.warn(said, DeprecationWarning, stacklevel=stacklevel)
 
 
 def _advance_at(ts: Any, base: Any, scale: float, row: int) -> float:
@@ -1677,38 +1709,50 @@ def _advance_at(ts: Any, base: Any, scale: float, row: int) -> float:
         return float(tiny.caret_rect((0, 10))[0]) / 10.0
 
 
-def _whole_cell(advance: float, em_px: float) -> float:
+def _density() -> float:
     """
-    The whole-pixel cell for a code face laid out at `advance` pixels a
-    character at an em of `em_px` pixels: **the advance Dear ImGui has baked
-    for the library's own code font at that pixel height**, asked of Dear
-    ImGui (`ImFont.get_font_baked(height).get_char_advance`), so that a
-    typeset column stands on the pens `ImDrawList.add_text` gives the same
-    face at the host's size. It is asked and not worked out because it is no
-    function of the advance: measured for the bundled Inconsolata at pixel
-    heights 10 to 26 (`.concerns/D-CELL--builder--result.md`), neither
-    rounding the laid-out advance nor taking its ceiling or its floor is Dear
-    ImGui's number at every height (rounded, 10.49 at 22 px is 10 and Dear
-    ImGui draws on 11).
-
-    Where Dear ImGui cannot be asked, or bakes an advance that is not a whole
-    pixel (a loader that does not hint), the answer is that advance, or the
-    laid-out one, rounded half up; never less than one pixel.
+    `io.display_framebuffer_scale.x` of the current Dear ImGui context: the
+    framebuffer pixels in one of the units positions are given in. 1.0 where
+    it cannot be read or is not a positive number.
     """
-    from imscribe import typeset_metrics
-    from imscribe.primitives import Face
-
-    nearest = advance
     try:
-        font = typesetter.font(Face.CODE)
-        if font is not None:
-            height = em_px / typeset_metrics.em_size_for_pixel_height(Face.CODE, 1.0)
-            baked = float(font.get_font_baked(height).get_char_advance(ord("0")))
-            if baked > 0.0 and math.isfinite(baked):
-                nearest = baked
-    except Exception:  # noqa: BLE001 -- Dear ImGui could not say: the laid-out advance, rounded
-        nearest = advance
-    return float(max(1, math.floor(nearest + 0.5)))
+        from imgui_bundle import imgui
+
+        density = float(imgui.get_io().display_framebuffer_scale.x)
+    except Exception:  # noqa: BLE001 -- no context to ask: the units are the pixels
+        return 1.0
+    return density if density > 0.0 and math.isfinite(density) else 1.0
+
+
+def _device_cell(ts: Any, base: Any, scale: float, row: int, density: float) -> float:
+    """
+    The width of one cell of the code face at `scale` ems of `base`, in the
+    units positions are given in: **asked of the library, which asks the
+    device** (`imtypeset.device_glyph_advance(Face.Code, "0", style, scale)`:
+    the advance of the glyph in the atlas entry it is drawn from). It is the
+    advance the library lays a Code block out on since 0.4, and the pens
+    `ImDrawList.add_text` gives the same face at that pixel height. Never
+    worked out from the em, and never by counting characters.
+
+    The library says a whole number of framebuffer pixels and answers in C
+    floats from an em that is itself a rounded number: measured at 12 to 24
+    px with no window, 8.000008583 where Dear ImGui's baked advance is 8.0
+    (`.concerns/ADOPT-API--builder--result.md`). An answer within
+    `_CELL_SLACK` of a whole framebuffer pixel is that pixel; any other is
+    left as it was answered.
+
+    Where the library cannot ask the atlas (its own error: no context, a
+    renderer backend that does not update textures) the answer is the advance
+    it lays ten characters out at, which is what its layout falls back to.
+    """
+    try:
+        cell = float(ts.device_glyph_advance(int(ts.Face.Code), "0", base, scale))
+    except Exception as exc:  # noqa: BLE001 -- the library's own refusal: what layout does then
+        if not library_failed(exc):
+            raise
+        return _advance_at(ts, base, scale, row)
+    whole = math.floor(cell * density + 0.5) / density
+    return whole if whole > 0.0 and abs(whole - cell) < _CELL_SLACK else cell
 
 
 def code_face_lacks(text: str) -> tuple[str, ...]:
@@ -1716,8 +1760,8 @@ def code_face_lacks(text: str) -> tuple[str, ...]:
     The characters of `text` (as it is handed to the library: a control or
     invisible character is `CONTROL_PLACEHOLDER` there) that the code face has
     no glyph for, each once, in the order met. The library sets such a
-    character from another face at that face's advance, so the line holding it
-    is not on the cell grid to its right (module docstring). One library call
+    character from another face in a whole number of cells, which can be two
+    where this view counts one (module docstring). One library call
     per distinct character above U+007E; none for ASCII.
 
     Raises `TypesetUnavailable` when the library cannot be asked: before
@@ -1767,10 +1811,10 @@ class TypesetDiffView(DiffRows):
         copy_removed_lines: bool = False,
         copy_as: Callable[[TypesetDiffView], str] | None = None,
         palette: Palette | None = None,
-        cell: str = "font",
+        cell: str | None = None,
     ) -> None:
         # A host's mistake first: it is one with or without the library.
-        self._cell = _cell_named(cell)
+        cell_given(cell)
         if typesetter.module() is None:
             raise TypesetUnavailable(f"imtypeset is not in use: {typesetter.reason()}")
         self.theme = theme
@@ -1848,15 +1892,16 @@ class TypesetDiffView(DiffRows):
     @property
     def cell(self) -> str:
         """
-        `"font"` or `"pixel"`: what a column's width is (module docstring, "A
-        whole-pixel cell"). May be set on a living view; the documents are
-        styled again at the next draw.
+        **Deprecated.** Always `"pixel"`: the view is on the device's
+        whole-pixel cell (module docstring, "The cell is the device's").
+        Setting it is a `DeprecationWarning` and changes nothing (a name that
+        is not one of `CELLS` is still a `ValueError`).
         """
-        return self._cell
+        return "pixel"
 
     @cell.setter
     def cell(self, value: str) -> None:
-        self._cell = _cell_named(value)
+        cell_given(value, "TypesetDiffView.cell = ...; TypesetDiffView")
 
     @property
     def grid(self) -> DiffGrid:
@@ -1874,22 +1919,17 @@ class TypesetDiffView(DiffRows):
             # `typesetter.unload()` closed them: another context, and maybe other fonts.
             self.close()
             self._grid = None
-        key = (size[2], self._cell)
+        # The device's cell is asked again when the size or the display's
+        # density changes: both are in the key.
+        density = _density()
+        key = (size[2], density)
         if self._grid is not None and self._grid[0] == key:
             return self._grid
         try:
             base = typesetter.base_style(self.theme, 0)
             em = float(base.EmSize)
             scale = size[0] / em
-            cell = _advance_at(ts, base, scale, size[1])
-            if self._cell == "pixel" and cell > 0.0:
-                # The em at which the face's advance is the whole pixel Dear
-                # ImGui draws it at, on the pitch that was asked for.
-                whole = _whole_cell(cell, size[0])
-                fitted = scale * whole / cell
-                found = _advance_at(ts, base, fitted, size[1])
-                if abs(found - whole) < _CELL_SLACK:
-                    scale, cell = fitted, whole
+            cell = _device_cell(ts, base, scale, size[1], density)
         except Exception as exc:  # noqa: BLE001 -- see `_failed`
             self._failed(exc)
         if not cell > 0.0:

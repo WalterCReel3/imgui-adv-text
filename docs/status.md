@@ -7,8 +7,169 @@ It is written to be useful rather than flattering. Section 4 is the longest on
 purpose.
 
 **The package was renamed `imscribe` on 2026-10-12 (section 0h). Every section
-dated before that, which is every section but 0h, says advtext, and names
-paths under `advtext/` that are now under `imscribe/`.**
+dated before that, which is every section but 0h and 0i, says advtext, and
+names paths under `advtext/` that are now under `imscribe/`.**
+
+**Since 2026-10-13 (section 0i, the newest) imtypeset is an installed
+dependency from PyPI and nothing is set in the environment to draw. Older
+sections describe `TYPESET=1` and two variables as the only way; that is the
+developer's route now.**
+
+## 0i. Revision of 2026-10-13: imtypeset 0.4.1 from PyPI as a dependency, code on the device grid, version `0.2.0b1`; nothing is published and no workflow has run
+
+The newest revision, put first; 0h below was the newest when it was written
+and is not changed. Where an older section says the library is found by two
+variables, that `TYPESET=1` is how to see text, that imtypeset is on no
+index, that the version is `0.2.0.dev0`, that `make dist` has built nothing,
+or that the diff view needs `cell="pixel"`: this section is the current
+position. Written by the builder of the task ADOPT-FINAL, an agent, from
+the result files of ADOPT-API and ADOPT-DIST (agents, the same day), and
+from its own gate runs. Everything was uncommitted when written.
+
+**Whose words.** The owner, 2026-10-13: "We are close to publishing
+imtypeset to PyPI. After that is done what will need to change in this repo
+to adopt it. I would also like to get this project renamed and published to
+PyPI around lunch today." And later that day: "I'm happy to announce that
+imtypeset is available on PyPI." Everything else below is an agent's
+decision or an agent's measurement; `docs/decisions.md`, "imtypeset 0.4.1
+from PyPI", keeps the decisions.
+
+**What changed.**
+
+- **imtypeset is a hard dependency.** `pyproject.toml` requires
+  `imtypeset==0.4.1.192900` beside `imgui-bundle==1.92.900`, both exact,
+  under imtypeset's own platform marker (CPython 3.11 to 3.14; Linux x86-64;
+  macOS arm64). Where the marker is false pip leaves it out and imscribe
+  installs and draws nothing. The pinned ref is imtypeset's tag `v0.4.1`,
+  commit `e6160c0` (`imtypeset.ref`).
+- **An installed wheel is the normal route**, with nothing set in the
+  environment. `make typeset-lib` and `TYPESET=1` stay as the developer's
+  route for an unreleased imtypeset, and select the built pair only where no
+  imtypeset is installed: an installed one ignores both variables.
+  `IMSCRIBE_NO_TYPESET=1` keeps imscribe from looking for an installed one.
+  A library older than 0.4 is `Kind.REFUSED` (`typesetter.MINIMUM`).
+- **Code is on the device grid by default.** imtypeset 0.4 measures code
+  faces on the device, on a whole-pixel grid. The diff view asks the library
+  for its cell (`device_glyph_advance`) and snaps an answer within 0.001 px
+  of a whole framebuffer pixel to it; a fenced block in a `TypesetView` and
+  inline code are on the same grid with nothing to pass.
+- **`cell="pixel"`, added on 2026-10-12 as a bridge, is removed as
+  machinery.** `TypesetDiffView(cell=)`, `TypesetDiffFences(cell=)` and the
+  `view.cell` setter accept `"pixel"` or `"font"`, ignore it, and raise a
+  `DeprecationWarning` at the host's line, for one release. `view.cell`
+  reads `"pixel"`.
+- **A code block's left indent is rounded to a whole pixel by the view**
+  (`imscribe.ui.typeset_view._code_on_a_pixel`), also for a `Description` a
+  host hands in: up to half a pixel from the theme's length.
+- **The version is `0.2.0b1`**; PyPI's page is `README-pypi.md`;
+  `.github/workflows/release.yml` publishes a pushed tag `v0.2.0b1`.
+- **The `window` fixture starts its own Xvfb** even when a display is set;
+  `IMSCRIBE_TEST_DISPLAY=1` asks for the session's display.
+
+**What was measured, and by whom** (the tables are in
+`.concerns/ADOPT-API--builder--result.md`, untracked, and in
+`HANDOFF-pptmstr.md`, tracked).
+
+- ADOPT-API's builder, imtypeset 0.4.1 (first the pair built from `cf7466e`
+  against the real headers, then the installed wheel), Dear ImGui 1.92.9,
+  FreeType, density 1, Xvfb, load average 4 to 6; vertices read, no pixel
+  read, nobody looked. **All 105 strict xfails of
+  `tests/test_mono_acceptance.py` (H34, H35) passed; they are plain tests
+  now**, 279 in the file, held at pixel heights 12 to 24 (they were 14 to
+  20). The diff view's default, unified and side by side: `grid.cell` 6, 6,
+  7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12 at 12 to 24; one step on every row; 0
+  px between rows at a column; every glyph within 0.0015 px of its
+  rectangle; 0 carets wrong of 288; the em drawn is the em asked (15.2526 at
+  16; with the option it was 16.000) and the quads carry the raster of the
+  pixel height asked. The frozen answers of the old `DiffView`
+  (`tests/data/diff_view_answers.json`): 51 of 51 equal with the default (34
+  of 51 with the old default).
+- A fenced block at 12 to 24: the same six assertions; worst glyph against
+  its rectangle 0.0015 px with the whole indent, 0.44 px without it.
+- ADOPT-DIST's builder: `python -P -m imscribe.typesetter` with the PyPI
+  wheel and nothing set: ready, route distribution, headers `fork:c9a0a84f...`.
+  `make dist` on a scratch commit: two builds the same bytes;
+  `twine check --strict` passed; the wheel installed into a new virtualenv
+  from PyPI and an example drew 5 frames in a window.
+
+**What moved that a host or a reader may have pinned** (each restated in the
+suite with the old value in the test's docstring).
+
+- Inline code's advance is a whole pixel: in a 16 px-tall prose line with
+  `inline_code_scale = p / c`, 8.0 px a character (it was 7.626), 7.0 at a
+  step of -2 px (6.673). Section 0f's "laid out 136.5" for a native line in
+  a typeset face is `(143.0, 143.0)` now.
+- A page set in the code face has rigid spaces: under `Faces.mono()` no
+  space is wider than another under any `Spacing`.
+- A tab goes to the next multiple of four cells and a combining mark takes
+  no cell: `e`, U+0301, tab, `z` puts `z` one cell right of
+  `str.expandtabs(4)`. Fourteen of pptmstr's fifteen P29 lines are where
+  they were to 0.001 px.
+- A character the code face borrows takes whole cells: U+03C0 and U+0416
+  take two (16 px at a cell of 8; they were 9.53), U+4E2D and U+1F600 one.
+
+**Open. Recorded, not fixed.**
+
+1. **The diff view counts one column for a borrowed Greek or Cyrillic
+   letter that the library sets two cells wide** (`DiffRows`). Headless, 16
+   px: eight U+03C0 are 16 cells wide and counted 8, so `content_width`,
+   the horizontal scroll range and the side-by-side panes are short by a
+   cell for each such letter on the longest line, and the end of that line
+   is past where the view scrolls to. Not run in a window. A defect on
+   imscribe's side.
+2. **A fractional framebuffer scale is unmeasured.** The views round to
+   whole units and the cell snaps to framebuffer pixels; the two agree at 1,
+   2 and 3 and not at 1.5. Every measurement here is at 1.
+3. **A code block's indent is now rounded to a whole pixel**, including one
+   a host stated in its own `Description`: `block_rect` may answer up to
+   half a pixel from what was handed in.
+4. **`reason()` still says `IMTYPESET_LIBRARY is not set` when the wheel is
+   absent**, which is what a user on Windows reads after `pip install
+   imscribe`. About fifteen test files assert the sentence.
+5. **Two sessions' Xvfb servers share one TCP display (94).** Two suites
+   run at once collide ("server already running"); the tests pass alone.
+6. **No workflow of this repository has run on GitHub**: not `ci.yml`'s
+   three jobs, not `macos.yml`, not `release.yml`. The first pushed tag is
+   the first run of `release.yml`. The likeliest places for it to fail, by
+   its author: the environment and OIDC exchange, the boolean `testpypi`
+   input, and `scripts/make_dist.py` on a shallow clone.
+7. **Nothing has run on macOS**, and imscribe on CPython 3.12 to 3.14 has
+   not run anywhere.
+8. **The suite's with-library tests run with a variable set that no user
+   has.** `tests/conftest.py` sets `IMTYPESET_LIBRARY` to the installed
+   library's path and `IMSCRIBE_NO_TYPESET=1`, so that about fifty files'
+   idioms stay true; the installed package ignores the variable. The user's
+   route, nothing set, rests on two tests, one command-line check and one
+   scratch install.
+9. Also not run: any upload; `make dist` on the commit to be released;
+   `make bootstrap` from nothing with the new dependency line; a GPU;
+   pptmstr against any of this. fontTools in a new install is 4.66.1;
+   everything here was measured on 4.66.0.
+10. `caret_rect` at the end of a line inside a Code block answers the start
+    of the next line (H27's question to imtypeset, still unanswered).
+11. **`release.yml`'s actions were moved to the commits imtypeset's
+    `wheels.yml` names** (upload-artifact v4 to v7.0.2, download-artifact v4
+    to v8.0.2) by REVIEW-FIX's builder, and it calls download-artifact
+    differently from imtypeset (`name` and `path`, not `path` and
+    `pattern`). Whether a download by name still unpacks straight into
+    `path` is recalled by that builder, not run: if it nests, the publish
+    step finds no files and fails without uploading anything. A TestPyPI
+    run by hand would show it before a tag is pushed.
+12. **The sdist carries `.gitignore`**, which hatchling adds whatever the
+    include list says; its comments describe this repository's working
+    arrangements. Keeping it out is the owner's call (a new tracked
+    `.gitattributes`). The sdist otherwise holds the package, the licence,
+    the PyPI page and `pyproject.toml` and nothing else since a review on
+    this date: no tests, docs, demo or handoff files.
+13. **`import imgui_bundle` on Linux needs `libX11.so.6` and `libXext.so.6`
+    from the system**; no wheel carries them (REVIEW-FIX's builder, by
+    `objdump`). `README-pypi.md` says so. Whether a bare GitHub runner has
+    them is not known; `release.yml` installs them.
+
+**Nobody looked.** No person and no agent has looked at a window of 0.4.1's
+drawing; every statement above is a position, a count or a width.
+
+2026-10-13, 21:24 to 21:36, alone on the tree, the fixture's own Xvfb, against the imtypeset 0.4.1.192900 wheel installed from PyPI (logs read by the lead): `make check` 4301 passed, 18 skipped, 4 xfailed, exit 0; `IMSCRIBE_NO_TYPESET=1 make check` 3645 passed, 674 skipped, 4 xfailed, exit 0; lint, format and mypy clean in both. The sidecar gate (`make check TYPESET=1` with the wheel uninstalled) is not part of this record.
 
 ## 0h. Revision of 2026-10-12, last: the package is renamed `imscribe`
 

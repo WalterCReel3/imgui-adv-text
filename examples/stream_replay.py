@@ -8,10 +8,11 @@ being written. This example replays `demo/stream.md` through an
 library, at a rate you choose, and counts one thing while it does: **how many
 lines that had already been set moved.**
 
-    IMTYPESET_LIBRARY=... python examples/stream_replay.py
+    python examples/stream_replay.py
 
-(`examples/typeset_minimal.py` has the whole command line; `make typeset-lib`
-builds the library.)
+(With imscribe installed, imtypeset is too and nothing is set in the
+environment; `examples/typeset_minimal.py` says what a developer building
+imtypeset from source does instead.)
 
 Three controls, and they are the three things worth turning:
 

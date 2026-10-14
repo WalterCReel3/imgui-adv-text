@@ -8,10 +8,14 @@ The order under test (`imscribe/typesetter.py`, "Loading, gated"):
     finds -- imported with no variable set.
 3.  otherwise nothing, and `reason()` is the sentence it always was.
 
-**No such distribution exists** (2026-10-11; HANDOFF-imtypeset.md, request
-H3). So route 2 is tested with stand-ins the tests build in a temporary
-directory, and what they stand in for is this contract, which is the whole of
-what imscribe assumes:
+**A distribution exists since 2026-10-13** (imtypeset 0.4.1.192900, a
+dependency in `pyproject.toml`), and where it is installed the last section
+here loads it with no variable set, as a user's process does. The routing is
+still tested with stand-ins the tests build in a temporary directory, in
+children from which an imtypeset in site-packages is HIDDEN
+(`tests/data/not_installed/sitecustomize.py`; `_without`): it would be found
+before or instead of every stand-in. What they stand in for is this contract,
+which is the whole of what imscribe assumes:
 
     With IMTYPESET_LIBRARY unset, `importlib.metadata.distribution("imtypeset")`
     finds the distribution, `import imtypeset` succeeds or raises ImportError
@@ -27,8 +31,10 @@ Two stand-ins:
   also has every name of that list, as a name and nothing more (`standin`
   writes them from the list itself; `tests/test_typesetter_kinds.py` is
   where one that LACKS a name is tried).
-- **the pinned pair, wrapped** (with the library only; skipped, with the
-  reason, without it): a package named `imtypeset` that carries a library
+- **the pinned pair, wrapped** (with the library `make typeset-lib` builds
+  only -- a library and a package directory that holds none; skipped, with
+  the reason, without it and where the session's library is an installed
+  distribution): a package named `imtypeset` that carries a library
   inside its own directory, names it to the real package's loader for the
   length of the import, and is otherwise the real package. That one goes the
   whole way -- the import gate, a context, fonts -- with neither variable in
@@ -56,6 +62,12 @@ from imscribe import typesetter
 
 _ROOT = Path(__file__).resolve().parent.parent
 _VARIABLES = (typesetter.LIBRARY_VARIABLE, typesetter.PACKAGE_VARIABLE)
+# On every child's path: an imtypeset in site-packages is hidden from the
+# child while `_HIDDEN` is in its environment, unless the child was handed the
+# installed library by name (`tests/data/not_installed/sitecustomize.py`).
+# `tests/conftest.py` hides it from this process by the same rule.
+_HIDE = _ROOT / "tests" / "data" / "not_installed"
+_HIDDEN = "IMSCRIBE_TEST_NO_INSTALLED_IMTYPESET"
 _KEYS = {
     "imscribe_version",
     "route",
@@ -106,7 +118,7 @@ def _child(code: str, env: dict[str, str], *path: Path) -> dict[str, Any]:
         text=True,
         timeout=300,
         check=False,
-        env={**env, "PYTHONPATH": os.pathsep.join([str(_ROOT), *map(str, path)])},
+        env={**env, "PYTHONPATH": os.pathsep.join([str(_ROOT), str(_HIDE), *map(str, path)])},
         cwd=str(_ROOT),
     )
     assert result.returncode == 0, f"the child failed:\n{result.stdout}\n{result.stderr}"
@@ -115,7 +127,27 @@ def _child(code: str, env: dict[str, str], *path: Path) -> dict[str, Any]:
 
 
 def _without() -> dict[str, str]:
-    return {name: value for name, value in os.environ.items() if name not in _VARIABLES}
+    """
+    An environment in which imscribe finds what the TEST puts there and nothing else.
+
+    Neither variable; not `IMSCRIBE_NO_TYPESET` (`tests/conftest.py` sets it
+    for the session, and these children are to LOOK); and an imtypeset in
+    site-packages hidden, so that "nothing installed" is true in a
+    virtualenv that has one.
+    """
+    dropped = (*_VARIABLES, typesetter.DISABLE_VARIABLE)
+    return {
+        **{name: value for name, value in os.environ.items() if name not in dropped},
+        _HIDDEN: "1",
+    }
+
+
+def _as_a_user() -> dict[str, str]:
+    """
+    The environment of a process nobody prepared: no variable of either project, nothing hidden.
+    """
+    dropped = (*_VARIABLES, typesetter.DISABLE_VARIABLE, _HIDDEN)
+    return {name: value for name, value in os.environ.items() if name not in dropped}
 
 
 _TWO_FUNCTIONS = """
@@ -371,7 +403,7 @@ def test_a_named_library_refused_with_a_kind_says_the_sentence_and_the_word(tmp_
         text=True,
         timeout=300,
         check=False,
-        env={**env, "PYTHONPATH": str(_ROOT)},
+        env={**env, "PYTHONPATH": os.pathsep.join([str(_ROOT), str(_HIDE)])},
         cwd=str(_ROOT),
     )
     assert result.returncode == 0, result.stderr
@@ -383,6 +415,11 @@ def test_a_named_library_refused_with_a_kind_says_the_sentence_and_the_word(tmp_
 
 
 # -- known by its attestation, with no metadata (imtypeset's T5: a frozen application) --
+#
+# The stand-in says it is imtypeset 0.4.1. Until 2026-10-13 it said 0.3.0 (the
+# version that first carried an attestation); a library of that version is
+# now refused for its age (`typesetter.MINIMUM`), which is tested at the end
+# of this file and is not what these tests are about.
 
 _INSTALLED = """
 import os
@@ -391,7 +428,7 @@ def host_info():
         "library": os.path.join(os.path.dirname(__file__), "the-library"),
         "route": "installed",
         "imgui_version": "1.92.9",
-        "imtypeset_version": "0.3.0",
+        "imtypeset_version": "0.4.1",
         "bundle": {
             "headers": "fork:0123abc",
             "wheel_version": "1.92.900",
@@ -436,7 +473,7 @@ def test_a_package_that_carries_an_attestation_is_a_distribution_without_metadat
         "library": str(site / "imtypeset" / "the-library"),
         "package": str(site / "imtypeset"),
         "distribution": distribution,
-        "imtypeset_version": "0.3.0",
+        "imtypeset_version": "0.4.1",
         "imgui_version": "1.92.9",
         "wheel_version": "1.92.900",
         "built_for": "imgui-bundle==1.92.900",
@@ -814,7 +851,7 @@ def test_the_distribution_is_looked_for_once_and_the_variable_still_works_later(
         asked.append(name)
         raise metadata.PackageNotFoundError(name)
 
-    for name in _VARIABLES:
+    for name in (*_VARIABLES, typesetter.DISABLE_VARIABLE):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(metadata, "distribution", distribution)
     monkeypatch.setattr(sys, "path", [p for p in sys.path if "imtypeset" not in p])
@@ -881,20 +918,56 @@ finally:
 """
 
 
+def _installed() -> Path | None:
+    """The installed distribution's library when THAT is the session's imtypeset, else `None`."""
+    from conftest import installed_typeset_library
+
+    return installed_typeset_library()
+
+
 def _the_pair() -> tuple[Path, Path]:
     """
-    The library and the package directory this run was given; skips without them.
+    The library and the package directory this run loads; skips when there is none.
+
+    Two shapes since 2026-10-13. **An installed distribution**
+    (`tests/conftest.py` names its library in `IMTYPESET_LIBRARY` for the
+    session): the library is inside the package directory, and it is what
+    loads whatever the variables say. **A sidecar** (`make test TYPESET=1`
+    in a virtualenv with no imtypeset installed): the library the variable
+    names, and the package directory `IMTYPESET_PYTHON` names, which holds no
+    library. `_the_sidecar` is for a test that is about the second alone.
     """
     library = os.environ.get(typesetter.LIBRARY_VARIABLE)
     if not library:
         pytest.skip(
-            "IMTYPESET_LIBRARY is not set: run `make test TYPESET=1` (after `make typeset-lib`) "
-            "to load the pinned pair by both routes"
+            "no imtypeset in this run: install the wheel, or `make test TYPESET=1` (after "
+            "`make typeset-lib`), to load the pinned pair"
         )
+    installed = _installed()
+    if installed is not None:
+        return installed, installed.parent
     package = os.environ.get(typesetter.PACKAGE_VARIABLE)
     assert package, "IMTYPESET_LIBRARY is set and IMTYPESET_PYTHON is not"
     assert (Path(package) / "imtypeset" / "__init__.py").is_file(), package
     return Path(library), Path(package) / "imtypeset"
+
+
+def _the_sidecar() -> tuple[Path, Path]:
+    """
+    `_the_pair`, for a test of the ENVIRONMENT route against the real library; skips otherwise.
+
+    An installed imtypeset reads neither variable and is found before any
+    directory `IMTYPESET_PYTHON` names, so where one is installed there is no
+    environment route to the real library to test.
+    """
+    pair = _the_pair()
+    if _installed() is not None:
+        pytest.skip(
+            "this run's imtypeset is an installed distribution, which reads no variable: the "
+            "environment route against the real library runs with `make test TYPESET=1` in a "
+            "virtualenv that has no imtypeset installed"
+        )
+    return pair
 
 
 def _held(pairing: dict[str, Any], library: Path) -> None:
@@ -908,7 +981,7 @@ def _held(pairing: dict[str, Any], library: Path) -> None:
 
 
 def test_the_pinned_pair_by_the_environment_reports_itself() -> None:
-    library, package = _the_pair()
+    library, package = _the_sidecar()
     report = _child(_REAL, dict(os.environ))
     assert report["module"] is True, report["pairing"]["reason"]
     _held(report["pairing"], library)
@@ -927,7 +1000,7 @@ def test_the_pinned_pair_as_a_distribution_loads_and_draws_with_no_variable_set(
     environment, the import gate run against the installed wheel, a context,
     and every face added.
     """
-    library, real = _the_pair()
+    library, real = _the_sidecar()
     wheel = metadata.version("imgui-bundle")
     site = tmp_path / "site"
     (site / "imtypeset").mkdir(parents=True)
@@ -978,7 +1051,7 @@ def test_a_pair_that_carries_an_attestation_is_accepted_by_it_and_not_by_a_child
     before 03b5cd4 has no such file and says nothing of a route; then this
     holds only that.
     """
-    library, package = _the_pair()
+    library, package = _the_sidecar()
     report = _child(_GATED, dict(os.environ))
     assert report["pairing"]["kind"] == typesetter.Kind.READY.value, report["pairing"]["reason"]
     if _says_kinds(package):
@@ -999,7 +1072,7 @@ def test_a_real_refusal_carries_the_packages_own_word_when_it_has_one(tmp_path: 
     before, there is no word and the reason is the whole message. Either way
     imscribe's kind is `refused`.
     """
-    _, package = _the_pair()
+    _, package = _the_sidecar()
     impostor = tmp_path / "not-a-library.so"
     impostor.write_bytes(b"\x7fELF and then nothing a loader would take")
     env = dict(os.environ)
@@ -1052,7 +1125,7 @@ def test_the_staged_package_is_a_directory_with_no_library_in_it() -> None:
     distribution and reads no variable. `make typeset-lib` puts the library
     BESIDE `pysnap`, not in the package, and this holds it to that.
     """
-    library, package = _the_pair()
+    library, package = _the_sidecar()
     if package.parent.name != "pysnap":
         pytest.skip(f"the package given is not one `make typeset-lib` staged: {package}")
     assert library.parent == package.parent.parent, "the library is not beside pysnap"
@@ -1072,7 +1145,7 @@ def test_an_installed_imtypeset_with_the_variables_set_says_which_of_the_two_it_
     variables. At 03b5cd4 the variable still won inside an installed
     package: the route is the environment's and the library the one named.
     """
-    library, real = _the_pair()
+    library, real = _the_sidecar()
     site, carried = _as_a_wheel(tmp_path, library, real)
     report = _child(_REAL, dict(os.environ), site)
     found = report["pairing"]
@@ -1105,7 +1178,7 @@ def test_a_library_without_its_attestation_is_probed_in_a_child_and_accepted(
     typeset-lib` installs carries the attestation so that this is not paid
     at every import; this is the pair without it.
     """
-    library, real = _the_pair()
+    library, real = _the_sidecar()
     if not _says_kinds(real):
         pytest.skip("the pair given is from before imtypeset 03b5cd4: it has no attestation")
     bare = tmp_path / "bare" / library.name
@@ -1156,7 +1229,7 @@ def test_the_real_pair_is_come_back_to_after_the_variables_were_removed() -> Non
     remembered pair, and says of it what this process said the first time.
     What this process launches inherits neither variable.
     """
-    library, package = _the_pair()
+    library, package = _the_sidecar()
     report = _child(_REAL_REMOVED, dict(os.environ))
     first = report["first"]
     _held(first, library)
@@ -1184,7 +1257,7 @@ def test_the_pair_laid_out_as_a_wheel_lays_it_out_is_found_by_its_attestation_al
     `test_the_pinned_pair_as_a_distribution_loads_and_draws_with_no_variable_set`
     is the test of this route.
     """
-    library, real = _the_pair()
+    library, real = _the_sidecar()
     site, carried = _as_a_wheel(tmp_path, library, real)
     asked = _REAL.replace(
         "print(json.dumps(report))",
@@ -1202,3 +1275,170 @@ def test_the_pair_laid_out_as_a_wheel_lays_it_out_is_found_by_its_attestation_al
     assert found["library"] == str(carried) and found["package"] == str(site / "imtypeset")
     assert found["distribution"] == "imtypeset", "a development build's attestation has no version"
     assert found["built_for"] == f"imgui-bundle=={metadata.version('imgui-bundle')}"
+
+
+# ---------------------------------------------------------------------------
+# The installed wheel: route 2 as a user's process takes it (2026-10-13)
+# ---------------------------------------------------------------------------
+
+
+def _the_installed() -> Path:
+    library = _installed()
+    if library is None:
+        pytest.skip("no imtypeset distribution is installed in this interpreter")
+    return library
+
+
+def test_the_installed_wheel_loads_and_draws_with_nothing_set() -> None:
+    """
+    What `pip install imscribe` gives where imtypeset has a wheel: no
+    variable of either project in the environment, nothing hidden, and
+    `module()` finds the distribution by its metadata, imports it, and its
+    own gate accepts the library it carries against the imgui-bundle that is
+    running. Then a context and every face.
+    """
+    library = _the_installed()
+    report = _child(_REAL, _as_a_user())
+    assert report["module"] is True, report["pairing"]["reason"]
+    found = report["pairing"]
+    _held(found, library)
+    assert found["route"] == typesetter.ROUTE_DISTRIBUTION
+    assert found["imtypeset_route"] == "installed"
+    assert found["package"] == str(library.parent)
+    assert found["distribution"] == f"imtypeset {metadata.version('imtypeset')}"
+    assert found["built_for"] == f"imgui-bundle=={metadata.version('imgui-bundle')}"
+    assert found["ignored_environment"] is None and found["named_by"] is None
+    if "standin" not in metadata.version("imtypeset"):
+        assert found["headers"].startswith("fork:"), "a release wheel is built on the real headers"
+    major, minor = (int(part) for part in found["imtypeset_version"].split(".")[:2])
+    assert (major, minor) >= typesetter.MINIMUM
+    assert report["fonts"] is True and report["ready"] is True, report["reason"]
+    assert report["after"] == found
+
+
+def test_the_installed_wheel_is_what_loads_when_the_variables_name_something_else(
+    tmp_path: Path,
+) -> None:
+    """
+    Measured 2026-10-13, and why `make test TYPESET=1` is the developer's
+    route only in a virtualenv with no imtypeset installed: with the wheel
+    installed and both variables naming another pair, the installed package
+    is the one imported, it reads neither variable, and `pairing()` says so.
+    """
+    library = _the_installed()
+    env = _as_a_user()
+    env[typesetter.LIBRARY_VARIABLE] = str(tmp_path / "dev" / "libimtypeset_bundle.so")
+    env[typesetter.PACKAGE_VARIABLE] = str(tmp_path / "dev" / "python")
+    found = _child(_GATED, env)["pairing"]
+    assert found["kind"] == typesetter.Kind.READY.value, found["reason"]
+    assert found["route"] == typesetter.ROUTE_DISTRIBUTION
+    assert found["library"] == str(library)
+    assert found["ignored_environment"] == "IMTYPESET_LIBRARY, IMTYPESET_PYTHON"
+    assert found["named_by"] is None
+
+
+# ---------------------------------------------------------------------------
+# IMSCRIBE_NO_TYPESET, and the floor on the library's version
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "looked"),
+    [
+        ("1", False),
+        ("yes", False),
+        (" 1 ", False),
+        ("0", True),
+        ("", True),
+        (" 0 ", True),
+        ("   ", True),
+        ("\t", True),
+    ],
+)
+def test_the_switch_stops_the_looking_and_nothing_else(
+    tmp_path: Path, value: str, looked: bool
+) -> None:
+    """
+    With `IMSCRIBE_NO_TYPESET` set to anything but nothing or 0, an installed
+    distribution is not looked for: nothing is imported, the sentence is the
+    one for nothing found, and `distribution` is not said.
+
+    Blanks around the value are not part of it, so a value of blanks alone is
+    nothing (2026-10-13: it counted as set until then, while a blank-padded 0
+    did not; the two rows of blanks were red).
+    """
+    site = _a_distribution(tmp_path)
+    env = _without()
+    env[typesetter.DISABLE_VARIABLE] = value
+    report = _child(_REPORT, env, site)
+    assert report["module"] is looked
+    found = report["pairing"]
+    if looked:
+        assert found["route"] == typesetter.ROUTE_DISTRIBUTION
+        assert found["distribution"] == "imtypeset 0.9.0"
+    else:
+        assert report["imtypeset"] == [], "it was imported although it was not to be looked for"
+        assert found["kind"] == typesetter.Kind.NOT_INSTALLED.value
+        assert found["reason"] == "IMTYPESET_LIBRARY is not set"
+        assert found["route"] == typesetter.ROUTE_NONE and found["distribution"] is None
+
+
+def test_a_library_that_is_named_is_loaded_under_the_switch(tmp_path: Path) -> None:
+    """
+    The switch is about what imscribe looks for by itself. A library the
+    environment names is an explicit request and is honoured: this is the
+    state every with-library test of this suite runs in (`tests/conftest.py`).
+    """
+    env, library, appended = _named(tmp_path)
+    env[typesetter.DISABLE_VARIABLE] = "1"
+    found = _child(_REPORT, env)["pairing"]
+    assert found["kind"] == typesetter.Kind.READY.value, found["reason"]
+    assert found["route"] == typesetter.ROUTE_ENVIRONMENT
+    assert found["library"] == str(library)
+
+
+def _versioned(version: str) -> str:
+    return _TWO_FUNCTIONS.replace('"0.9.0"', repr(version))
+
+
+@pytest.mark.parametrize("version", ["0.3.0", "0.3.9", "0.0.1"])
+def test_a_library_older_than_the_floor_is_refused_before_anything_is_drawn(
+    tmp_path: Path, version: str
+) -> None:
+    """
+    imtypeset 0.4 sets code on the device's grid by default and 0.3 did not
+    (its changelog); this imscribe's views are written to 0.4. A 0.3 library
+    that happened to have every name would draw text in other places, so it
+    is refused at the gate, in the sentence form of a package that lacks
+    names.
+    """
+    site = _a_distribution(tmp_path, _versioned(version))
+    report = _child(_REPORT, _without(), site)
+    assert report["module"] is False
+    found = report["pairing"]
+    assert found["kind"] == typesetter.Kind.REFUSED.value
+    assert found["reason"] == (
+        f"the imtypeset at {site / 'imtypeset'} is {version} and this imscribe needs 0.4 or "
+        "later; the two were not installed together"
+    )
+    # Which imtypeset was refused is still said.
+    assert found["route"] == typesetter.ROUTE_DISTRIBUTION
+    assert found["imtypeset_version"] == version
+
+
+@pytest.mark.parametrize("version", ["0.4.0", "0.4.1", "0.5.0", "1.0.0", "0.10.0"])
+def test_a_library_at_or_above_the_floor_is_not_refused_for_its_version(
+    tmp_path: Path, version: str
+) -> None:
+    site = _a_distribution(tmp_path, _versioned(version))
+    report = _child(_REPORT, _without(), site)
+    assert report["module"] is True, report["reason"]
+
+
+def test_a_package_that_cannot_say_its_version_is_held_to_its_names_alone(tmp_path: Path) -> None:
+    silent = _TWO_FUNCTIONS.replace('"imtypeset_version": "0.9.0",', "")
+    assert silent != _TWO_FUNCTIONS
+    site = _a_distribution(tmp_path, silent)
+    report = _child(_REPORT, _without(), site)
+    assert report["module"] is True, report["reason"]
+    assert typesetter.MINIMUM == (0, 4)

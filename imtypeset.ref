@@ -1,4 +1,7 @@
-# The imtypeset ref imscribe builds and gates against: the one HANDOFF-imtypeset.md names ("What advtext consumes today").
+# The imtypeset ref imscribe builds from SOURCE and gates against: the one HANDOFF-imtypeset.md names ("What advtext consumes today").
 # One ref, on the first line that is neither blank nor a comment: a full 40-digit commit hash of https://github.com/WalterCReel3/imtypeset.
-# Read by .github/workflows/ci.yml (as IMTYPESET_REF) and held to this shape by tests/test_ci_workflow.py. A bump is: this line, HANDOFF-imtypeset.md, rebuild, both gates.
-2fd705e2bc358c7dbfda1eb60bd9b71609869e1d
+# Read by .github/workflows/ci.yml (as IMTYPESET_REF, in its by-hand `sidecar` job) and held to this shape by tests/test_ci_workflow.py. A bump is: this line, HANDOFF-imtypeset.md, rebuild, both gates.
+# Since 2026-10-13 the NORMAL route is the wheel pyproject.toml pins (imtypeset==0.4.1.192900); this file is the developer's route, and the two are to name one source.
+# Below: the commit imtypeset's tag v0.4.1 points at (read 2026-10-13 with `git rev-parse "v0.4.1^{commit}"` in the sibling checkout), which is what its wheels on PyPI were built from.
+# The pair in build/imtypeset-bundle on that day was built two commits earlier, from cf7466e550807cfcd7654afb4278b587886a20a5; between the two the library's sources differ in comments of include/imtypeset.h and in the test host python/host/imtypeset_host.cpp, and in nothing else outside tests, docs and an example (`git diff --stat cf7466e v0.4.1`).
+e6160c0f83bbb6c7c41dba62ff0736a956ba7d9b

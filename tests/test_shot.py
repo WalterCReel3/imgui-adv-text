@@ -446,14 +446,23 @@ def test_a_shot_with_no_library_asked_for_is_said_to_be_one(
     """
     `library_note`, pure, and then the real script with the variables removed.
 
+    What it reads is `typesetter.kind()` and not `IMTYPESET_LIBRARY`
+    (2026-10-13): an installed imtypeset is found with nothing set, and the
+    note was printed over a demo that drew. Every kind but `NOT_INSTALLED`
+    is a library that was found, and says nothing here.
+
     Since tranche 5 a page with no imtypeset library draws one line and no
     text of its own, so a photograph taken without `IMTYPESET_LIBRARY` is a
     photograph of that line. The script still takes it (exit 0, a PNG of the
     size asked for) and says what it is on stderr, with the command that has
     the text. With the variable set the note is not printed.
     """
-    assert shot.library_note({}) == shot.NO_LIBRARY
-    assert shot.library_note({"IMTYPESET_LIBRARY": "x.so"}) is None
+    kinds = pytest.importorskip("imscribe.typesetter").Kind
+    assert shot.NOT_INSTALLED == kinds.NOT_INSTALLED.value
+    assert shot.library_note(shot.NOT_INSTALLED) == shot.NO_LIBRARY
+    for kind in kinds:
+        if kind is not kinds.NOT_INSTALLED:
+            assert shot.library_note(kind.value) is None, kind
     assert "make shot TYPESET=1" in shot.NO_LIBRARY
 
     out = window.out / "shot-no-library.png"
@@ -480,11 +489,16 @@ def test_a_library_that_was_asked_for_and_is_not_drawing_is_a_failed_shot(
     exits `shot.NOT_DRAWN_STATUS`, says why on stderr (the sentence the page
     drew), and writes no PNG. The pure half is asked first, with no window.
     """
-    assert shot.not_drawn({}, "anything") is None, "no library asked for is not a failure"
-    assert shot.not_drawn({"IMTYPESET_LIBRARY": ""}, "anything") is None
-    assert shot.not_drawn({"IMTYPESET_LIBRARY": "x.so"}, "") is None, "it was drawing"
-    said = shot.not_drawn({"IMTYPESET_LIBRARY": "x.so"}, "ImportError: refused")
+    assert shot.not_drawn("not-installed", "anything") is None, "none found is not a failure"
+    assert shot.not_drawn("not-installed", "anything", "x.so") is None
+    assert shot.not_drawn("ready", "", "x.so") is None, "it was drawing"
+    said = shot.not_drawn("refused", "ImportError: refused", "x.so")
     assert said is not None and "x.so" in said and "ImportError: refused" in said
+    # An INSTALLED imtypeset that is not drawing, with no variable set: until
+    # 2026-10-13 this was `None`, and the shot of a sentence was written.
+    for kind in ("refused", "failed", "ready", "unsupported"):
+        said = shot.not_drawn(kind, "Error: add_font")
+        assert said is not None and kind in said and "Error: add_font" in said, kind
     assert shot.NOT_DRAWN_STATUS not in (0, 2), "0 is a shot and 2 is no display"
 
     out = window.out / "shot-library-absent.png"
@@ -496,7 +510,7 @@ def test_a_library_that_was_asked_for_and_is_not_drawing_is_a_failed_shot(
     assert (
         done.returncode == shot.NOT_DRAWN_STATUS
     ), f"on {window.where}: exit {done.returncode}\n{done.stdout}\n{done.stderr}"
-    assert "imtypeset was not drawing" in done.stderr and str(absent) in done.stderr
+    assert "was not drawing when the window closed" in done.stderr and str(absent) in done.stderr
     assert shot.NO_LIBRARY.strip() not in done.stderr, "the variable WAS set"
     assert not out.exists(), "a photograph of the one line was written all the same"
     assert "wrote" not in done.stdout

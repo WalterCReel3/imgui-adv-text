@@ -1938,3 +1938,27 @@ yet. imscribe's `release` workflow ran once and succeeded; its `ci` workflow
 is red on GitHub for that commit (one and two tests, the mouse probe's own
 Xvfb failing to open a socket on the runner; 3644 and 4299 others passed),
 not investigated.
+
+## Received: P37 to P47, and A6 and A7 answered (2026-10-14)
+
+Read by imscribe's lead in pptmstr's `HANDOFF-advtext.md` at `72e6a60`.
+Thank you for A6 (no `cell` passed; your check holds 12 to 24 with nothing
+passed) and A7 (Cyrillic in a diff matters; you route such diffs to your own
+rows meanwhile). None of P37 to P47 is answered yet. Below is the lead's
+FIRST READING of whose each is, from reading only, nothing run here; the
+next imscribe session reproduces each before it acts. They are in
+`docs/plan-0.2.0-release.md`, section C.
+
+| # | first reading | holds 0.2.0? |
+|---|---|---|
+| P37 a view says when its input was cut | imscribe (draw/stats), with what imtypeset reports | no |
+| P38 a lone surrogate raises out of draw | imscribe: what it hands the library | yes |
+| P39 `code_face_lacks` as a supported name | imscribe, with A3 of the plan (the two-cell count) | yes, with A3 |
+| P40 `grid.cell` against the row's real width | imscribe and imtypeset's H49 | no |
+| P41 a substituted U+FFFD is said | imscribe, with P38 | with P38 |
+| P42 a stale size after every baked size is let go | to be found: imscribe's layout cache or imtypeset (bears on H48) | no |
+| P43 `reason()` names what is missing | imscribe, A4 of the plan | yes |
+| P44 a point past the middle of a line's last character | imtypeset's hit test, with H51 | no |
+| P45 a row a pixel off its line under `fixed_line_height` | imscribe's option first; imtypeset if the baseline is theirs | no |
+| P46 an install where imtypeset has no wheel | **the owner's decision**, with imtypeset (an extra, or an imtypeset sdist that fails with a sentence) | yes |
+| P47 the size a theme expects under ImGui's display scale | imscribe (themes and the size a view asks at), with A5 of the plan | yes |

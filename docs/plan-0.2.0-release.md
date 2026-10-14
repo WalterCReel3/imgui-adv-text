@@ -89,6 +89,17 @@ In this order. A1 to A4 are independent except where files overlap.
 6. Older open items in `ASSIGNMENTS.md` section 7 (the upstream Dear ImGui
    report; the smaller reversible defaults).
 
+7. **P46: an install where imtypeset has no wheel.** pptmstr measured with
+   pip's resolver: the marker is true on macOS 13 arm64 and on Linux with
+   glibc before 2.28, imtypeset has no wheel or sdist there, so
+   `pip install imscribe` fails with "no matching distribution". Two shapes:
+   make imtypeset an extra (`imscribe[typeset]`; plain `imscribe` installs
+   everywhere and draws nothing without it, pptmstr asks for the extra), or
+   ask imtypeset for an sdist that fails with a sentence. The lead leans to
+   the extra: imscribe already degrades with a sentence when the library is
+   absent, and an install that succeeds is easier to explain than one that
+   fails well. It reverses decision 1 of release day (hard dependency).
+
 ### C. The other two sessions'
 
 - **pptmstr:** move its pins to `imscribe==0.2.0b1`, drop `cell="pixel"` at
@@ -100,11 +111,21 @@ In this order. A1 to A4 are independent except where files overlap.
   within 1e-5 of a whole pixel and not on it; a borrowed letter takes two
   cells; `caret_rect` at a code line's end).
 
+### D. pptmstr's open requests (P37 to P47)
+
+Read from pptmstr's `HANDOFF-advtext.md` at `72e6a60`; the first reading of
+whose each is, and which hold 0.2.0, is the table at the end of
+`HANDOFF-pptmstr.md` ("Received: P37 to P47"). Reproduce each before acting.
+Those that hold 0.2.0: P38 and P41 (a lone surrogate raises out of `draw`;
+a substituted U+FFFD is not said), P39 (with A3), P43 (= A4), P46 (= B7),
+P47 (with A5: the size a theme expects under ImGui's display scale on
+Windows and Linux; pptmstr works round it).
+
 ## Done when
 
 `0.2.0` is tagged when A1 to A4 are done; A5 is measured; B1 and B2 have
 happened and what they found is fixed; pptmstr runs on the beta and its gate
-passes; and B3 to B5 are answered. A6 to A9 should be done and need not hold
+passes; B3 to B5 and B7 are answered; and the D items marked as holding 0.2.0 are done. A6 to A9 should be done and need not hold
 the tag.
 
 ## How to run the next session

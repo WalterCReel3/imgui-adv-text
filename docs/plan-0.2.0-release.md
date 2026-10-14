@@ -75,6 +75,13 @@ In this order. A1 to A4 are independent except where files overlap.
    IMTYPESET_COMMIT=v0.4.1`, never run in that form) so the developer route
    is level with the wheel.
 
+10. **The demo scripts on macOS.** `scripts/run_demo.py` and
+    `scripts/shot.py` refuse to start when `DISPLAY` is unset unless given
+    `--force`, and macOS never sets `DISPLAY` (read, 2026-10-14). Also the
+    demo pages find their documents at `DEMO_DIR`, three directories above
+    the package, so an installed wheel's demo has no documents; only a
+    checkout installed with `pip install -e .` shows them.
+
 ### B. The owner's
 
 1. **Look at it in a window:** `make run`; the Diff page, a fenced code

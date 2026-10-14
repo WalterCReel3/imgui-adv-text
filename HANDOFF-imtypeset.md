@@ -887,3 +887,9 @@ yet. imscribe's `release` workflow ran once and succeeded; its `ci` workflow
 is red on GitHub for that commit (one and two tests, the mouse probe's own
 Xvfb failing to open a socket on the runner; 3644 and 4299 others passed),
 not investigated.
+
+## H52: on PyPI only CPython 3.11 can install 0.4.1 (2026-10-14)
+
+| # | request | the measurement behind it | state |
+|---|---|---|---|
+| H52 | **Every wheel of a release declares one Requires-Python** (`>=3.11,<3.15`, or whatever range the release has wheels for), and a release with that fixed is published (0.4.2 or a post-release; files on PyPI cannot be replaced). | Run by imscribe's lead, 2026-10-14: `pip download --no-deps --only-binary=:all: --platform macosx_14_0_arm64 --implementation cp --python-version V "imtypeset==0.4.1.192900"` succeeds for 3.11 and fails "No matching distribution" for 3.12 and 3.13. PyPI's JSON lists `requires_python` `==3.11.*` on all eight files, the cp312 to cp314 ones included. Your `tools/wheel/build_wheel.py` writes `Requires-Python: =={python}.*` per wheel (and `tools/wheel/check_wheel.py` requires it); from what is known of PyPI (not read in its source today), it keeps the release's Requires-Python from the first file uploaded and pip filters every file by it. Found by the owner: `pip install` of imscribe on an Apple Silicon Mac with a newer Python answered "No matching distribution of imtypeset". Workaround meanwhile: Python 3.11. imscribe's marker (`python_version >= '3.11' and < '3.15'`) is unchanged and right once this is fixed. | open |

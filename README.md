@@ -171,7 +171,9 @@ builder, an agent, ran it, 2026-10-13). So to gate against a built pair:
     make check TYPESET=1
     .venv/bin/python -m pip install --no-deps "imtypeset==0.4.1.192900"
 
-pytest's first lines say which imtypeset a run used. The built pair cannot
+pytest's first lines say which imtypeset a run used (not under `make check`,
+whose `-q` leaves them out: `.venv/bin/python -m pytest tests/test_docs.py`
+prints the line). The built pair cannot
 be loaded from a second virtualenv either: imtypeset's gate answers that it
 found two copies of imgui-bundle.
 

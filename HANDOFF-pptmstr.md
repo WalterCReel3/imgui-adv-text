@@ -1925,4 +1925,16 @@ sentence. **Not run by anyone:** imscribe on macOS; any workflow of
 imscribe's on GitHub, the release workflow among them; any upload; a GPU;
 pptmstr against any of this (your tree was not read today).
 
-**Gates, alone on the tree** (ADOPT-FINAL's builder): 2026-10-13, 21:24 to 21:36, alone on the tree, the fixture's own Xvfb, against the imtypeset 0.4.1.192900 wheel installed from PyPI (logs read by the lead): `make check` 4301 passed, 18 skipped, 4 xfailed, exit 0; `IMSCRIBE_NO_TYPESET=1 make check` 3645 passed, 674 skipped, 4 xfailed, exit 0; lint, format and mypy clean in both. The sidecar gate (`make check TYPESET=1` with the wheel uninstalled) is not part of this record.
+**Gates, alone on the tree** (ADOPT-FINAL's builder): 2026-10-13, 21:24 to 21:36, alone on the tree, the fixture's own Xvfb, against the imtypeset 0.4.1.192900 wheel installed from PyPI (logs read by the lead): `make check` 4301 passed, 18 skipped, 4 xfailed, exit 0; `IMSCRIBE_NO_TYPESET=1 make check` 3645 passed, 674 skipped, 4 xfailed, exit 0; lint, format and mypy clean in both. The sidecar gate, run after those two and after the commit `b98de08` was made (ADOPT-FINAL's builder, 21:38 to 21:44, load 4.3 to 6.0, once): the wheel uninstalled, `python -P -m imscribe.typesetter` answering `not-installed` (exit 3), then `make check TYPESET=1` against the pair built from imtypeset `cf7466e` with the real headers (`build/imtypeset-bundle`; not the tag's `e6160c0`, from which no pair was built): 4309 passed, 10 skipped, 4 xfailed, exit 0, lint, format and mypy clean. The wheel was put back with `pip install --no-deps "imtypeset==0.4.1.192900"` (from pip's cache of the PyPI file) and `python -P -m imscribe.typesetter` answered ready, route installed, exit 0; fontTools 4.66.0, markdown-it-py 4.2.0 and imgui-bundle 1.92.900 unchanged, `pip check` clean. No red in any of the three runs, so nothing was re-run.
+
+**Added later on 2026-10-13 (read with `gh` and PyPI's JSON by ADOPT-FINAL's
+builder; done by none of the agents named here):** the section above is
+commit `b98de08`, pushed, and tagged `v0.2.0b1`. **imscribe 0.2.0b1 is on
+PyPI** since 2026-10-14 01:54 UTC (wheel sha256
+`460631a015fe494e6060f0f0691b4318f2919a4b60070338e8ee8d8d90cb14e2`, sdist
+`e405d83fa761384ad4f38ac7a9e9c1822c6e2aa97ca400a4356cb97c43f368ef`), so
+"not on PyPI" above is superseded; nobody here has installed it from PyPI
+yet. imscribe's `release` workflow ran once and succeeded; its `ci` workflow
+is red on GitHub for that commit (one and two tests, the mouse probe's own
+Xvfb failing to open a socket on the runner; 3644 and 4299 others passed),
+not investigated.

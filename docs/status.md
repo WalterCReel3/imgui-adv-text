@@ -169,7 +169,38 @@ suite with the old value in the test's docstring).
 **Nobody looked.** No person and no agent has looked at a window of 0.4.1's
 drawing; every statement above is a position, a count or a width.
 
-2026-10-13, 21:24 to 21:36, alone on the tree, the fixture's own Xvfb, against the imtypeset 0.4.1.192900 wheel installed from PyPI (logs read by the lead): `make check` 4301 passed, 18 skipped, 4 xfailed, exit 0; `IMSCRIBE_NO_TYPESET=1 make check` 3645 passed, 674 skipped, 4 xfailed, exit 0; lint, format and mypy clean in both. The sidecar gate (`make check TYPESET=1` with the wheel uninstalled) is not part of this record.
+2026-10-13, 21:24 to 21:36, alone on the tree, the fixture's own Xvfb, against the imtypeset 0.4.1.192900 wheel installed from PyPI (logs read by the lead): `make check` 4301 passed, 18 skipped, 4 xfailed, exit 0; `IMSCRIBE_NO_TYPESET=1 make check` 3645 passed, 674 skipped, 4 xfailed, exit 0; lint, format and mypy clean in both. The sidecar gate, run after those two and after the commit `b98de08` was made (ADOPT-FINAL's builder, 21:38 to 21:44, load 4.3 to 6.0, once): the wheel uninstalled, `python -P -m imscribe.typesetter` answering `not-installed` (exit 3), then `make check TYPESET=1` against the pair built from imtypeset `cf7466e` with the real headers (`build/imtypeset-bundle`; not the tag's `e6160c0`, from which no pair was built): 4309 passed, 10 skipped, 4 xfailed, exit 0, lint, format and mypy clean. The wheel was put back with `pip install --no-deps "imtypeset==0.4.1.192900"` (from pip's cache of the PyPI file) and `python -P -m imscribe.typesetter` answered ready, route installed, exit 0; fontTools 4.66.0, markdown-it-py 4.2.0 and imgui-bundle 1.92.900 unchanged, `pip check` clean. No red in any of the three runs, so nothing was re-run.
+
+**Added later on 2026-10-13 (about 22:05 local; 2026-10-14 02:05 UTC), after
+the text above was committed. It overturns three of its sentences.** Read by
+ADOPT-FINAL's builder with `git ls-remote`, `gh run list`, `gh run view` and
+PyPI's JSON; none of it was done by that builder.
+
+- The work was committed as `b98de08` and the branch pushed; the tag
+  `v0.2.0b1` is on GitHub at that commit.
+- **`release.yml` has run once, for that tag, and succeeded** (run
+  38497674627: "Build, check, install" 44 s, "Publish to PyPI" 20 s, the
+  TestPyPI job skipped). So "has never run" above is no longer true, and
+  open item 11 (where a downloaded artifact lands) did not bite.
+- **imscribe 0.2.0b1 is on PyPI**: `imscribe-0.2.0b1-py3-none-any.whl`
+  sha256 `460631a015fe494e6060f0f0691b4318f2919a4b60070338e8ee8d8d90cb14e2`,
+  `imscribe-0.2.0b1.tar.gz` sha256
+  `e405d83fa761384ad4f38ac7a9e9c1822c6e2aa97ca400a4356cb97c43f368ef`,
+  uploaded 2026-10-14 01:54 UTC. **Not done by this builder: installing it
+  from PyPI into a new environment** (`ASSIGNMENTS.md`, the last box of
+  section 1).
+- **`ci.yml` is RED on GitHub for `b98de08`** (run 38497533497), lint,
+  format and mypy passing in both jobs: `plain` 1 failed, 3644 passed, 674
+  skipped, 4 xfailed; `typeset` (the wheel from PyPI) 2 failed, 4299
+  passed, 18 skipped, 4 xfailed. The failures name the mouse probe's own
+  Xvfb: "Xvfb is not running ... SocketCreateListener() failed ... Cannot
+  establish any listening sockets". The same suite on this machine was
+  4301 and 3645 passed with none failed. Not investigated, not fixed.
+- **"No workflow of this repository has run on GitHub" was wrong when
+  written, for `ci.yml`**: `gh run list` shows a `CI` run on 2026-10-12 for
+  the push of `bb240c3` (run 38263316432), which failed. It was true of
+  `release.yml` until tonight and is still true of `macos.yml` and of
+  `ci.yml`'s `sidecar` job. No run of `ci.yml` has been green.
 
 ## 0h. Revision of 2026-10-12, last: the package is renamed `imscribe`
 

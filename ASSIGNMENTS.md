@@ -13,9 +13,19 @@ the other side.
 **Where things stand (2026-10-13).** Your words that day: "I'm happy to
 announce that imtypeset is available on PyPI." imscribe now depends on it
 (`imtypeset==0.4.1.192900`), is version `0.2.0b1`, and has a release
-workflow. **imscribe is not on PyPI. Publishing it is section 1, and it is
-the next thing to do.** `.github/workflows/release.yml` has never run; the
-first tag you push is its first run.
+workflow.
+
+**Later the same day: imscribe 0.2.0b1 IS on PyPI.** As `git`, `gh` and
+PyPI answered at about 22:05 local: the work is commit `b98de08`, the
+branch and the tag `v0.2.0b1` are pushed, the `release` workflow ran once
+for the tag and succeeded (run 38497674627), and PyPI lists the wheel
+(sha256 `460631a0...14e2`) and the sdist (`e405d83f...68ef`). So every box
+of section 1 but the last is done; **the next thing to do is its last box,
+installing it from PyPI in a new environment, and then section 3: `ci.yml`
+is red on GitHub for that commit** (the mouse probe's own Xvfb could not
+open a socket on the runner: `plain` 1 failed of 3645, `typeset` 2 failed
+of 4301; everything else passed). Section 1 is left as it was written, as
+the record of the steps.
 
 ## 1. Publish imscribe 0.2.0b1 to PyPI (the next thing to do)
 
@@ -131,9 +141,9 @@ Three repositories, three directories; each block is run in its own. As
 
 - [x] The branch `experimental/imtypeset-adoption` is on GitHub (at
       `bb240c3`).
-- [ ] It is three commits behind the local branch (`a45edd5`, `3ae7562`,
-      `5c9c9b6`), and the day's work is not committed at all. Section 1's
-      first box covers both.
+- [x] It was three commits behind the local branch and the day's work
+      uncommitted when this was written; later that day it is level with
+      the remote at `b98de08`, and the tag `v0.2.0b1` is on GitHub.
 - [ ] Optional: the tag `advtext-reference` is not on GitHub
       (`git ls-remote --tags origin` lists no tag). imtypeset's test oracle
       is pinned to it; it points at a commit already on `main`, so nothing
@@ -163,8 +173,13 @@ Three repositories, three directories; each block is run in its own. As
 
 ## 3. Read what the first CI runs say, and pass it back
 
-**No workflow of imscribe's has ever run on GitHub.** Pushing the branch
-starts `ci.yml`; expect the first run to fail on something small.
+`ci.yml` has run twice on GitHub and failed both times: on 2026-10-12 for
+`bb240c3` (run 38263316432; this file said then, wrongly, that nothing had
+run) and on 2026-10-13 for `b98de08` (run 38497533497), where lint, format
+and mypy passed and the suite failed in one test (`plain`) and two
+(`typeset`), each saying the mouse probe's Xvfb could not create a
+listening socket. **Tell this session to look at it; it has not been
+investigated.**
 
 - [ ] **imscribe → Actions → `ci`**: two jobs on a push, `plain`
       (`IMSCRIBE_NO_TYPESET=1 make check`) and `typeset` (`make check` with

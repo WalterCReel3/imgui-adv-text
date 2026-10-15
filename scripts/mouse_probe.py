@@ -991,6 +991,13 @@ def xvfb_command(inner: Sequence[str], *, display: int = XVFB_DISPLAY_NUMBER) ->
     and the display must be named with a host, `127.0.0.1:N`, which Xlib reads
     as TCP port `6000 + N`.
 
+    And `-nolisten local`: on Linux the server also binds an abstract socket,
+    `@/tmp/.X11-unix/XN`, and abstract sockets belong to the network
+    namespace, which `unshare -rm` shares with the host; the tmpfs does not
+    hide them. Where the host already has a server on `:N` -- on CI,
+    `xvfb-run -a` takes `:99` -- the one in here died with "Cannot establish
+    any listening sockets" (GitHub run 38497533497).
+
     The tmpfs shadows `$TMPDIR` along with the rest of `/tmp`, so `TMPDIR` is
     reset inside; the inner command's temporary ini folder lands there and
     vanishes with the namespace. Pure, so the shell it builds is testable.
@@ -998,7 +1005,8 @@ def xvfb_command(inner: Sequence[str], *, display: int = XVFB_DISPLAY_NUMBER) ->
     shell = f"""
 mount -t tmpfs tmpfs /tmp
 mkdir -p /tmp/.X11-unix /tmp/cache
-Xvfb :{display} -screen 0 1400x1000x24 -listen tcp -nolisten unix >/tmp/xvfb.log 2>&1 &
+Xvfb :{display} -screen 0 1400x1000x24 -listen tcp -nolisten unix -nolisten local \\
+  >/tmp/xvfb.log 2>&1 &
 XVFB=$!
 trap 'kill $XVFB 2>/dev/null || true' EXIT
 export DISPLAY=127.0.0.1:{display} TMPDIR=/tmp

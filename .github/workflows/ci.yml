@@ -11,6 +11,13 @@
 #             installed wheel taken out, `make check TYPESET=1`. The
 #             developer's route, for an imtypeset that is not released.
 #
+# PYTHON. `plain` and `typeset` run once for each CPython imtypeset has a
+# wheel for, 3.11 to 3.14 (fail-fast off: one red version does not hide the
+# others); a step after `make bootstrap` holds that ./.venv is the version
+# asked for. `sidecar` stays on 3.11: its cache key names the venv's path.
+# imtypeset 0.4.1 installs only on 3.11 (H52), so with that pin the 3.12 to
+# 3.14 legs stop at `make bootstrap`; that is the pin's, not the matrix's.
+#
 # EVERY JOB NEEDS imtypeset 0.4.1.192900 FROM PyPI. Since 2026-10-13 `make
 # bootstrap` installs it as a dependency, in every job; an index that does not
 # have the pinned file stops all three at "make bootstrap", and nothing here
@@ -40,7 +47,10 @@
 #       the display, and needs no privilege.
 #   two files (tests/test_mouse_probe.py, tests/test_example_stream.py)  start
 #       their own Xvfb inside a user namespace (`unshare -rm`) whatever
-#       DISPLAY is, and SKIP when a namespace cannot be made.
+#       DISPLAY is, and SKIP when a namespace cannot be made. Their Xvfb runs
+#       with `-nolisten local`: the namespace shares the host's network
+#       namespace, so without it the abstract socket of xvfb-run's own `:99`
+#       stopped theirs (run 38497533497, 2026-10-14).
 #
 # So both are arranged, and the second is checked before the gate rather than
 # left to a skip nobody reads: Ubuntu 24.04 restricts unprivileged user
@@ -105,19 +115,27 @@ env:
 
 jobs:
   plain:
-    name: "make check (the library switched off)"
+    name: "make check (the library switched off), CPython ${{ matrix.python }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
     steps:
       - name: "Check out imscribe"
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: "Python 3.11"
+      - name: "Python from the matrix"
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "${{ matrix.python }}"
           cache: pip
           cache-dependency-path: pyproject.toml
 
@@ -136,6 +154,12 @@ jobs:
 
       - name: "make bootstrap"
         run: make bootstrap
+
+      - name: "The venv is the matrix's Python"
+        env:
+          WANT: "${{ matrix.python }}"
+        run: |
+          .venv/bin/python -P -c 'import os, sys; got = "%d.%d" % sys.version_info[:2]; sys.exit(0 if got == os.environ["WANT"] else "venv is %s, matrix asked %s" % (got, os.environ["WANT"]))'
 
       - name: "No library is named, and the switch keeps imscribe from looking for the installed one"
         env:
@@ -159,19 +183,27 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1400x1000x24" make check
 
   typeset:
-    name: "make check (imtypeset installed from PyPI)"
+    name: "make check (imtypeset installed from PyPI), CPython ${{ matrix.python }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
     steps:
       - name: "Check out imscribe"
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: "Python 3.11"
+      - name: "Python from the matrix"
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "${{ matrix.python }}"
           cache: pip
           cache-dependency-path: pyproject.toml
 
@@ -190,6 +222,12 @@ jobs:
 
       - name: "make bootstrap"
         run: make bootstrap
+
+      - name: "The venv is the matrix's Python"
+        env:
+          WANT: "${{ matrix.python }}"
+        run: |
+          .venv/bin/python -P -c 'import os, sys; got = "%d.%d" % sys.version_info[:2]; sys.exit(0 if got == os.environ["WANT"] else "venv is %s, matrix asked %s" % (got, os.environ["WANT"]))'
 
       - name: "Which imtypeset pip installed, and that it loads with nothing set (exit 0 only then)"
         run: |
@@ -216,7 +254,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-document
+          name: "ci-document-py${{ matrix.python }}"
           path: artifacts/ci-document.png
           if-no-files-found: ignore
 

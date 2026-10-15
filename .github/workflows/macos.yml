@@ -27,6 +27,10 @@
 # to be in docs/status.md); whether text is set in the same places as on
 # Linux (the tests hold numbers measured on Linux x86-64).
 #
+# PYTHON: once for each of CPython 3.11 to 3.14, as ci.yml's two gates (its
+# header says why the 3.12 to 3.14 legs stop at `make bootstrap` while the
+# pin is 0.4.1).
+#
 # EVERY JOB NEEDS imtypeset 0.4.1.192900 FROM PyPI, as in ci.yml (published
 # 2026-10-13, with wheels for macosx_14_0_arm64, CPython 3.11 to 3.14).
 #
@@ -52,24 +56,38 @@ env:
 
 jobs:
   check-macos:
-    name: "make check on macOS arm64 (window tests skip)"
+    name: "make check on macOS arm64 (window tests skip), CPython ${{ matrix.python }}"
     runs-on: macos-14
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
     steps:
       - name: "Check out imscribe"
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: "Python 3.11"
+      - name: "Python from the matrix"
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "${{ matrix.python }}"
           cache: pip
           cache-dependency-path: pyproject.toml
 
       - name: "make bootstrap"
         run: make bootstrap
+
+      - name: "The venv is the matrix's Python"
+        env:
+          WANT: "${{ matrix.python }}"
+        run: |
+          .venv/bin/python -P -c 'import os, sys; got = "%d.%d" % sys.version_info[:2]; sys.exit(0 if got == os.environ["WANT"] else "venv is %s, matrix asked %s" % (got, os.environ["WANT"]))'
 
       - name: "Which imtypeset pip installed, and that it loads with nothing set (exit 0 only then)"
         run: |

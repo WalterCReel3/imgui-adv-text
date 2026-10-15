@@ -61,6 +61,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -248,6 +249,7 @@ def test_the_xvfb_command_names_a_tcp_display_and_never_a_unix_socket(probe: Mod
     shell = command[5]
     assert "mount -t tmpfs tmpfs /tmp" in shell
     assert "Xvfb :42 " in shell and "-listen tcp" in shell and "-nolisten unix" in shell
+    assert "-nolisten local" in shell
     assert "DISPLAY=127.0.0.1:42" in shell
     assert "LIBGL_ALWAYS_SOFTWARE=1" in shell
     assert "python 'a script.py' --opening 'it'\"'\"'s'" in shell
@@ -581,6 +583,79 @@ def _needs_an_xvfb() -> None:
         pytest.skip("Xvfb is not installed, so there is no server to open the window on")
     if not _can_make_a_namespace():
         pytest.skip("`unshare -rm` cannot make a user namespace here, which --xvfb needs")
+
+
+def _abstract_x_sockets() -> str:
+    try:
+        return Path("/proc/net/unix").read_text(encoding="ascii", errors="replace")
+    except OSError:
+        return ""
+
+
+def _an_unused_display() -> int:
+    """
+    A display number with no lock file, no abstract socket and a free TCP port.
+    """
+    taken = _abstract_x_sockets()
+    for number in range(170, 260):
+        if Path(f"/tmp/.X{number}-lock").exists() or f"@/tmp/.X11-unix/X{number}\n" in taken:
+            continue
+        with socket.socket() as trial:
+            try:
+                trial.bind(("127.0.0.1", 6000 + number))
+            except OSError:
+                continue
+        return number
+    pytest.skip("no display number between 170 and 259 is free")
+
+
+def test_the_xvfb_starts_where_the_host_already_has_a_server_on_that_display(
+    probe: ModuleType,
+) -> None:
+    """
+    `xvfb_command`'s server survives a host server on the same display number.
+
+    GitHub run 38497533497: under `xvfb-run -a` (which takes `:99`) the probe's
+    own `Xvfb :99` died with "Cannot establish any listening sockets", because
+    the abstract socket `@/tmp/.X11-unix/X99` lives in the network namespace
+    `unshare -rm` shares with the host. `-nolisten local` is what stops that.
+    Here the host server is started as `xvfb-run` starts one (no TCP), and the
+    inner command passes only if the namespace's server answers on TCP.
+    """
+    _needs_an_xvfb()
+    number = _an_unused_display()
+    host = subprocess.Popen(
+        ["Xvfb", f":{number}", "-screen", "0", "64x64x24", "-nolisten", "tcp"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        for _ in range(100):
+            if f"@/tmp/.X11-unix/X{number}\n" in _abstract_x_sockets():
+                break
+            if host.poll() is not None:
+                pytest.skip(f"the host Xvfb on :{number} did not start")
+            time.sleep(0.1)
+        else:
+            pytest.skip(f"the host Xvfb on :{number} never bound its abstract socket")
+        inner = (
+            "import sys; sys.path.insert(0, sys.argv[1]); import mouse_probe; "
+            "import os; sys.exit(0 if mouse_probe.wait_for_tcp_display("
+            "os.environ['DISPLAY'], timeout=20.0) else 'no answer')"
+        )
+        done = subprocess.run(
+            probe.xvfb_command([sys.executable, "-c", inner, str(_SCRIPT.parent)], display=number),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            cwd=_ROOT,
+        )
+    finally:
+        host.terminate()
+        host.wait(timeout=10)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "Xvfb is not running" not in done.stdout, done.stdout
 
 
 def test_the_probe_passes_in_a_real_window_on_an_xvfb() -> None:

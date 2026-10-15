@@ -47,8 +47,11 @@ the header of `ci.yml`.
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import shlex
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -441,25 +444,101 @@ def test_the_workflow_runs_on_pushes_and_pull_requests_to_main_and_experimental(
     assert workflow["jobs"]["sidecar"]["if"] == "github.event_name == 'workflow_dispatch'"
 
 
-def test_the_workflow_has_the_two_gates_on_ubuntu_with_python_3_11() -> None:
+SUPPORTED_PYTHONS = ["3.11", "3.12", "3.13", "3.14"]
+"""The CPythons imtypeset 0.4.3 has wheels for (cp311 to cp314); the gates run on each."""
+
+_MATRIX_PYTHON = "${{ matrix.python }}"
+
+
+def _setup_pythons(job: dict[str, Any]) -> list[str]:
+    return [
+        step["with"]["python-version"]
+        for step in _steps(job)
+        if step.get("uses", "").startswith("actions/setup-python@")
+    ]
+
+
+def _assert_runs_once_per_supported_python(job: dict[str, Any], name: str) -> None:
+    """
+    A matrix over every supported CPython, no leg cancelling the others, the
+    version in the job's name, and a step after `make bootstrap` that is red
+    unless ./.venv is the version the leg asked for.
+    """
+    assert job["strategy"] == {
+        "fail-fast": "false",
+        "matrix": {"python": SUPPORTED_PYTHONS},
+    }, name
+    assert _setup_pythons(job) == [_MATRIX_PYTHON], name
+    assert _MATRIX_PYTHON in job["name"], name
+    names = [step.get("name") for step in _steps(job)]
+    check = next(
+        step for step in _steps(job) if step.get("name") == "The venv is the matrix's Python"
+    )
+    assert names.index("make bootstrap") + 1 == names.index(check["name"]), name
+    assert check["env"] == {"WANT": _MATRIX_PYTHON}, name
+    assert "sys.version_info[:2]" in check["run"] and 'os.environ["WANT"]' in check["run"], name
+
+
+def test_the_workflow_has_the_two_gates_on_ubuntu_over_every_supported_python() -> None:
     """
     Three jobs since 2026-10-13 (two until then: `plain` and a `typeset` that
     built the pair from source). imtypeset became a dependency, so the gate
     with the library is the one `make bootstrap` leaves, and building from
     source moved to `sidecar`.
+
+    The two gates run on CPython 3.11 to 3.14 since 2026-10-14 (task R2-CI;
+    3.11 alone until then). `sidecar` stays on 3.11: its cache key names
+    `.venv/lib/python3.11`.
     """
     workflow = _workflow(_CI)
     assert set(workflow["jobs"]) == {"plain", "typeset", "sidecar"}
     for name, job in workflow["jobs"].items():
         assert job["runs-on"].startswith("ubuntu-"), name
-        pythons = [
-            step["with"]["python-version"]
-            for step in _steps(job)
-            if step.get("uses", "").startswith("actions/setup-python@")
-        ]
-        assert pythons == ["3.11"], name
+        if name == "sidecar":
+            assert "strategy" not in job
+            assert _setup_pythons(job) == ["3.11"], name
+        else:
+            _assert_runs_once_per_supported_python(job, name)
         # A job with no limit holds a runner for six hours when a window hangs.
         assert int(job["timeout-minutes"]) <= 60, name
+
+
+def test_the_venv_check_reads_the_version_the_way_the_matrix_writes_it() -> None:
+    """
+    The step's one-liner, run here: green for this interpreter's own version
+    and red for another, so a leg cannot pass on the wrong Python.
+    """
+    step = next(
+        s
+        for s in _steps(_workflow(_CI)["jobs"]["plain"])
+        if s.get("name") == "The venv is the matrix's Python"
+    )
+    words = shlex.split(step["run"].strip())
+    assert words[:3] == [".venv/bin/python", "-P", "-c"]
+    here = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    for want, code in ((here, 0), ("2.7", 1)):
+        done = subprocess.run(
+            [sys.executable, "-P", "-c", words[3]],
+            env={**os.environ, "WANT": want},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert done.returncode == code, (want, done.stderr)
+
+
+def test_every_upload_in_a_matrix_job_is_named_per_leg() -> None:
+    """
+    `actions/upload-artifact@v4` refuses a second artifact of one name in a
+    run, so an upload in a job that runs four times names the leg.
+    """
+    for path in (_CI, _MACOS):
+        for name, job in _workflow(path)["jobs"].items():
+            if "strategy" not in job:
+                continue
+            for step in _steps(job):
+                if step.get("uses", "").startswith("actions/upload-artifact@"):
+                    assert _MATRIX_PYTHON in step["with"]["name"], (path.name, name)
 
 
 def test_the_plain_job_is_bootstrap_then_check_and_never_meets_imtypeset() -> None:
@@ -838,6 +917,7 @@ def test_the_macos_workflow_cannot_start_by_itself_and_says_what_it_waits_on() -
     for name, job in workflow["jobs"].items():
         assert "if" not in job, name
         assert job["runs-on"] == "macos-14", name  # arm64: where imtypeset has a wheel
+        _assert_runs_once_per_supported_python(job, name)
         calls = [call for run in _runs(job) for call in _make_calls(run)]
         assert calls == [(["bootstrap"], {}), (["check"], {})], name
         assert ".venv/bin/python -P -m imscribe.typesetter" in "\n".join(_runs(job)), name

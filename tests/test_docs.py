@@ -49,6 +49,7 @@ DOCS: tuple[Path, ...] = (
     _ROOT / "docs" / "adoption-plan.md",
     _ROOT / "docs" / "postmortem-2026-10-adoption-and-demo.md",
     _ROOT / "docs" / "postmortem-2026-10-swap-and-three-sessions.md",
+    _ROOT / "docs" / "plan-0.2.0-release.md",
     _ROOT / "docs" / "guide" / "README.md",
     _ROOT / "docs" / "guide" / "idea.md",
     _ROOT / "docs" / "guide" / "tex.md",

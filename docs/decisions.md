@@ -1692,6 +1692,24 @@ the builder of ADOPT-FINAL, an agent; uncommitted when written.
 
 ---
 
+## imscribe 0.2.0 on imtypeset 0.4.3 (2026-10-14)
+
+**The owner's words**, 2026-10-14: "imtypeset 0.4.3 is getting built. Let's
+do what we need to do to get 0.2.0 out for ourselves and the other versions
+of python supported." The first four rows are the lead's
+(`.concerns/lead--release-020.md`), the fifth R2-SCALE's builder's; the
+owner has been told and may reverse any. Written by R3-FINAL's builder.
+
+| decision | reason |
+|---|---|
+| **imtypeset stays a hard dependency for 0.2.0**; no `imscribe[typeset]` extra unless the owner says so (P46 is the owner's open decision) | the release should not change the install shape the day it is cut |
+| **The SVG litmus chain stays for 0.2.0** (the owner's open decision) | removing twenty-two modules is not release-day work |
+| **`cell=` stays deprecated-and-ignored through 0.2.0** | pptmstr was told to pass it two days before; it is removed one version later at the earliest |
+| **The version is `0.2.0`; the pin is `imtypeset==0.4.3.192900` with the same marker** | 0.4.3's files declare `>=3.11,<3.15` (H52 fixed), so 3.12 to 3.14 can install it; a final, not a beta |
+| **The default theme does not follow Dear ImGui's font scales** (`TypesetView(src)` is `Theme.build()`, 16 px em, at every `font_scale_main`/`font_scale_dpi`); `theme.py` says which size a host asks for, and a size that is not finite and positive raises `ValueError` | imscribe does not know the host's chrome size, a scaled default would make `TypesetView(src)` differ from `Theme.build()` and scale blocks the host built, and imtypeset leaves this to the host. Answers P47 |
+
+---
+
 ## Correcting the brief
 
 The research brief asked for "the 4/5 and 1/5 x-height clamps" in

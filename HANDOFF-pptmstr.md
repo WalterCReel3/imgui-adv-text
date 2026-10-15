@@ -1962,3 +1962,32 @@ next imscribe session reproduces each before it acts. They are in
 | P45 a row a pixel off its line under `fixed_line_height` | imscribe's option first; imtypeset if the baseline is theirs | no |
 | P46 an install where imtypeset has no wheel | **the owner's decision**, with imtypeset (an extra, or an imtypeset sdist that fails with a sentence) | yes |
 | P47 the size a theme expects under ImGui's display scale | imscribe (themes and the size a view asks at), with A5 of the plan | yes |
+
+### imscribe 0.2.0 on imtypeset 0.4.3: P38, P39, P41, P43, P47 as built (2026-10-15)
+
+Written by imscribe's R3-FINAL builder (an agent) from the builders' result
+files; both gates run by it (below). Version `0.2.0` is committed
+(`92645be`) and **not yet tagged or on PyPI**; the owner's steps are in
+`ASSIGNMENTS.md` section 0.
+
+**Pins to move to, once it is on PyPI:** `imscribe==0.2.0`, which requires
+`imtypeset==0.4.3.192900` (CPython 3.11 to 3.14, Linux x86-64, macOS 14+
+arm64; marker unchanged) and `imgui-bundle==1.92.900`.
+
+| # | as built: the name you call |
+|---|---|
+| P38 | Already closed; no code change. `tests/test_lone_surrogates.py` draws `TypesetView`, `TypesetStreamView` (chunk boundary inside a pair), `TypesetDiffView` and a hosted diff fence with lone surrogates, and copies; nothing raises. **Note:** a UTF-16 pair split across two stream appends (`"\ud83d"` then `"\ude00"`, what decoding JSON per chunk gives) is set as TWO U+FFFD, not the emoji. Join the halves before appending if that matters to you |
+| P39 | `imscribe.ui.typeset_diff_view.code_face_lacks(text) -> tuple[str, ...]`, in `__all__`: the characters the code face has no glyph for. Raises `TypesetUnavailable` when the library cannot be asked. The diff view's widths now count drawn cells (a borrowed letter is two) |
+| P41 | `replaced_characters`, an `int` property (no library call) on `TypesetView`, `TypesetStreamView` and `TypesetDiffView`: how many surrogates on show were set as U+FFFD. Controls shown as a placeholder in a diff are not counted (`Diff.control_characters` says those) |
+| P43 | `imscribe.typesetter.reason()` now says what is missing: `typesetter.ABSENT_REASON` (no wheel installed), `typesetter.SWITCHED_OFF_REASON` (`IMSCRIBE_NO_TYPESET` set), and for a named library with no package "IMTYPESET_LIBRARY names <path>, and no imtypeset package could be imported ...". Compare against the constants, not a literal |
+| P47 | Decided, not changed: `TypesetView(src)` uses `Theme.build()` (16 px em) at every ImGui font scale. Build your theme with `Theme.at_pixel_height(ImGui.get_font_size())` read **inside a frame** (it is 0 before the first frame); `imscribe.theme`'s module docstring, "Which size a theme expects", has the recipe. A size that is not finite and positive raises `ValueError` |
+
+Also changed for you: a fenced diff under `TypesetDiffFences` now follows
+`set_document` and `set_theme`. **A theme change builds a new widget for
+each fenced diff and drops its hand-set state** (expanded gaps, folds,
+line-ending toggles, scroll, a selection inside it); layout survives.
+
+Gates on imscribe at `92645be` plus one docstring edit, quiet tree, Linux,
+CPython 3.11, imtypeset 0.4.3.192900: `make check` 4351 passed, 19 skipped,
+4 xfailed; `IMSCRIBE_NO_TYPESET=1 make check` 3668 passed, 702 skipped,
+4 xfailed. Not run: 3.12 to 3.14, macOS, pptmstr against it.

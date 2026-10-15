@@ -150,6 +150,24 @@ a substituted U+FFFD is not said), P39 (with A3), P43 (= A4), P46 (= B7),
 P47 (with A5: the size a theme expects under ImGui's display scale on
 Windows and Linux; pptmstr works round it).
 
+## Ticked (2026-10-15, R3-FINAL's builder, from the result files and git log)
+
+- [x] A1 Xvfb collision fixed, matrix 3.11 to 3.14 (`5a31c04`); run
+      38671805512 green on 3.11 only. **Not yet:** a run on 3.12+ after the
+      pin moved.
+- [x] A2 README level (`fc27d9d`, `92645be`).
+- [x] A3 + P39 drawn cells, `code_face_lacks` (`bd5aa71`).
+- [x] A4 + P43 `ABSENT_REASON` / `SWITCHED_OFF_REASON` (`92645be`).
+- [x] A5 + P47 measured, nothing to fix at 1.5 and 2; theme size documented
+      and 0 refused (`fc27d9d`).
+- [x] A7 review done (R2-REVIEW); its findings fixed in R3-HOSTS (`35b7f77`)
+      and R3-WIDE.
+- [x] A8 `.gitignore` comments, A10 demo on macOS, A11's numpy sentence and
+      Cmd+C (`fc27d9d`).
+- [x] P38 (closed by tests) and P41 `replaced_characters` (`da674f2`).
+- [x] imtypeset 0.4.3.192900 pinned, version `0.2.0` (`92645be`).
+- [ ] A6, A9; B1 to B5, B7; pptmstr on the release.
+
 ## Done when
 
 `0.2.0` is tagged when A1 to A4 are done; A5 is measured; B1 and B2 have

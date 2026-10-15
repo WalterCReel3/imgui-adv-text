@@ -10,10 +10,62 @@ purpose.
 dated before that, which is every section but 0h and 0i, says advtext, and
 names paths under `advtext/` that are now under `imscribe/`.**
 
-**Since 2026-10-13 (section 0i, the newest) imtypeset is an installed
+**Section 0j (2026-10-15) is the newest: version `0.2.0` on imtypeset
+0.4.3.**
+
+**Since 2026-10-13 (section 0i) imtypeset is an installed
 dependency from PyPI and nothing is set in the environment to draw. Older
 sections describe `TYPESET=1` and two variables as the only way; that is the
 developer's route now.**
+
+## 0j. Revision of 2026-10-15: version `0.2.0` on imtypeset 0.4.3 from PyPI, CPython 3.11 to 3.14; not yet tagged
+
+The newest revision; 0i below is not changed, and where it differs this
+section is the current position. Written by R3-FINAL's builder (an agent)
+from the R2-*/R3-* result files in `.concerns/` and its own gate runs on
+HEAD `92645be` plus a docstring edit. **The owner's words**, 2026-10-14:
+"imtypeset 0.4.3 is getting built. Let's do what we need to do to get 0.2.0
+out for ourselves and the other versions of python supported." Everything
+else is an agent's.
+
+**What changed since 0i** (each commit's builder ran its own tests; the
+result files have the counts):
+
+- **Pins:** `imtypeset==0.4.3.192900` (marker unchanged), version `0.2.0`,
+  classifiers for 3.11 to 3.14, `imtypeset.ref` = tag `v0.4.3`, `0bac066`
+  (R3-043). 0.4.3's files declare `>=3.11,<3.15`, so H52 is closed (lead
+  ran PyPI's JSON; relayed). MINIMUM stays `(0, 4)`: no imscribe answer
+  moved on 0.4.3 (H49's cell is now exactly 8.0, which the snap already
+  gave; H27 is not reached; H38 not measured).
+- **CI:** the probe's Xvfb runs with `-nolisten local`; `ci.yml` and
+  `macos.yml` run CPython 3.11 to 3.14 (R2-CI). On `5a31c04`, GitHub run
+  38671805512 was green on 3.11 and red at bootstrap on 3.12+ (the 0.4.1
+  pin); no run since the pin moved.
+- **P38** closed by tests, no code change (`tests/test_lone_surrogates.py`);
+  **P41** `replaced_characters` on `TypesetView`, `TypesetStreamView`,
+  `TypesetDiffView` (R3-TEXT). **P39/A3** the diff view counts drawn cells
+  (a borrowed letter is two) and exports `code_face_lacks` (R3-WIDE).
+  **P43/A4** `typesetter.ABSENT_REASON` and `SWITCHED_OFF_REASON`; this
+  closes 0i's item about "IMTYPESET_LIBRARY is not set" (R3-043). **P47/A5**
+  measured: the default theme does not follow ImGui's font scales (by
+  decision), `theme.py` says which size to ask for, a theme of size 0
+  raises `ValueError`; pens hold the grid at framebuffer scale 1, 1.5, 2
+  (R2-SCALE). A fenced diff now follows `set_document` and `set_theme`
+  (R3-HOSTS). Demo on macOS without `--force`, Cmd+C named, README level
+  (R2-SMALL).
+
+**Gates** (R3-FINAL's builder, quiet tree, imtypeset 0.4.3.192900 installed,
+Linux, CPython 3.11): `make check` exit 0, 4351 passed, 19 skipped,
+4 xfailed; `IMSCRIBE_NO_TYPESET=1 make check` exit 0, 3668 passed,
+702 skipped, 4 xfailed.
+
+**Open, and not run:** CPython 3.12 to 3.14 and macOS have not run this
+commit anywhere (CI waits on a push); the owner's look in a window (B1) and
+`macos.yml` (B2); P46 (an extra or not) and the SVG chain are the owner's
+open decisions; a theme change rebuilds a fenced diff's widget and drops
+its hand-set state (folds, scroll, selection); a UTF-16 pair split across
+two stream appends shows as two U+FFFD; about 40 skip messages still say
+"IMTYPESET_LIBRARY is not set"; `scripts/shot.sh` lacks `-nolisten local`.
 
 ## 0i. Revision of 2026-10-13: imtypeset 0.4.1 from PyPI as a dependency, code on the device grid, version `0.2.0b1`; nothing is published and no workflow has run
 

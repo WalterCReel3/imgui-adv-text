@@ -27,7 +27,40 @@ open a socket on the runner: `plain` 1 failed of 3645, `typeset` 2 failed
 of 4301; everything else passed). Section 1 is left as it was written, as
 the record of the steps.
 
-## 1. Publish imscribe 0.2.0b1 to PyPI (the next thing to do)
+## 0. Release imscribe 0.2.0 (2026-10-15; the next thing to do)
+
+Written by R3-FINAL's builder (an agent). The work is on
+`experimental/imtypeset-adoption`; both local gates are green (`make check`
+4351 passed; `IMSCRIBE_NO_TYPESET=1 make check` 3668 passed). The trusted
+publisher set up for 0.2.0b1 serves this release too.
+
+- [ ] **The lead commits what is left and pushes the branch.** The push
+      runs `ci.yml` on 3.11 to 3.14; wait for every leg to be green (3.12+
+      have never passed: they were red at bootstrap on the old pin).
+- [ ] **You tag that exact commit and push the tag:**
+
+      ```sh
+      cd ~/Source/imgui-adv-text
+      git tag -a v0.2.0 -m "imscribe 0.2.0" <the lead's commit>
+      git push origin v0.2.0
+      ```
+
+      The tag must equal the version (`0.2.0`), or `release.yml` refuses.
+- [ ] **Watch the release run** (`gh run watch`, or the Actions tab): it
+      builds, installs the wheel with its imtypeset and asks it for its
+      library, then publishes to PyPI.
+- [ ] **Verify from PyPI in new environments, on CPython 3.11 and 3.13:**
+
+      ```sh
+      python3.11 -m venv /tmp/i311 && /tmp/i311/bin/pip install imscribe==0.2.0
+      /tmp/i311/bin/python -m imscribe.typesetter     # exit 0, "ready"
+      python3.13 -m venv /tmp/i313 && /tmp/i313/bin/pip install imscribe==0.2.0
+      /tmp/i313/bin/python -m imscribe.typesetter
+      ```
+
+      Tell the session what each said.
+
+## 1. Publish imscribe 0.2.0b1 to PyPI (done 2026-10-13; kept as the record of the steps)
 
 Nothing below was done by an agent. The steps are ADOPT-DIST's builder's
 (an agent), who ran what could be run without GitHub or PyPI: the build,

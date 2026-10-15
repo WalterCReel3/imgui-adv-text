@@ -201,9 +201,9 @@ the same face at the same pixel height are on the same pens.
   `grid.cell` is that: 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12 px at pixel
   heights 12 to 24 for the bundled Inconsolata, which is the advance Dear
   ImGui has baked for the face at each height and is NOT the font file's
-  advance rounded (10.49 at 22 is 11). The library answers within 2e-5 px
-  of the whole pixel and not on it (8.000008583 at 16); the grid takes the
-  whole framebuffer pixel an answer is within 0.001 px of.
+  advance rounded (10.49 at 22 is 11). imtypeset 0.4.3 answers on the whole
+  pixel (8.0 at 16, its H49; 0.4.1 answered 8.000008583); the grid still
+  takes the whole framebuffer pixel an answer is within 0.001 px of.
 - **Every block is `BlockFlags.FixedLineHeight` with `Advances` left at the
   library's default**; the documents are drawn at an origin on a whole unit
   (`draw` rounds the cursor) with panes that start on whole units, and no
@@ -1795,9 +1795,10 @@ def _device_cell(ts: Any, base: Any, scale: float, row: int, density: float) -> 
     `ImDrawList.add_text` gives the same face at that pixel height. Never
     worked out from the em, and never by counting characters.
 
-    The library says a whole number of framebuffer pixels and answers in C
-    floats from an em that is itself a rounded number: measured at 12 to 24
-    px with no window, 8.000008583 where Dear ImGui's baked advance is 8.0
+    The library says a whole number of framebuffer pixels. imtypeset 0.4.3
+    answers exactly 8.0 at 16 px (its H49;
+    `.concerns/R3-043--builder--result.md`); 0.4.1 answered 8.000008583
+    from a rounded em
     (`.concerns/ADOPT-API--builder--result.md`). An answer within
     `_CELL_SLACK` of a whole framebuffer pixel is that pixel; any other is
     left as it was answered.

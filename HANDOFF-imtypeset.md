@@ -892,7 +892,7 @@ not investigated.
 
 | # | request | the measurement behind it | state |
 |---|---|---|---|
-| H52 | **Every wheel of a release declares one Requires-Python** (`>=3.11,<3.15`, or whatever range the release has wheels for), and a release with that fixed is published (0.4.2 or a post-release; files on PyPI cannot be replaced). | Run by imscribe's lead, 2026-10-14: `pip download --no-deps --only-binary=:all: --platform macosx_14_0_arm64 --implementation cp --python-version V "imtypeset==0.4.1.192900"` succeeds for 3.11 and fails "No matching distribution" for 3.12 and 3.13. PyPI's JSON lists `requires_python` `==3.11.*` on all eight files, the cp312 to cp314 ones included. Your `tools/wheel/build_wheel.py` writes `Requires-Python: =={python}.*` per wheel (and `tools/wheel/check_wheel.py` requires it); from what is known of PyPI (not read in its source today), it keeps the release's Requires-Python from the first file uploaded and pip filters every file by it. Found by the owner: `pip install` of imscribe on an Apple Silicon Mac with a newer Python answered "No matching distribution of imtypeset". Workaround meanwhile: Python 3.11. imscribe's marker (`python_version >= '3.11' and < '3.15'`) is unchanged and right once this is fixed. | open |
+| H52 | **Every wheel of a release declares one Requires-Python** (`>=3.11,<3.15`, or whatever range the release has wheels for), and a release with that fixed is published (0.4.2 or a post-release; files on PyPI cannot be replaced). | Run by imscribe's lead, 2026-10-14: `pip download --no-deps --only-binary=:all: --platform macosx_14_0_arm64 --implementation cp --python-version V "imtypeset==0.4.1.192900"` succeeds for 3.11 and fails "No matching distribution" for 3.12 and 3.13. PyPI's JSON lists `requires_python` `==3.11.*` on all eight files, the cp312 to cp314 ones included. Your `tools/wheel/build_wheel.py` writes `Requires-Python: =={python}.*` per wheel (and `tools/wheel/check_wheel.py` requires it); from what is known of PyPI (not read in its source today), it keeps the release's Requires-Python from the first file uploaded and pip filters every file by it. Found by the owner: `pip install` of imscribe on an Apple Silicon Mac with a newer Python answered "No matching distribution of imtypeset". Workaround meanwhile: Python 3.11. imscribe's marker (`python_version >= '3.11' and < '3.15'`) is unchanged and right once this is fixed. | **closed by imscribe, 2026-10-15**: 0.4.3.192900 on PyPI declares `>=3.11,<3.15` on all eight files and pip downloads the cp312 and cp314 macOS wheels (the lead ran); imscribe 0.2.0 pins it. Not yet installed by anyone on 3.12 or later. |
 
 ### The owner on a Mac (2026-10-14), for H1, H17 and H19
 
@@ -904,3 +904,24 @@ looks very good on retina. Reflow is snappy as well." That is the first look
 on a Mac at what H19 built; nothing was measured on it. A live window resize
 stretches the last frame until release; the owner reproduced that in other
 Python ImGui applications, so it is not yours or imscribe's.
+
+### imscribe 0.2.0 consumes 0.4.3.192900 from PyPI; H52 closed (2026-10-15)
+
+Written by imscribe's R3-FINAL builder (an agent). imscribe `0.2.0`
+(commit `92645be`, not yet tagged) requires `imtypeset==0.4.3.192900` under
+your `docs/releasing.md` section 5 marker, unchanged, beside
+`imgui-bundle==1.92.900`; `imtypeset.ref` is your tag `v0.4.3`, `0bac066`.
+`typesetter.MINIMUM` stays `(0, 4)`: imscribe relies on nothing new in
+0.4.3. Measured on 0.4.3 by R3-043's builder (headless): H49
+`device_glyph_advance` is 8.0 at 16 px (was 8.000008583); H27 caret at a
+code line's `\n` moved as your row says, and no imscribe answer read it;
+H36 names `blocks[1].text`; H38 not measured.
+
+**H52: closed.** 0.4.3's files on PyPI declare `requires_python
+">=3.11,<3.15"` and the cp312/cp314 macOS wheels download (imscribe's lead
+ran this; relayed). Nobody has yet installed imscribe on 3.12+.
+
+Gates, imtypeset 0.4.3.192900 installed from PyPI, Linux, CPython 3.11,
+quiet tree: `make check` exit 0, 4351 passed, 19 skipped, 4 xfailed;
+`IMSCRIBE_NO_TYPESET=1 make check` exit 0, 3668 passed, 702 skipped,
+4 xfailed.

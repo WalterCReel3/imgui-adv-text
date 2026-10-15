@@ -3105,3 +3105,304 @@ def test_in_a_window_a_host_s_mistake_is_raised_at_the_call_and_unloading_leaves
     (after,) = header_report["after_unload"]
     assert after["text"] == "src/short.py  +2 -1" and after["warning"] == f"! {_VERDICT}"
     assert after["width_px"] is None and after["available_px"] is None and after["fits"] is None
+
+
+# ---------------------------------------------------------------------------
+# A character the code face lacks: the width is the cells the library draws
+# (R2-WIDE; pptmstr's A7 and P39)
+# ---------------------------------------------------------------------------
+
+_WIDE = r"""
+import json, sys
+from imgui_bundle import imgui
+from imscribe import typesetter
+from imscribe.diff import Diff, UnifiedDiffStream
+from imscribe.theme import Theme
+from imscribe.ui.typeset_diff_view import DiffLayout, DiffRows, TypesetDiffView, code_face_lacks
+
+report = {"module": typesetter.module() is not None, "reason": typesetter.reason()}
+if not report["module"]:
+    print("REPORT " + json.dumps(report))
+    sys.exit(0)
+imgui.create_context()
+imgui.get_io().backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+report["ready"] = bool(typesetter.load_fonts()) and typesetter.ready()
+ts = typesetter.module()
+theme = Theme.build()
+base = typesetter.base_style(theme, 0)
+LINES = json.loads(sys.argv[1])
+
+
+def drawn(line, grid):
+    # The cells the library sets `line` in, as a Code block at the view's size.
+    style = ts.BlockStyle(Scale=grid.scale)
+    with ts.Document.from_blocks([ts.Block(ts.BlockKind.Code, line)], [style]) as doc:
+        doc.set_options(ts.DocumentOptions(CodeOverflow=int(ts.CodeOverflow.Grow)))
+        doc.layout(4000.0, base)
+        return doc.caret_rect((0, len(line)))[0] / grid.cell
+
+
+widths = []
+for px in (14.0, 16.0, 20.0):
+    for line in LINES:
+        for layout in (DiffLayout.UNIFIED, DiffLayout.SIDE_BY_SIDE):
+            view = TypesetDiffView(Diff.from_texts("a\n", line + "\n", "f"), theme,
+                                   pixel_height=px, layout=layout)
+            grid = view.grid
+            widths.append({"px": px, "line": line, "layout": layout.name, "cell": grid.cell,
+                           "drawn": drawn(line, grid), "content_width": view.content_width,
+                           "counted": DiffRows(view.diff, layout=layout)._indexed().columns})
+            view.close()
+report["widths"] = widths
+
+# A stream, a line at a time: the width at every step is a fresh view's on the same diff.
+text = ("--- a/w.txt\n+++ b/w.txt\n@@ -1,2 +1,3 @@\n a\n-b\n+x π x Ж x\n+ЖЖЖЖЖЖЖЖЖЖЖЖ\n"
+        "@@ -9,1 +10,1 @@\n-c\n+πππ\n")
+stream = UnifiedDiffStream()
+live = TypesetDiffView(Diff(), theme, pixel_height=16.0)
+steps = []
+for chunk in text.splitlines(keepends=True):
+    stream.feed(chunk)
+    live.set_diff(stream.diff)
+    fresh = TypesetDiffView(stream.diff, theme, pixel_height=16.0)
+    steps.append([live.content_width, fresh.content_width])
+    fresh.close()
+report["stream"] = steps
+
+# A file shown as written (not a diff): its lines are measured too.
+raw = TypesetDiffView(Diff.from_unified("not a diff\nЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖ\n"), theme, pixel_height=16.0)
+report["raw"] = [raw.diff.files[0].dialect, raw.content_width, raw.grid.cell]
+
+# Another size on the same view: asked again at that size.
+sized = TypesetDiffView(Diff.from_texts("", "ЖЖЖЖЖЖЖЖЖЖ\n", "f"), theme, pixel_height=14.0)
+first = [sized.content_width, sized.grid.cell]
+sized.pixel_height = 20.0
+report["resized"] = [first, [sized.content_width, sized.grid.cell]]
+report["lacks"] = list(code_face_lacks("x π x Ж x │"))
+report["ready_at_end"] = typesetter.ready()
+typesetter.unload()
+print("REPORT " + json.dumps(report))
+"""
+
+_WIDE_LINES = ["x π x Ж x", "ЖЖЖЖЖЖЖЖЖЖ", "ππ\tz", "áá", "plain ascii"]
+
+
+@pytest.fixture(scope="module")
+def wide_report() -> dict[str, Any]:
+    if not os.environ.get(typesetter.LIBRARY_VARIABLE):
+        pytest.skip(
+            "IMTYPESET_LIBRARY is not set: run `make test TYPESET=1` (after `make typeset-lib`) "
+            "for the tests that need the imtypeset library"
+        )
+    done = subprocess.run(
+        [sys.executable, "-B", "-c", _WIDE, json.dumps(_WIDE_LINES)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(_ROOT)},
+        cwd=str(_ROOT),
+    )
+    assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-5000:]
+    got = _report_of(done.stdout)
+    assert got["module"] is True, "the child did not get imtypeset: " + got.get("reason", "")
+    assert got["ready"] is True and got["ready_at_end"] is True
+    return got
+
+
+def _expected_width(layout: str, cell: float, code_cells: float) -> float:
+    # Two digits a side for these one-file diffs: `content_width`'s arithmetic.
+    if layout == "UNIFIED":
+        return (2 + 2 + 5) * cell + (code_cells + 1) * cell
+    return (2 + 4) * cell + (2 + 4) * cell + 2 * (code_cells + 1) * cell + cell
+
+
+def test_the_width_is_the_cells_the_library_draws_not_the_characters(
+    wide_report: dict[str, Any],
+) -> None:
+    """
+    pptmstr's A7, measured by it and by ADOPT-API at 16 px: `x π x Ж x` is set
+    11 cells wide (U+03C0 and U+0416 are borrowed from the prose face, two
+    cells each) and the view counted 9, so `content_width` was 152 px and the
+    end of the line was past the horizontal scroll range. At 14, 16 and 20 px,
+    both layouts, the width is the cells drawn; a line with combining marks
+    (fewer cells than characters) is allowed its character count, never less.
+    """
+    for entry in wide_report["widths"]:
+        drawn = entry["drawn"]
+        assert drawn == pytest.approx(round(drawn), abs=1e-3), entry
+        # A line with combining marks is drawn in fewer cells than it has characters
+        # and keeps its character count: room past its end, never short of it.
+        want = _expected_width(entry["layout"], entry["cell"], max(round(drawn), entry["counted"]))
+        assert entry["content_width"] == pytest.approx(want, abs=1e-6), entry
+    at16 = {(e["line"], e["layout"]): e for e in wide_report["widths"] if e["px"] == 16.0}
+    # The numbers pptmstr reported, now: 11 cells drawn, 168 px (was 152); ten U+0416 are
+    # 20 cells, 240 px (was 160 for 10).
+    assert at16[("x π x Ж x", "UNIFIED")]["drawn"] == pytest.approx(11.0, abs=1e-3)
+    assert at16[("x π x Ж x", "UNIFIED")]["content_width"] == 168.0
+    assert at16[("ЖЖЖЖЖЖЖЖЖЖ", "UNIFIED")]["content_width"] == 240.0
+    # A tab goes to the next multiple of four CELLS drawn: π π takes four, the tab one more.
+    assert at16[("ππ\tz", "UNIFIED")]["drawn"] == pytest.approx(9.0, abs=1e-3)
+    assert at16[("plain ascii", "UNIFIED")]["content_width"] == 168.0
+
+
+def test_a_stream_a_file_shown_as_written_and_a_new_size_are_measured_too(
+    wide_report: dict[str, Any],
+) -> None:
+    """
+    The widths are worked out a row at a time as a stream grows (what was
+    measured of a hunk is kept), so at every step a living view answers what a
+    view made afresh on the same diff answers; the lines of a file shown as
+    written are counted in cells drawn; and a new size is asked again.
+    """
+    steps = wide_report["stream"]
+    assert len(steps) == 10
+    assert all(live == fresh for live, fresh in steps), steps
+    assert steps[-1][0] == (2 + 2 + 5) * 8 + (24 + 1) * 8  # twelve U+0416: 24 cells
+    dialect, width, cell = wide_report["raw"]
+    assert dialect and cell == 8.0
+    assert width == (2 + 2 + 5) * cell + (32 + 1) * cell
+    (w14, c14), (w20, c20) = wide_report["resized"]
+    assert (c14, c20) == (7.0, 10.0)
+    assert w14 == (2 + 2 + 5 + 20 + 1) * c14 and w20 == (2 + 2 + 5 + 20 + 1) * c20
+
+
+def test_code_face_lacks_is_the_supported_name_for_which_characters_are_borrowed(
+    wide_report: dict[str, Any],
+) -> None:
+    """
+    pptmstr's P39: a host asks `imscribe.ui.typeset_diff_view.code_face_lacks`
+    and not `typesetter.module().face_has_glyph` with a face index of its own.
+    U+2502 is the code face's own; U+03C0 and U+0416 are borrowed.
+    """
+    from imscribe.ui import typeset_diff_view
+
+    assert "code_face_lacks" in typeset_diff_view.__all__
+    assert wide_report["lacks"] == ["π", "Ж"]
+
+
+_FRACTIONAL = r"""
+import json, sys
+from imgui_bundle import imgui
+import imscribe.ui.typeset_diff_view as module
+from imscribe import typesetter
+from imscribe.diff import Diff
+from imscribe.theme import Theme
+
+report = {"module": typesetter.module() is not None, "reason": typesetter.reason()}
+if not report["module"]:
+    print("REPORT " + json.dumps(report))
+    sys.exit(0)
+imgui.create_context()
+io = imgui.get_io()
+io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
+io.display_framebuffer_scale = imgui.ImVec2(2.0, 2.0)
+report["ready"] = bool(typesetter.load_fonts()) and typesetter.ready()
+theme = Theme.build()
+real = module._device_cell
+widths = []
+# A cell of a fraction of a unit cannot be had from a headless atlas: the library's answer
+# is forced, at a density of 2 (8.5 units: 17 framebuffer pixels), and the panes and the
+# width are this module's arithmetic on it.
+for cell in (None, 8.5, 7.5, 9.25):
+    if cell is not None:
+        module._device_cell = lambda ts, base, scale, row, density, cell=cell: cell
+    for layout in (module.DiffLayout.UNIFIED, module.DiffLayout.SIDE_BY_SIDE):
+        for line in ("0123456789", "x π x Ж x", "a" * 37):
+            view = module.TypesetDiffView(
+                Diff.from_texts("a\n", line + "\n", "f"), theme, layout=layout
+            )
+            grid = view.grid
+            width = view.content_width
+            over = view._overflow(view._panes(width, grid.cell), grid.cell)
+            widths.append([cell, layout.name, line, grid.cell, width, over,
+                           view.height_for(width) == view.content_height])
+            view.close()
+    module._device_cell = real
+report["widths"] = widths
+
+view = module.TypesetDiffView(Diff.from_texts("a\n", "b\n", "f"), theme)
+refused = {}
+for name, bad in (("nan", float("nan")), ("inf", float("inf")), ("str", "300"), ("bool", True)):
+    for call in ("draw", "height_for"):
+        try:
+            view.draw(width_px=bad) if call == "draw" else view.height_for(bad)
+            refused[f"{call} {name}"] = None
+        except (TypeError, ValueError) as exc:
+            refused[f"{call} {name}"] = [type(exc).__name__, str(exc)]
+report["refused"] = refused
+report["negative"] = view.height_for(-5.0) == view.height_for(0.0)
+report["ready_at_end"] = typesetter.ready()
+typesetter.unload()
+print("REPORT " + json.dumps(report))
+"""
+
+
+@pytest.fixture(scope="module")
+def fractional_report() -> dict[str, Any]:
+    if not os.environ.get(typesetter.LIBRARY_VARIABLE):
+        pytest.skip(
+            "IMTYPESET_LIBRARY is not set: run `make test TYPESET=1` (after `make typeset-lib`) "
+            "for the tests that need the imtypeset library"
+        )
+    done = subprocess.run(
+        [sys.executable, "-B", "-c", _FRACTIONAL],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(_ROOT)},
+        cwd=str(_ROOT),
+    )
+    assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-5000:]
+    got = _report_of(done.stdout)
+    assert got["module"] is True, "the child did not get imtypeset: " + got.get("reason", "")
+    assert got["ready"] is True and got["ready_at_end"] is True
+    return got
+
+
+def test_at_a_cell_of_a_fraction_of_a_unit_a_view_sized_to_its_width_does_not_scroll(
+    fractional_report: dict[str, Any],
+) -> None:
+    """
+    R2-REVIEW's (3): at a display density of 2 a cell can be 8.5 units, the
+    panes are rounded to whole units and a side-by-side pane is a whole number
+    of cells, and `content_width` (the cells added up: 170.0 for ten columns,
+    unified) left the code column 93 px where 93.5 were needed -- a host that
+    sized the view to it got a scrollbar (1 px unified, 8 to 10 side by side).
+    Now `content_width` is a whole pixel at which nothing scrolls, and
+    `height_for` it claims no scrollbar. At the bundled cell (8 at density 2
+    headless) it is the cells added up, as before.
+    """
+    for cell, layout, line, grid_cell, width, over, no_bar in fractional_report["widths"]:
+        assert over == 0 and no_bar, (cell, layout, line, width, over)
+        assert width == int(width), (cell, layout, line, width)
+        if cell is None:
+            assert grid_cell == 8.0
+    unified = {
+        (c, line): w for c, lay, line, _, w, _, _ in fractional_report["widths"] if lay == "UNIFIED"
+    }
+    assert unified[(None, "0123456789")] == (2 + 2 + 5 + 10 + 1) * 8.0
+    assert unified[(8.5, "0123456789")] == 171.0  # was 170.0, a pixel short
+
+
+def test_draw_and_height_for_say_what_is_wrong_with_a_width_that_is_not_one(
+    fractional_report: dict[str, Any],
+) -> None:
+    """
+    R2-REVIEW's (6): `draw(width_px=nan)` and `height_for(inf)` raised
+    `ValueError` / `OverflowError` from `int()` inside the view. Now, as
+    `headers` does, a width that is not a number is a `TypeError` and one that
+    is not finite a `ValueError`, each naming the call -- and `draw` says so
+    before it asks or submits anything. A negative width is still the
+    narrowest view (`get_content_region_avail` can answer one).
+    """
+    refused = fractional_report["refused"]
+    for call in ("draw", "height_for"):
+        for name in ("nan", "inf"):
+            kind, said = refused[f"{call} {name}"]
+            assert kind == "ValueError" and said.startswith(f"{call}(width_px=...)"), said
+        for name in ("str", "bool"):
+            kind, said = refused[f"{call} {name}"]
+            assert kind == "TypeError" and said.startswith(f"{call}(width_px=...)"), said
+    assert fractional_report["negative"] is True

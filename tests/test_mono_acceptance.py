@@ -39,6 +39,10 @@ answers, in a real window, and no pixel is read):
    pressed and dragged.
 2. A fenced code block in a `TypesetView` at a pixel height.
 
+And at 14, 16 and 20 px, unified and side by side, a `wide` page (R2-WIDE,
+pptmstr's A7): a row of U+03C0 and U+0416, two cells each, in a view too
+narrow for it, scrolled as far as it goes, then pressed and dragged over.
+
 **The history, because the tests' names changed with it.** On imtypeset
 v0.3.0 only a third kind passed: the diff view with `cell="pixel"`, an option
 that drew the face at another em so that its advance was a whole pixel
@@ -84,6 +88,12 @@ is not the file's advance rounded.
 LAYOUTS = ("unified", "side-by-side")
 MARKS = (1, 10, 20, 30, 40, 74)
 
+WIDE_HEIGHTS = (14, 16, 20)
+"""
+The pixel heights a line holding U+03C0 and U+0416 is scrolled to its end and
+selected at (pptmstr's A7: two cells each, borrowed from the prose face).
+"""
+
 
 def pages() -> list[dict[str, Any]]:
     """Every page the driver draws, in order: the three kinds of the module docstring."""
@@ -96,14 +106,17 @@ def pages() -> list[dict[str, Any]]:
     for px in ACT_HEIGHTS:
         for layout in LAYOUTS:
             out.append({"kind": "act", "px": px, "layout": layout})
+    for px in WIDE_HEIGHTS:
+        for layout in LAYOUTS:
+            out.append({"kind": "wide", "px": px, "layout": layout, "model": "wide"})
     return out
 
 
 def page_name(page: dict[str, Any]) -> str:
     if page["kind"] == "fence":
         return f"fence px{page['px']}"
-    if page["kind"] == "act":
-        return f"act px{page['px']} {page['layout']}"
+    if page["kind"] in ("act", "wide"):
+        return f"{page['kind']} px{page['px']} {page['layout']}"
     extra = "".join(f" {key}={page[key]}" for key in ("build", "model", "leading") if key in page)
     return f"diff px{page['px']} {page['layout']}{extra}"
 
@@ -143,6 +156,8 @@ PPTMSTR_ROWS = (
 ROWS = PPTMSTR_ROWS + (ASCII,)
 # U+2502, the tallest glyph of the bundled code face that imscribe's docs name.
 TALL = "\u2502 box \u2502"
+# U+03C0 and U+0416, which the code face lacks: two cells each. Ends on two of them.
+WIDE = "\u03c0 \u0416 " * 12 + "x\u03c0\u0416"
 MARKS = (1, 10, 20, 30, 40, 74)
 SELECTED = (20, 40)   # characters 21 to 40, counted from 1
 SETTLE = 4
@@ -366,6 +381,9 @@ def new_fills(before, after, top, bottom):
 # ---- a diff page ---------------------------------------------------------------------------
 
 def diff_model(page):
+    if page.get("model") == "wide":
+        # One removed row and the wide row added: the wide row is the longest, on the new side.
+        return Diff.from_texts("x\n", WIDE + "\n", "wide.txt")
     if page.get("model") == "pptmstr":
         # pptmstr's probe: one file whose every row is added.
         return Diff.from_texts("", "\n".join(PPTMSTR_ROWS) + "\n", "probe.txt")
@@ -589,6 +607,64 @@ def act_flow(page, view, own, white):
         view.clear_selection()
     return out
 
+def wide_flow(page, view, own, white):
+    # Scroll as far right as the view lets, then select by pressing and dragging over the
+    # characters at the end of the wide row, where the library set them.
+    for _ in range(SETTLE):
+        yield
+    grid = view.grid
+    cell = grid.cell
+    panes = view._panes(view._width, cell)
+    p = len(panes) - 1
+    pane = panes[p]           # the only pane unified; the new side, side by side
+    row = next(r for r in range(view.row_count)
+               if (found := side_line(view, r, pane.side)) is not None and found[0] == WIDE)
+    where = side_line(view, row, pane.side)[1]
+    view.scroll_x = 10**6     # the draw takes it back to the most it can scroll
+    yield
+    yield
+    sheet = view._described()
+    number, start = view._place(sheet, p, row)
+    doc = view.native_documents[2 * p + 1]
+    carets = [float(doc.caret_rect((number, start + k))[0]) for k in range(len(WIDE) + 1)]
+    ox, oy = view.origin
+    left = ox + pane.code - view.scroll_x
+    top = oy + row * grid.row
+    glyphs, _ = quads_of(state["draw_list"], *state["span"], white)
+    mine = [q for q in glyphs if top <= (q[1] + q[3]) / 2.0 < top + grid.row
+            and ox + pane.code <= q[0] < ox + pane.x1]
+    out = {"cell": cell, "width": view._width, "content_width": view.content_width,
+           "scroll_x": view.scroll_x, "max_scroll_x": view._max_scroll_x,
+           "pane": [ox + pane.code, ox + pane.x1], "left": left,
+           "carets": [c / cell for c in carets],
+           "end": left + carets[-1], "last_pen": left + carets[-2],
+           "ink": [min(q[0] for q in mine), max(q[0] for q in mine), max(q[2] for q in mine)]}
+    y = oy + (row + 0.5) * grid.row
+    n = len(WIDE)
+    out["drags"] = []
+    # (first, last): characters n-7 to n-5 are U+03C0, space, U+0416; n-3 to n-1 x, U+03C0, U+0416.
+    for first, last in ((n - 7, n - 5), (n - 3, n - 1)):
+        a = left + carets[first] + 0.25 * (carets[first + 1] - carets[first])
+        b = left + carets[last] + 0.75 * (carets[last + 1] - carets[last])
+        for event in (
+            lambda io, a=a: io.add_mouse_pos_event(float(a), float(y)),
+            lambda io: io.add_mouse_button_event(0, True),
+            lambda io, b=b: io.add_mouse_pos_event(float(b), float(y)),
+            lambda io: io.add_mouse_button_event(0, False),
+        ):
+            events.append(event)
+            yield
+            yield
+        out["drags"].append({
+            "asked": [first, last + 1], "selection": view.selection,
+            "text": view.selected_text(), "wanted": WIDE[first:last + 1],
+            "scroll_x": view.scroll_x, "where": list(where)})
+        events.append(lambda io: io.add_mouse_pos_event(*PARKED))
+        yield
+        yield
+        view.clear_selection()
+    return out
+
 # ---- the frames ----------------------------------------------------------------------------
 
 report = {"pages": {}, "failed": [], "facts": {}}
@@ -608,8 +684,8 @@ def load_fonts():
 def name_of(page):
     if page["kind"] == "fence":
         return f"fence px{page['px']}"
-    if page["kind"] == "act":
-        return f"act px{page['px']} {page['layout']}"
+    if page["kind"] in ("act", "wide"):
+        return f"{page['kind']} px{page['px']} {page['layout']}"
     extra = "".join(f" {key}={page[key]}" for key in ("build", "model", "leading") if key in page)
     return f"diff px{page['px']} {page['layout']}{extra}"
 
@@ -632,7 +708,7 @@ def gui():
     try:
         assert typesetter.module() is not None and typesetter.ready(), typesetter.trouble()
         if state["view"] is None:
-            if page["kind"] in ("diff", "act"):
+            if page["kind"] in ("diff", "act", "wide"):
                 state["view"], state["pitch"] = make_diff(page)
             else:
                 state["view"], state["pitch"] = make_fence(page), None
@@ -647,12 +723,13 @@ def gui():
         # 24 px height are 1900: the clip is opened to the window's own width, so that the
         # library emits the quads of glyphs right of the screen's edge. Vertices are read,
         # and nothing here depends on a pixel being put on screen.
-        if page["kind"] == "act":
+        if page["kind"] in ("act", "wide"):
             # As a host draws it: no clip opened, a width too narrow for the row.
             view.draw(palette=DARK_PALETTE, width_px=ACT_CELLS * view.grid.cell)
             state["draw_list"], state["span"] = draw_list, (start, draw_list.vtx_buffer.size())
             if state["flow"] is None:
-                state["flow"] = act_flow(page, view, typesetter.font(Face.CODE), white)
+                flow = act_flow if page["kind"] == "act" else wide_flow
+                state["flow"] = flow(page, view, typesetter.font(Face.CODE), white)
             try:
                 next(state["flow"])
             except StopIteration as done:
@@ -1313,6 +1390,69 @@ def test_a_press_and_a_drag_select_the_characters_under_the_pointer(
     assert second["selection"] == [[*where, 16], [*where, 23]], name
     assert second["text"] == _LONG[16:23] == "ked.get"
     assert first["scroll_x"] == second["scroll_x"] == 10 * page["cell"]
+
+
+# -- a line the code face lacks characters of (R2-WIDE; pptmstr's A7) ------------------------
+
+_WIDE = [
+    page_name({"kind": "wide", "px": px, "layout": layout})
+    for px in WIDE_HEIGHTS
+    for layout in LAYOUTS
+]
+_WIDE_LINE = "π Ж " * 12 + "xπЖ"
+
+
+@pytest.mark.parametrize("name", _WIDE)
+def test_scrolled_to_its_end_a_line_of_borrowed_characters_is_inside_the_view(
+    report: dict[str, Any], name: str
+) -> None:
+    """
+    U+03C0 and U+0416 are set two cells wide each (borrowed from the prose
+    face). Until R2-WIDE the view counted one a character, so its scroll range
+    stopped short and the end of such a line could not be scrolled to. Here,
+    in a view 40 cells wide, scrolled as far as it goes: the caret after the
+    last character and the ink of the last glyph are inside the code's
+    column, and the width the view claims is the cells drawn.
+    """
+    page = report["pages"][name]
+    cell = page["cell"]
+    carets = page["carets"]
+    # The library's carets: two cells for each borrowed character, one for the rest.
+    assert carets[-1] == pytest.approx(24 * 3 + 5, abs=1e-3), name
+    assert page["scroll_x"] == page["max_scroll_x"] > 0, name
+    code_left, code_right = page["pane"]
+    assert page["end"] <= code_right + 1e-3, f"{name}: the line ends at {page['end']}"
+    assert page["end"] > code_right - 2 * cell, f"{name}: scrolled {page['scroll_x']}"
+    first_ink, last_ink, right_ink = page["ink"]
+    assert last_ink >= page["last_pen"] - 1.0, f"{name}: the last glyph is not drawn"
+    assert right_ink <= code_right + 1e-3, name
+    cells = round(carets[-1])
+    if "unified" in name:
+        assert page["content_width"] == (2 + 2 + 5) * cell + (cells + 1) * cell, name
+    else:
+        assert page["content_width"] == (2 + 4) * 2 * cell + 2 * (cells + 1) * cell + cell, name
+
+
+@pytest.mark.parametrize("name", _WIDE)
+def test_a_press_and_a_drag_over_borrowed_characters_select_and_copy_them(
+    report: dict[str, Any], name: str
+) -> None:
+    """
+    Scrolled to the end, by the mouse: a press a quarter into a character
+    and a release three quarters into a later one select from the first to
+    the last inclusive, and copy as them, where the characters are two cells
+    wide -- the last three of the line among them.
+    """
+    page = report["pages"][name]
+    first, second = page["drags"]
+    n = len(_WIDE_LINE)
+    assert first["text"] == first["wanted"] == _WIDE_LINE[n - 7 : n - 4] == "π Ж"
+    assert second["text"] == second["wanted"] == _WIDE_LINE[n - 3 :] == "xπЖ"
+    for drag in (first, second):
+        where = drag["where"]
+        start, stop = drag["asked"]
+        assert drag["selection"] == [[*where, start], [*where, stop]], name
+        assert drag["scroll_x"] == page["max_scroll_x"], name
 
 
 # -- the two small rules of this package's own, with no library -----------------------------

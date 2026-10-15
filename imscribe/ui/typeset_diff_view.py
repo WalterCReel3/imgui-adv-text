@@ -167,15 +167,20 @@ a 20 px pitch:
   from the prose face, take TWO cells each; U+4E2D and U+1F600, which no
   bundled face has, take one; a combining mark (U+0301) and U+200B take
   none; a tab goes to the next multiple of four cells. So the columns to the
-  right of such a character are on the grid, **and they are not the
-  columns this view counts**: `content_width`, the horizontal scroll range
-  and the side-by-side panes count one cell a character
-  (`DiffRows`, as `DiffView` does), so a line holding borrowed two-cell
-  characters reaches one cell further right for each than the view allows
-  for. Hit testing, marks and the selection on that line are the library's
-  and stay right. `code_face_lacks(text)` says which characters of a text
-  these are (U+03C0 and U+0416 are, in the bundled code face; U+2502 and
-  U+FFFD are not).
+  right of such a character are on the grid, and **the view counts the
+  cells drawn** (R2-WIDE): `content_width` and the horizontal scroll range
+  take a line holding a character above U+007E at the cells the library
+  sets it in (`TypesetDiffView._code_columns`; each such character asked
+  once per grid, in one scratch document, `_character_cells`). Until then
+  they counted one cell a character, as `DiffRows` and `DiffView` still
+  do, and the end of a line of Greek or Cyrillic was past where the view
+  scrolled to (pptmstr's A7). A line with a combining mark is still allowed
+  at least a cell a character: room past its end, never short of it. Hit
+  testing, marks and the selection on that line are the library's
+  (`tests/test_mono_acceptance.py`, `wide` pages, at 14, 16 and 20 px).
+  **`code_face_lacks(text)` is the supported name** for which characters
+  of a text these are (pptmstr's P39): U+03C0 and U+0416 are, in the
+  bundled code face; U+2502 and U+FFFD are not.
 - A character **no** face has is whatever the library draws for it; `DiffView`
   draws a placeholder there. `face_has_glyph` over every role could tell
   (U+4E2D is in none of the bundled faces); nothing here asks.
@@ -228,7 +233,8 @@ the same face at the same pixel height are on the same pens.
   after this one.
 - **What it does not do.** A character the code face lacks takes whole
   cells, and more than one where the face it comes from is wider ("A glyph
-  taller than the pitch, or not the code face's"). Text the host draws in
+  taller than the pitch, or not the code face's"): a host that counts
+  columns by characters is short there. Text the host draws in
   ANOTHER font, or in a copy of the face loaded with other loader flags,
   lines up only if its advance is the same. **Not run**: a framebuffer scale
   other than 1 (at 1.5 a whole unit is not a whole framebuffer pixel, and
@@ -277,7 +283,8 @@ to its release).
   anything. The theme is `imscribe.theme`'s, which loads `fontmetrics` and `units`
   for its own purposes; nothing here calls them.
 - A character the code face lacks can take two cells where `DiffView` gave
-  it one, and a glyph taller than the pitch is not cut to it (above).
+  it one, and `content_width` counts them so; a glyph taller than the pitch
+  is not cut to it (above).
 - The selection highlight does not extend one cell past the end of a line
   that is selected through its end; a selected empty line shows one cell.
 - A file shown as written is clipped to the first pane side by side
@@ -719,6 +726,11 @@ class _HunkInfo:
     place: list[tuple[int, int]] = field(default_factory=list)
     count: int = 0
     recent: list[tuple[DiffRow, int, int, int]] = field(default_factory=list)
+    # The rows whose text has a character above U+007E, which `columns` counts
+    # one cell each and the library may not: (row, text, cells added after it).
+    wide: list[tuple[int, str, int]] = field(default_factory=list)
+    # `TypesetDiffView`'s widest of `wide` in cells: (grid, entries measured, widest).
+    measured: tuple[object, int, int] | None = None
 
 
 @dataclass(slots=True, eq=False)
@@ -730,9 +742,13 @@ class _Index:
     segments: list[tuple[int, int, int, int]]  # (kind, file, hunk or gap, rows)
     starts: list[int]
     total: int
-    columns: int
+    columns: int  # one cell a character: `DiffView`'s count
     digits: tuple[int, int]
     hunks: list[tuple[int, int, int]]  # (display row of the header, file, hunk)
+    # What `columns` may have counted short: the hunks with a row above U+007E,
+    # and the lines of a file shown as written that have one.
+    wide: list[_HunkInfo] = field(default_factory=list)
+    raw_wide: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True, eq=False)
@@ -900,6 +916,9 @@ class DiffRows:
                 del info.new[new_kept:]
                 del info.place[info.count :]
                 del info.recent[keep:]
+                while info.wide and info.wide[-1][0] >= info.count:
+                    info.wide.pop()
+                info.measured = None
         if info is None:
             info = self._infos[(file, number)] = _HunkInfo()
         if info.count == len(rows):
@@ -910,10 +929,14 @@ class DiffRows:
             info.recent.append((row, info.columns, len(info.old), len(info.new)))
             if row.kind is RowKind.META:
                 width = _width(rows[at - 1].text) + 3 if at else 0
+                if at and not rows[at - 1].text.isascii():
+                    info.wide.append((at, rows[at - 1].text, 3))
             else:
                 width = _width(text)
-                if row.eol != "\n":
-                    width += 5  # room for a `\r\n` mark, should it be drawn
+                after = 0 if row.eol == "\n" else 5  # room for a `\r\n` mark, should it be drawn
+                width += after
+                if not text.isascii():
+                    info.wide.append((at, text, after))
             if width > info.columns:
                 info.columns = width
             a = b = -1
@@ -957,6 +980,8 @@ class DiffRows:
         hunks: list[tuple[int, int, int]] = []
         seen: set[tuple[int, int]] = set()
         columns = 0
+        wide: list[_HunkInfo] = []
+        raw_wide: list[str] = []
         old_max = new_max = 0
         total = 0
 
@@ -971,6 +996,7 @@ class DiffRows:
                 if file.raw:
                     add(_RAW, f, 0, len(file.raw))
                     columns = max(columns, max(_width(line) for line in file.raw))
+                    raw_wide.extend(line for line in file.raw if not line.isascii())
                 continue
             if self._folded(f):
                 add(_FOLD, f, 0, 1)
@@ -984,6 +1010,8 @@ class DiffRows:
                 info = self._info(f, h, hunk)
                 seen.add((f, h))
                 columns = max(columns, info.columns)
+                if info.wide:
+                    wide.append(info)
                 add(_ROWS, f, h, len(hunk.rows) if unified else len(hunk.side_by_side))
                 if hunk.old_start is not None and hunk.new_start is not None:
                     old_max = max(old_max, hunk.old_start + hunk.old_count)
@@ -1006,6 +1034,8 @@ class DiffRows:
             columns=columns,
             digits=(max(2, len(str(old_max))), max(2, len(str(new_max)))),
             hunks=hunks,
+            wide=wide,
+            raw_wide=raw_wide,
         )
         return index
 
@@ -1761,8 +1791,13 @@ def code_face_lacks(text: str) -> tuple[str, ...]:
     invisible character is `CONTROL_PLACEHOLDER` there) that the code face has
     no glyph for, each once, in the order met. The library sets such a
     character from another face in a whole number of cells, which can be two
-    where this view counts one (module docstring). One library call
-    per distinct character above U+007E; none for ASCII.
+    (module docstring); the view's width counts them as drawn. One library
+    call per distinct character above U+007E; none for ASCII.
+
+    **Supported** (pptmstr's P39): this is the name a host asks "does the
+    code face lack this character" by, rather than
+    `typesetter.module().face_has_glyph` with a face index of its own. It is
+    in `__all__` and held by `tests/test_typeset_diff_view.py`.
 
     Raises `TypesetUnavailable` when the library cannot be asked: before
     `typesetter.load_fonts()` no role has a font and every character would be
@@ -1777,6 +1812,49 @@ def code_face_lacks(text: str) -> tuple[str, ...]:
     face = int(ts.Face.Code)
     distinct = dict.fromkeys(character for character in _shown(text)[0] if character > "~")
     return tuple(character for character in distinct if not ts.face_has_glyph(face, character))
+
+
+def _character_cells(
+    ts: Any, base: Any, grid: DiffGrid, characters: Sequence[str]
+) -> dict[str, int]:
+    """
+    How many cells the library sets each of `characters` in, on `grid`:
+    **asked, by laying each out** after a `0` in a Code block of the view's
+    own style and reading the caret at its end. Two for U+03C0 and U+0416
+    with the bundled faces (borrowed from the prose face), one for a
+    character no face has, none for a combining mark or U+200B. One document
+    for all of them.
+    """
+    style = ts.BlockStyle(
+        Scale=grid.scale, LineHeight=grid.row / (grid.em * grid.scale), Align=ts.Align.Left
+    )
+    code, fixed = int(ts.BlockKind.Code), int(ts.BlockFlags.FixedLineHeight)
+    blocks = [ts.Block(code, "0" + character, flags=fixed) for character in characters]
+    with ts.Document.from_blocks(blocks, [style]) as doc:
+        doc.set_options(ts.DocumentOptions(CodeOverflow=int(ts.CodeOverflow.Grow)))
+        doc.layout(_COLUMN, base)
+        out = {}
+        for at, character in enumerate(characters):
+            width = float(doc.caret_rect((at, 2))[0]) - float(doc.caret_rect((at, 0))[0])
+            out[character] = max(0, round(width / grid.cell) - 1)
+    return out
+
+
+def _cells(shown: str, cells: dict[str, int], tab: int = TAB_WIDTH) -> int:
+    """
+    The cells a line as handed to the library (`_shown`) is set in, each
+    character above U+007E taking what `cells` says (`_character_cells`):
+    the library's tab rule over the cells drawn, not over the characters.
+    """
+    at = 0
+    for character in shown:
+        if character == "\t":
+            at += tab - at % tab
+        elif " " <= character <= "~":
+            at += 1
+        else:
+            at += cells[character]
+    return at
 
 
 @dataclass(frozen=True, slots=True)
@@ -1875,6 +1953,10 @@ class TypesetDiffView(DiffRows):
         self.blocks_realised = 0
         # The library, the grid and the document style of the frame being drawn.
         self._live: tuple[Any, DiffGrid, Any] | None = None
+        # `_code_columns`: its last answer (index, grid, cells), and the cells of
+        # each character above U+007E met so far, on a grid.
+        self._wide_answer: tuple[_Index, object, int] | None = None
+        self._cells_known: tuple[object, dict[str, int]] = (None, {})
 
     # ------------------------------------------------------------------
     # The grid
@@ -2000,27 +2082,101 @@ class TypesetDiffView(DiffRows):
     def _bar_height(self) -> int:
         return max(6, self._row_px // 2)
 
+    def _code_columns(self) -> int:
+        """
+        The widest code line in cells **as the library sets it**: `DiffView`'s
+        count (one cell a character) where every line is ASCII, and otherwise
+        at least the cells each line holding a character above U+007E is drawn
+        in (`_character_cells`, asked once per character and grid). A line
+        with a combining mark is still counted at least a cell a character, so
+        the room past its end can be longer than it needs, never shorter.
+        """
+        index = self._indexed()
+        if not index.wide and not index.raw_wide:
+            return index.columns
+        # Every cache here is keyed by the grid's tuple, which is made again
+        # for a new size or density and after `typesetter.unload()`.
+        gridded = self._gridded()
+        _, grid, base = gridded
+        answer = self._wide_answer
+        if answer is not None and answer[0] is index and answer[1] is gridded:
+            return answer[2]
+        if self._cells_known[0] is not gridded:
+            self._cells_known = (gridded, {})
+        known = self._cells_known[1]
+        todo: list[tuple[_HunkInfo | None, int, list[tuple[str, int]]]] = []
+        for hunk in index.wide:
+            start, best = 0, 0
+            if hunk.measured is not None and hunk.measured[0] is gridded:
+                start, best = hunk.measured[1], hunk.measured[2]
+            todo.append((hunk, best, [(_shown(t)[0], extra) for _, t, extra in hunk.wide[start:]]))
+        todo.append((None, 0, [(_shown(line)[0], 0) for line in index.raw_wide]))
+        missing = list(
+            dict.fromkeys(
+                c
+                for _, _, lines in todo
+                for shown, _ in lines
+                for c in shown
+                if not (" " <= c <= "~" or c == "\t") and c not in known
+            )
+        )
+        if missing:
+            try:
+                known.update(_character_cells(typesetter.module(), base, grid, missing))
+            except Exception as exc:  # noqa: BLE001 -- see `_failed`
+                self._failed(exc)
+        columns = index.columns
+        for measured, best, lines in todo:
+            for shown, extra in lines:
+                best = max(best, _cells(shown, known) + extra)
+            if measured is not None:
+                measured.measured = (gridded, len(measured.wide), best)
+            columns = max(columns, best)
+        self._wide_answer = (index, gridded, columns)
+        return columns
+
     def _overflow(self, panes: tuple[_Pane, ...], cell: float) -> int:
         """How far the code can scroll horizontally at these panes, in whole pixels."""
-        needed = (self._indexed().columns + 1) * cell
+        needed = (self._code_columns() + 1) * cell
         return max(0, math.ceil(needed - self._code_width(panes) - 1e-3))
 
     @property
     def content_width(self) -> float:
-        """The width at which no line would need to scroll, in the current layout."""
+        """
+        The width at which no line would need to scroll, in the current layout:
+        the first whole pixel, from the cells added up, at which the panes
+        `draw` makes leave the code column room for the widest line. Where
+        the cell is a whole pixel it is the cells added up; where it is not
+        (a cell of 8.5 units at a display density of 2) the panes are rounded
+        to whole units and a pane side by side is a whole number of cells, and
+        the cells added up were up to 10 px short of that, which put a
+        scrollbar under a view sized to it.
+        """
         index = self._indexed()
         cell = self.grid.cell
-        code = (index.columns + 1) * cell
+        code = (self._code_columns() + 1) * cell
         old, new = index.digits
         if self._layout is DiffLayout.UNIFIED:
-            return float((old + new + 5) * cell + code)
-        return float((old + 4) * cell + (new + 4) * cell + 2 * code + cell)
+            width = (old + new + 5) * cell + code
+        else:
+            width = (old + 4) * cell + (new + 4) * cell + 2 * code + cell
+        width = float(math.ceil(width - 1e-3))
+        # The rounding of the panes is `_panes`'s: ask it, rather than say it twice.
+        for _ in range(int(4 * cell) + 8):
+            if self._overflow(self._panes(width, cell), cell) == 0:
+                break
+            width += 1.0
+        return width
 
     def height_for(self, width_px: float) -> float:
         """
         The height `draw` will claim at this width: every row, the horizontal
         scrollbar if a line is too long for it, and no more than `height_cap`.
+        A width that is not a number is a `TypeError`, one that is not finite a
+        `ValueError` (a negative one is taken as the narrowest view, as `draw`
+        takes it).
         """
+        _width_given(width_px, "height_for")
         cell = self.grid.cell
         full = self.content_height
         if full and self._overflow(self._panes(max(width_px, cell * 8), cell), cell) > 0:
@@ -2447,9 +2603,15 @@ class TypesetDiffView(DiffRows):
         child window, with `height_cap`). `fonts` is ignored. False when
         something in view could not be set as asked. Raises
         `TypesetUnavailable` when the library cannot draw (module docstring).
+        `width_px` that is not a number is a `TypeError` and one that is not
+        finite a `ValueError`, before anything is drawn; a negative one (what
+        `get_content_region_avail` can answer) is the narrowest view.
         """
         from imgui_bundle import imgui
 
+        # A host's mistake before anything is asked or submitted.
+        if width_px is not None:
+            _width_given(width_px, "draw")
         if palette is not None:
             self._palette = palette
         _, grid, base = self._gridded()
@@ -2899,6 +3061,16 @@ class TypesetDiffView(DiffRows):
             imgui.get_color_u32(grab),
             float(bar) / 2,
         )
+
+
+def _width_given(width_px: object, where: str) -> None:
+    """`width_px` as a host gave `draw` or `height_for`: a finite number, said if not."""
+    if isinstance(width_px, bool) or not isinstance(width_px, int | float):
+        raise TypeError(
+            f"{where}(width_px=...) takes a number of pixels, not {type(width_px).__name__}"
+        )
+    if not math.isfinite(width_px):
+        raise ValueError(f"{where}(width_px=...) takes a finite width, not {width_px!r}")
 
 
 def _snap(value: float) -> float:

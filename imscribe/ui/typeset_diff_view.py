@@ -331,6 +331,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from imscribe import typesetter
+from imscribe.description import unencodable
 from imscribe.diff import (
     Diff,
     DiffRow,
@@ -806,6 +807,7 @@ class DiffRows:
         self._row_px = max(1, int(row))
         self._source = diff
         self._diff = diff
+        self._replaced_of: tuple[Diff, int] | None = None
         self._layout = _layout(layout)
         self._index: _Index | None = None
         self._infos: dict[tuple[int, int], _HunkInfo] = {}
@@ -832,6 +834,35 @@ class DiffRows:
     def diff(self) -> Diff:
         """The diff being shown: the host's, with whatever context was expanded here."""
         return self._diff
+
+    @property
+    def replaced_characters(self) -> int:
+        """
+        How many characters of `diff` are shown as U+FFFD because UTF-8 cannot hold them.
+
+        Each surrogate code point (`json.loads('"\\udc80"')`, bytes read with
+        `errors="surrogateescape"`) in what the view draws from the diff:
+        each file's label and `will_not_apply`, each hunk's section, each
+        row and each line of `raw`. A control or invisible character, which
+        is shown with the same placeholder, is not counted: `Diff` says so
+        itself (`control_characters`, `invisible_characters`). Read from the
+        whole diff, not the rows in view, and kept while the diff is the
+        same object (P41; `TypesetView.replaced_characters` is the same for
+        the text views).
+        """
+        diff = self._diff
+        kept = self._replaced_of
+        if kept is not None and kept[0] is diff:
+            return kept[1]
+        count = 0
+        for file in diff.files:
+            count += unencodable(file.label) + unencodable(file.will_not_apply)
+            count += sum(unencodable(line) for line in file.raw)
+            for hunk in file.hunks:
+                count += unencodable(hunk.section)
+                count += sum(unencodable(row.text) for row in hunk.rows)
+        self._replaced_of = (diff, count)
+        return count
 
     def set_diff(self, diff: Diff) -> None:
         """Show `diff`. Nothing happens if it is the object last given."""

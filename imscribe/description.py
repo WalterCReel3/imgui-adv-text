@@ -114,6 +114,8 @@ __all__ = [
     "face_role",
     "settled",
     "table_text",
+    "unencodable",
+    "unencodable_count",
     "with_tags",
 ]
 
@@ -401,6 +403,31 @@ def encodable(text: str) -> str:
     if text.isascii() or _SURROGATE.search(text) is None:
         return text
     return _SURROGATE.sub(REPLACEMENT, text)
+
+
+def unencodable(text: str) -> int:
+    """How many characters of `text` `encodable` replaces: its surrogate code points."""
+    if text.isascii():
+        return 0
+    return len(_SURROGATE.findall(text))
+
+
+def unencodable_count(block: BlockDescription) -> int:
+    """
+    How many characters `settled` sets as `REPLACEMENT` in `block`.
+
+    Its `marker`, and its `text` or, for a table, its cells' texts (a
+    table's `text` is its cells again, `table_text`, and a character is
+    counted once); a U+FFFD the host wrote is not counted. Call it on the
+    block BEFORE `settled`: after, it is 0.
+    """
+    count = unencodable(block.marker)
+    if not block.rows:
+        return count + unencodable(block.text)
+    for row in block.rows:
+        for cell in row:
+            count += unencodable(cell.text)
+    return count
 
 
 def _settled_runs(runs: Any) -> Any:

@@ -212,7 +212,8 @@ which run a white-space character is in.
   a `str`, a host's blocks, a `Description`, a stream, a hosted widget's
   text. Undecodable bytes arrive so (`errors="surrogateescape"`). `texts`
   and a copy have U+FFFD; the host's own blocks and `source` are not
-  touched.
+  touched. `replaced_characters` says how many there are, for a host that
+  wants to tell its reader (P41).
 
 There is no other renderer to draw with instead (the old views are deleted);
 **this class never silently draws nothing.** `draw()` opens no window, pushes
@@ -622,6 +623,7 @@ from imscribe.description import (
     check_description,
     check_runs,
     settled,
+    unencodable_count,
 )
 from imscribe.markdown_rules import BlockSource
 from imscribe.primitives import px_from_sp
@@ -1040,6 +1042,8 @@ class TypesetView:
         self._blocks: tuple[object, ...] = ()
         self._converter: MarkdownConverter = self._new_converter()
         self._described: list[BlockDescription] = []
+        # `_replaced[n]`: characters of block n set as U+FFFD (`replaced_characters`).
+        self._replaced: list[int] = []
         self._texts: list[str] = []
         self._links: list[LinkRow] = []
         self._tables: list[int] = []
@@ -1313,6 +1317,7 @@ class TypesetView:
         self._converter = self._new_converter()
         self._blocks = ()
         self._described, self._texts, self._links, self._tables = [], [], [], []
+        self._replaced = []
         self._converted, self._styles, self._style_index = [], [], {}
         self._described_columns = {}
         # A new converter numbers styles from zero, so the library's document
@@ -1486,14 +1491,20 @@ class TypesetView:
         code point, which is how undecodable bytes arrive), one for one, in
         what goes to the library AND in `texts`, so the two never differ.
         The host's own blocks and `source` are not touched. Every way in
-        comes through here, a hosted widget's text included.
+        comes through here, a hosted widget's text included, so this is also
+        where `replaced_characters` is counted: every block from `first` on
+        was described afresh, and none of it was settled yet.
         """
+        replaced: list[int] = []
         for at in range(first, len(self._described)):
             was = self._described[at]
             now = settled(was)
+            replaced.append(0)
             if now is not was:
+                replaced[-1] = unencodable_count(was)
                 self._described[at] = now
                 self._texts[at] = now.text
+        self._replaced[first:] = replaced
 
     def _abandon(self, exc: Exception) -> NoReturn:
         """
@@ -2743,6 +2754,22 @@ class TypesetView:
         """
         hit = self._hit
         return int(hit.position.block) if hit is not None and hit.in_block else None
+
+    @property
+    def replaced_characters(self) -> int:
+        """
+        How many characters on show are set as U+FFFD because UTF-8 cannot hold them.
+
+        Each surrogate code point a host's text held (what
+        `errors="surrogateescape"` and `json.loads('"\\udc80"')` make), in
+        every block's text, marker and table cells, a hosted widget's text
+        included: one for each U+FFFD the view put in `texts`. 0 when there
+        were none; a U+FFFD the host wrote itself is not counted. It follows
+        the document: a new one, or an edit, counts again. A character the
+        fonts have no glyph for is the library's to draw and not counted
+        here (`stats.whole` says that). No call into the library (P41).
+        """
+        return sum(self._replaced)
 
     @property
     def stats(self) -> ViewStats:

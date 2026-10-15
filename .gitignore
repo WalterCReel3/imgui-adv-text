@@ -32,10 +32,8 @@ artifacts/
 # Fetch: https://ctan.org/pkg/tex  (or `tex.web` from any TeX Live source tree)
 docs/tex.web
 
-# The agent sandbox bind-mounts the user's shell, editor and harness config into
-# the working directory as character devices. They are not project files and git
-# cannot store them at all -- `git add` refuses a device node -- so ignoring them
-# is what keeps `git status` readable and `git add -A` usable.
+# Personal shell, editor and tool configuration that some development setups
+# place in the working directory. Not project files.
 /.claude/
 /.bash_profile
 /.bashrc
@@ -49,9 +47,5 @@ docs/tex.web
 /.zprofile
 /.zshrc
 
-# Agent-to-agent concerns, written as files because `post_concern` truncated at
-# ~671 characters and `read_inbox` returned empty for at least two builders --
-# corrections arrived as stubs or not at all. Coordination transport, not
-# project content: conclusions belong in docs/, so this is scratch and is not
-# committed. `.concerns/README.md` is the protocol.
+# Working notes. Conclusions belong in docs/.
 /.concerns/

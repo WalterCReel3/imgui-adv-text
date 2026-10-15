@@ -62,6 +62,7 @@ asked. The debug overlay is the library's own (line boxes).
 from __future__ import annotations
 
 import string
+import sys
 from typing import Any, Final, NamedTuple
 
 from imscribe import typesetter
@@ -71,6 +72,12 @@ from imscribe.ui.ownership import MIN_WIDTH_PX
 from imscribe.ui.pages import PageContext, PageSpec, caption, debug_toggle, demo_text
 from imscribe.ui.palette import Palette
 from imscribe.ui.typeset_view import TypesetUnavailable, TypesetView
+
+COPY_KEY: Final = "Cmd+C" if sys.platform == "darwin" else "Ctrl+C"
+"""The copy key this page's text names; ImGui reads Cmd as Ctrl on macOS."""
+HELP: Final = (
+    f"drag to select  ·  double click a word  ·  triple click a line  ·  {COPY_KEY} copies"
+)
 
 __all__ = [
     "FALLBACK",
@@ -253,7 +260,7 @@ class DocumentPage:
             return
         debug_toggle(self.context)
         imgui.same_line()
-        caption("drag to select  ·  double click a word  ·  triple click a line  ·  ctrl+C copies")
+        caption(HELP)
         imgui.separator()
         try:
             if imgui.begin_child("##imscribe-scroll"):

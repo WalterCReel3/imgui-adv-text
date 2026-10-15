@@ -968,7 +968,10 @@ class TypesetView:
 
         `theme` is the one a markdown string is read with, and the one blocks
         given ready-made were built with (it is what their sizes are read
-        against). `math`, `references` and `reader` are used only to read a
+        against). `None` is `Theme.build()`: a 16 px em in Dear ImGui's units,
+        which does not follow `style.font_scale_main` or `font_scale_dpi`
+        (`imscribe.theme`, "Which size a theme expects", says how a host
+        sizes a theme to its own labels). `math`, `references` and `reader` are used only to read a
         markdown string: anything true for `math` turns `$...$` and `$$` on (a
         `MathBuilder` is accepted for that and is not called), `references`
         is `parse_markdown`'s, and `reader` is an

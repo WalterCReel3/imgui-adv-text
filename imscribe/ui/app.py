@@ -89,6 +89,9 @@ from imscribe.ui.pages import (
 )
 from imscribe.ui.palette import rgba
 
+COPY_KEY: Final = "Cmd+C" if sys.platform == "darwin" else "Ctrl+C"
+"""The copy key the demo's text names; ImGui reads Cmd as Ctrl on macOS."""
+
 if TYPE_CHECKING:  # pragma: no cover - imported for types only
     from imgui_bundle import imgui
 
@@ -204,7 +207,7 @@ def __getattr__(name: str) -> object:
 # Used when neither a source nor `demo/sample.md` is available. Short on purpose:
 # `demo/` is not shipped inside the wheel, so this is what an installed copy of
 # the package shows, and it should say what the project is rather than be long.
-DEFAULT_MARKDOWN = """\
+DEFAULT_MARKDOWN = f"""\
 # imscribe
 
 Markdown, streams and diffs as selectable text in a Dear ImGui pane. The text is
@@ -219,7 +222,7 @@ text is selectable and ImGui's own is not.
 
 - Drag to select, and drag backwards too.
 - Double click for a word, triple click for a line.
-- Ctrl+C copies the selection.
+- {COPY_KEY} copies the selection.
 
 > Selection is the point. It is a gap in ImGui only because the widget owns the
 > layout.

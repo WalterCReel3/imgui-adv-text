@@ -149,6 +149,7 @@ network -- the cases are canned.
 from __future__ import annotations
 
 import difflib
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -164,6 +165,9 @@ from imscribe.ui.pages.typeset import not_drawing, say_why_not, why_not
 from imscribe.ui.palette import DARK_PALETTE, DEFAULT_PALETTE, Palette
 from imscribe.ui.typeset_diff_view import DiffLayout, SyntaxColour, TypesetDiffView
 from imscribe.ui.typeset_view import TypesetUnavailable
+
+COPY_KEY: Final = "Cmd+C" if sys.platform == "darwin" else "Ctrl+C"
+"""The copy key this page's text names; ImGui reads Cmd as Ctrl on macOS."""
 
 __all__ = [
     "BOTH_MIN_PX",
@@ -1148,7 +1152,7 @@ class DiffPage:
     def copied_line(self) -> str:
         if self.copied is None:
             return (
-                "clipboard: nothing copied yet. Select in a view and press Ctrl+C; "
+                f"clipboard: nothing copied yet. Select in a view and press {COPY_KEY}; "
                 "markers and line numbers are drawn and never copied."
             )
         lines = self.copied.split("\n")

@@ -76,6 +76,7 @@ taken as before and `NO_LIBRARY` says what it is.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import struct
 import sys
@@ -102,6 +103,18 @@ No DISPLAY is set, so there is nowhere to open a window.
 set. It is not a way to get a window without one: GLFW aborts in about half a
 second with IM_ASSERT( glfwInitSuccess ).
 """
+
+NO_NUMPY = 'scripts/shot.py needs numpy, which is in imscribe\'s dev extra: pip install -e ".[dev]"'
+
+
+def needs_display() -> bool:
+    """
+    Whether this platform opens its windows through an X server named by `DISPLAY`.
+
+    Not on macOS: GLFW opens a window through Cocoa there and nothing sets
+    `DISPLAY`, so the guard refused every Mac until `--force` (2026-10-14).
+    """
+    return sys.platform != "darwin"
 
 
 NOT_INSTALLED = "not-installed"
@@ -340,9 +353,7 @@ def _grab(out: Path) -> tuple[int, int]:
         if "numpy" not in str(error):
             raise
         raise SystemExit(
-            "the screenshot needs numpy, which is not installed in this "
-            f"interpreter ({sys.executable}).\n"
-            "  pip install numpy      # or: make bootstrap, which installs .[dev]\n"
+            f"{NO_NUMPY}\n"
             f"nanobind reported it as a TypeError rather than an ImportError: {error}"
         ) from error
 
@@ -439,9 +450,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--frames must be at least 1")
     if args.list:
         return list_shots()
-    if not os.environ.get("DISPLAY") and not args.force:
+    if needs_display() and not os.environ.get("DISPLAY") and not args.force:
         print(NO_DISPLAY, file=sys.stderr)
         return 2
+    # Before the window opens: without numpy the run would be thrown away at
+    # the grab, after every frame of it.
+    if importlib.util.find_spec("numpy") is None:
+        print(NO_NUMPY, file=sys.stderr)
+        return 1
 
     from imgui_bundle import hello_imgui, immapp
 

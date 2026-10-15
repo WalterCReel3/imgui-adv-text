@@ -20,6 +20,7 @@ a display is a real machine and not a historical one. An ImGui window does not
 fail cleanly there -- it can hang until killed, `timeout` then reports 143, and
 143 tells a reader nothing. So this refuses without a `DISPLAY` and says what to
 do instead, and `--force` is there for the person who knows better than it does.
+On macOS there is no guard (`needs_display`): nothing sets `DISPLAY` there.
 
 Seeing the UI without sitting in front of a window:
 
@@ -148,6 +149,16 @@ runner that sets things up later -- is not refused by this script's guess.
 """
 
 
+def needs_display() -> bool:
+    """
+    Whether this platform opens its windows through an X server named by `DISPLAY`.
+
+    Not on macOS: GLFW opens a window through Cocoa there and nothing sets
+    `DISPLAY`, so the guard refused every Mac until `--force` (2026-10-14).
+    """
+    return sys.platform != "darwin"
+
+
 def main(argv: list[str] | None = None) -> int:
     """
     Parse the arguments, refuse to hang, and otherwise open the window.
@@ -214,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     # than a hang should not pay a package import to say "there is no display".
     # The cost is that a bad `--tab` behind an unset DISPLAY reports the display
     # first; the display is the larger fact of the two.
-    if not os.environ.get("DISPLAY") and not args.force:
+    if needs_display() and not os.environ.get("DISPLAY") and not args.force:
         print(BLOCKED, file=sys.stderr)
         return 2
 

@@ -43,6 +43,7 @@ import importlib.util
 import os
 import socket
 import struct
+import sys
 import zlib
 from pathlib import Path
 from types import ModuleType
@@ -355,6 +356,32 @@ def test_the_display_probe_says_yes_to_a_listener_and_no_to_everything_else() ->
     assert display_is_reachable("127.0.0.1:nonsense") is False
     assert display_is_reachable("") is False
     assert display_is_reachable(":59999") is False
+
+
+def test_the_display_guard_stands_down_on_macos_and_numpy_is_asked_for_before_a_window(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """
+    macOS never sets `DISPLAY` (the owner had to pass `--force`, 2026-10-14),
+    and a shot without numpy failed only at the grab, after the window.
+
+    numpy is hidden (`None` in `sys.modules`) and so is `imscribe.ui.app`, so a
+    numpy check placed after the app's import raises here instead of saying
+    its sentence. On Linux with no `DISPLAY` the guard still answers first.
+    """
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setitem(sys.modules, "numpy", None)
+    monkeypatch.setitem(sys.modules, "imscribe.ui.app", None)
+    out = ["--out", "unused.png"]
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert shot.main(out) == 2
+    assert "No DISPLAY is set" in capsys.readouterr().err
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert shot.main(out) == 1
+    said = capsys.readouterr().err
+    assert said.strip() == shot.NO_NUMPY and 'pip install -e ".[dev]"' in said
 
 
 def _numpy_is_installed() -> bool:

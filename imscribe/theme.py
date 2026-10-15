@@ -144,6 +144,42 @@ that default and should not have to construct ten `BlockStyle`s to say so.
 So the all-mono ragged theme at a host's size is one call:
 `Theme.at_pixel_height(16.0, faces=Faces.mono(), align=Align.LEFT)`.
 
+## Which size a theme expects, under Dear ImGui's scales
+
+**Every length in a theme is in Dear ImGui's units**, the coordinates a
+window and a cursor are in, and a view sets its text at exactly those
+sizes. Two scales act on Dear ImGui's own text, and only one of them on a
+theme's:
+
+- **`io.display_framebuffer_scale`** (a Retina display: 2) is the library's
+  business. A unit is that many framebuffer pixels; imtypeset rasterises and
+  places at the framebuffer's size, as Dear ImGui does. Nothing to do.
+- **`style.font_scale_main` and `style.font_scale_dpi`** (hello_imgui sets
+  the second from the monitor on Windows and Linux: 1.25 at 125 %; it is 1
+  on macOS) make Dear ImGui's own text larger IN UNITS. **A theme does not
+  follow them**: the library leaves that scaling to the host
+  (`imtypeset.h`, "DISPLAY DENSITY"), and so does this package. A theme
+  built once at 16 stays 16 whatever they are.
+
+So a host whose typeset text should stand as tall as its own labels gives
+`at_pixel_height` the size Dear ImGui DRAWS its text at, not the base size,
+and builds the theme again when that changes:
+
+- inside a frame (after `imgui.new_frame()`), `imgui.get_font_size()`;
+- between frames, where `get_font_size()` answers the base size alone,
+  `style.font_size_base * style.font_scale_main * style.font_scale_dpi`,
+  rounded as Dear ImGui rounds it (in single precision, to the nearest whole
+  unit, half up: `GetRoundedFontSize`);
+- **before Dear ImGui's first frame `get_font_size()` answers 0**, which no
+  theme can be built at: `build` and `at_pixel_height` refuse a size that is
+  not a positive number with a `ValueError` here, rather than a view failing
+  on it later.
+
+Measured headless on Dear ImGui 1.92.9 with the base at 16 (R2-SCALE): the
+drawn size is 18, 20 and 24 at a dpi scale of 1.1, 1.25 and 1.5, and 16
+between frames at each; a view on `Theme.build()` sets its prose at a
+pixel height of 18.75 at all four.
+
 What that call does **not** do is make ragged text cheap to break.
 `imscribe.linebreak`'s total-fit breaker was measured at 80 to 300 times its
 justified cost on ragged material (`scripts/bench_reflow.py --ragged`); how a
@@ -603,6 +639,25 @@ def _px(pixels: float, px_per_inch: float) -> Scaled:
 _PROBE_SIZE: Scaled = sp_from_px(1024.0)
 
 
+def _positive(size: float, name: str) -> float:
+    """
+    `size` if it is a finite number above zero; a `ValueError` naming `name` if not.
+
+    A theme at 0 was accepted and failed later, inside the view that read
+    it, as a `ZeroDivisionError` (`TypesetView(source,
+    theme=Theme.at_pixel_height(imgui.get_font_size()))` before Dear ImGui's
+    first frame; measured 2026-10-14, R2-SCALE).
+    """
+    try:
+        value = float(size)
+    except (TypeError, ValueError):
+        value = math.nan
+    if math.isfinite(value) and value > 0:
+        return size
+    hint = " (Dear ImGui's get_font_size() is 0 before its first frame)" if value == 0 else ""
+    raise ValueError(f"{name} is {size!r}: a theme's size is a positive number of pixels{hint}")
+
+
 def _widest_marker_em(metrics: FontMetrics) -> float:
     """
     The widest two-digit list marker in a face, in ems, rounded up to a tenth.
@@ -761,9 +816,16 @@ class Theme:
         about 1.8 em in the common monospace faces whose advance is 0.6 em. This
         function opens no font and so cannot measure; `at_pixel_height` does,
         and a caller of `build` with its own `faces` passes the number.
+
+        `base_px` is in Dear ImGui's units and is not multiplied by its font
+        scales (the module docstring, "Which size a theme expects"). A size
+        that is not a positive number, or one too small to be a scaled point,
+        is a `ValueError`.
         """
         r = TYPE_SCALE_RATIO
-        body = _px(base_px, px_per_inch)
+        body = _px(_positive(base_px, "base_px"), px_per_inch)
+        if body <= 0:
+            raise ValueError(f"base_px is {base_px!r}: too small to set text at")
         h3 = _px(base_px * r, px_per_inch)
         h2 = _px(base_px * r * r, px_per_inch)
         h1 = _px(base_px * r * r * r, px_per_inch)
@@ -902,7 +964,15 @@ class Theme:
         asked for `faces.regular` once, at a probe size; only ratios are
         read: the ascent, the descent, the em, and the advances of the ten
         digits and the period.
+
+        `height_px` is the size Dear ImGui DRAWS its text at, in its units:
+        `imgui.get_font_size()` inside a frame, which includes
+        `style.font_scale_main` and `style.font_scale_dpi` (the module
+        docstring, "Which size a theme expects"). A height that is not a
+        positive number is a `ValueError`, before any face is measured:
+        `get_font_size()` answers 0 before Dear ImGui's first frame.
         """
+        _positive(height_px, "height_px")
         if metrics is None:
             # Read from there at the call, so that a caller who replaces the
             # name (or `imscribe.style.fontlib_metrics`, which it falls back

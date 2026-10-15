@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -106,6 +107,7 @@ def test_the_guard_refuses_without_a_display_and_stands_down_for_a_display_or_fo
     Only the third row separates it from the real thing, and the same goes for a
     guard that refused unconditionally: it would pass the first row alone.
     """
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("DISPLAY", raising=False)
     assert run_demo.main([]) == 2, "no display and no --force must refuse"
     assert not stub_run, "the window was opened anyway"
@@ -136,11 +138,31 @@ def test_the_guard_answers_before_imscribe_is_imported(
     therefore raises here, and one that answers first returns 2. The ablation is
     exact and takes no wall clock.
     """
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.setitem(__import__("sys").modules, "imscribe.ui.app", None)
 
     assert run_demo.main([]) == 2
     assert "No DISPLAY is set" in capsys.readouterr().err
+
+
+def test_macos_opens_the_window_with_no_display_and_no_force(
+    monkeypatch: pytest.MonkeyPatch,
+    stub_run: list[tuple[str | None, str | None]],
+) -> None:
+    """
+    macOS never sets `DISPLAY`; the owner had to pass `--force` (2026-10-14).
+
+    The Linux row is asked too, so a guard deleted outright fails here.
+    """
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert run_demo.main([]) == 0
+    assert len(stub_run) == 1, "the window was not opened on macOS"
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert run_demo.main([]) == 2
+    assert len(stub_run) == 1
 
 
 def test_no_window_names_the_display_it_was_given(
@@ -557,3 +579,24 @@ def test_a_library_that_was_asked_for_and_was_not_drawing_is_said_at_exit(
     assert run_demo.main(["--tab", "document"]) == 0
     assert capsys.readouterr().err == "", "a library that drew is not remarked on"
     assert len(stub_run) == 4
+
+
+def test_the_demo_names_the_copy_key_of_the_platform_it_runs_on() -> None:
+    """
+    Cmd+C on macOS, Ctrl+C elsewhere, in the text the demo shows (2026-10-14).
+
+    The owner read "press Ctrl+C" on a Mac, where Cmd+C is what copies. Every
+    string the demo shows that names the key is asked; macOS's half is asked
+    on macOS (`macos.yml`), since the key is chosen at import.
+    """
+    from types import SimpleNamespace
+
+    app = pytest.importorskip("imscribe.ui.app")
+    document = pytest.importorskip("imscribe.ui.pages.document")
+    diff = pytest.importorskip("imscribe.ui.pages.diff")
+
+    key, other = ("Cmd+C", "Ctrl+C") if sys.platform == "darwin" else ("Ctrl+C", "Cmd+C")
+    assert app.COPY_KEY == document.COPY_KEY == diff.COPY_KEY == key
+    unsaid = diff.DiffPage.copied_line(SimpleNamespace(copied=None))
+    for shown in (app.DEFAULT_MARKDOWN, document.HELP, unsaid):
+        assert key in shown and other.lower() not in shown.lower(), shown

@@ -555,7 +555,10 @@ def test_asking_the_package_for_a_submodule_does_not_import_composition() -> Non
         "import imscribe.ui\n"
         "before = set(sys.modules)\n"
         f"print([name for name in {names!r} if hasattr(imscribe.ui, name)])\n"
-        "print(sorted(set(sys.modules) - before))\n"
+        # Only imscribe's modules are counted: on CPython 3.14 the failed lookups
+        # import a private standard-library module (CI run 38730197107 showed one
+        # whose name begins "_co"), which says nothing about imscribe.
+        "print(sorted(m for m in set(sys.modules) - before if m.split('.')[0] == 'imscribe'))\n"
         # ... and a name that is no submodule is still composition's to answer.
         "print(hasattr(imscribe.ui, 'compose'), 'imscribe.ui.composition' in sys.modules)\n"
         # With composition loaded the answer for a submodule is the same.

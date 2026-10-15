@@ -325,8 +325,8 @@ def test_without_the_library_the_page_is_one_line_saying_why(
     made = app.page("tables")
     assert isinstance(made, page.TablesPage)
     assert made.board is None and made.renderer == "none" and made.whole is None
-    assert made.reason == "IMTYPESET_LIBRARY is not set" and made.frames == 3
-    assert made.report() == ["frames=3 renderer=none reason='IMTYPESET_LIBRARY is not set'"]
+    assert made.reason == typesetter.SWITCHED_OFF_REASON and made.frames == 3
+    assert made.report() == [f"frames=3 renderer=none reason={typesetter.SWITCHED_OFF_REASON!r}"]
 
     # The page's own frame: exactly the vertices of its sentence.
     sentence = f"{typeset_page.NOT_DRAWING}: {made.reason}"
@@ -395,7 +395,7 @@ def test_without_the_library_importing_and_drawing_the_page_load_no_old_view(
     )
     assert done.returncode == 0, done.stderr
     got = json.loads(done.stdout.strip().splitlines()[-1])
-    assert got["report"] == ["frames=3 renderer=none reason='IMTYPESET_LIBRARY is not set'"]
+    assert got["report"] == [f"frames=3 renderer=none reason={typesetter.SWITCHED_OFF_REASON!r}"]
     assert got["imtypeset"] is False and got["added"] == []
     assert set(got["at_import"]) & closure.OLD_CORE == set()
     assert set(got["loaded"]) & closure.REFERENCE_CORE == set()
@@ -1352,7 +1352,9 @@ def test_in_a_real_window_without_the_library_the_page_says_why_not_and_stays_al
         "imported": "0",
     }
     assert total["renderer"] == "none" and total["frames"] == "12"
-    assert total["reason"].startswith("'IMTYPESET_LIBRARY")
+    # The reason as the readout quotes it, cut at its first blank; until
+    # 2026-10-14 it began 'IMTYPESET_LIBRARY (P43).
+    assert total["reason"] == repr(typesetter.SWITCHED_OFF_REASON).split()[0]
 
 
 def test_a_column_is_dragged_in_a_real_window_with_the_library(

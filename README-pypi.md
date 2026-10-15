@@ -14,10 +14,10 @@ Python layer over it: it reads the markdown, describes it to the library, and
 is the views. There is no other renderer in it: where imtypeset is not
 installed a view draws nothing and says why.
 
-**This is a beta** (`0.2.0b1`), installed only when asked for:
+This is `0.2.0`, the first full release (`0.2.0b1` was the beta before it):
 
 ```
-pip install --pre imscribe
+pip install imscribe
 ```
 
 ## Two pins, held together
@@ -26,7 +26,7 @@ imscribe requires both of these exactly, and they move together:
 
 ```
 imgui-bundle==1.92.900
-imtypeset==0.4.1.192900
+imtypeset==0.4.3.192900
 ```
 
 An imtypeset wheel is built for one `imgui-bundle` version and its fourth
@@ -83,10 +83,14 @@ params.callbacks.before_exit = typesetter.unload  # before Dear ImGui's context 
 immapp.run(params)
 ```
 
-Where no imtypeset was found, the `assert` stops with `IMTYPESET_LIBRARY is
-not set`. That is the sentence for "there is no imtypeset here": on a platform
-outside the table above there is nothing to set, and the variable is only how
-a developer names a library built from source.
+Where no imtypeset was found, the `assert` stops with the sentence for "there
+is no imtypeset here": imtypeset is not installed: pip installs it with
+imscribe where imtypeset has a wheel (CPython 3.11 to 3.14 on Linux x86-64 and
+on macOS 14 or later on arm64), and IMTYPESET_LIBRARY names no library. On a
+platform outside the table above there is nothing to do about it; the variable
+is only how a developer names a library built from source. With
+`IMSCRIBE_NO_TYPESET` set, an installed imtypeset is not looked for and the
+sentence says so instead.
 
 `TypesetStreamView` takes text as it arrives (`append`), and `TypesetDiffView`
 two texts or a unified diff. `python -m imscribe.typesetter` prints, with no
@@ -97,9 +101,12 @@ window, which imtypeset was found and whether it was accepted.
 - **Nobody but its author has looked at what it draws.** The tests measure
   where text is placed and that frames are drawn; none of them judges how it
   looks.
-- **macOS has not been run.** imtypeset's wheels pass their own installed
-  checks on GitHub's macOS arm64 runners (three of that project's 55 tests
-  fail there, by its own notes); imscribe itself has never run on a Mac.
+- **macOS has been run once, by hand.** The owner ran the `0.2.0b1` demo and
+  test suite on one Apple Silicon Mac (macOS 26.7, CPython 3.11); the 25 tests
+  that failed there read `/proc/loadavg`, which a Mac does not have, and are
+  fixed. Nothing has been run on a Mac since, and no CI runs there.
+  imtypeset's wheels pass their own installed checks on GitHub's macOS arm64
+  runners (three of that project's 55 tests fail there, by its own notes).
 - Everything was measured on Linux x86-64, CPython 3.11, with a software
   renderer and a display scale of 1.
 

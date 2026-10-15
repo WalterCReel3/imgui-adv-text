@@ -733,7 +733,9 @@ def test_loading_the_fonts_loads_the_table_of_files_and_no_reference_core() -> N
         [sys.executable, "-c", script], capture_output=True, text=True, cwd=REPO, env=without
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.split("\n") == ["False False IMTYPESET_LIBRARY is not set", "", ""]
+    from imscribe import typesetter  # here: this file imports nothing of imscribe at its top
+
+    assert result.stdout.split("\n") == [f"False False {typesetter.SWITCHED_OFF_REASON}", "", ""]
     if not os.environ.get("IMTYPESET_LIBRARY"):
         pytest.skip("IMTYPESET_LIBRARY is not set: run `make test TYPESET=1`")
     lines = _fresh(script)

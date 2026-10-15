@@ -243,7 +243,7 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers; see the module docstr
     from imscribe.ui.typeset_stream_view import TypesetStreamView
     from imscribe.ui.typeset_view import Hosted, HostFor, SetLine, TypesetUnavailable, TypesetView
 
-__version__ = "0.2.0b1"
+__version__ = "0.2.0"
 """
 This imscribe's version, as a host reads it at run time.
 
@@ -268,8 +268,8 @@ What the number says (an agent's decision, 2026-10-12; `docs/decisions.md`):
 - `0.2.0b1` (2026-10-13) is the first version made for PyPI: a beta, which
   `pip` installs only when asked for (`--pre`, or the exact version). It is
   one commit, the one tagged `v0.2.0b1`.
-- `0.2.0` without a suffix is for the first full release, which is the
-  user's to make. From there until 1.0: the middle number changes when a
+- `0.2.0` (2026-10-14) is the first full release, on imtypeset 0.4.3, for
+  CPython 3.11 to 3.14. From there until 1.0: the middle number changes when a
   name in `__all__` is removed or changes what it means, or when the
   imgui-bundle pin or the imtypeset line (`0.4.*` today) changes; the last
   number changes for anything else.

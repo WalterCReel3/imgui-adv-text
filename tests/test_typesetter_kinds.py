@@ -164,7 +164,7 @@ def test_the_kinds_are_these_six_and_their_values_are_strings() -> None:
 
 def test_nothing_to_find_is_not_installed_and_the_sentence_is_the_old_one(gate: Gate) -> None:
     assert typesetter.kind() is Kind.NOT_INSTALLED
-    assert typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+    assert typesetter.reason() == typesetter.ABSENT_REASON
     assert typesetter.pairing()["kind"] == "not-installed"
     assert gate.imports == 0, "something was imported to find that out"
 
@@ -172,9 +172,46 @@ def test_nothing_to_find_is_not_installed_and_the_sentence_is_the_old_one(gate: 
 def test_a_library_that_is_named_and_does_not_load_is_refused(gate: Gate) -> None:
     gate.name_a_library()
     assert typesetter.kind() is Kind.REFUSED
-    assert typesetter.reason().startswith("ModuleNotFoundError: ")
+    # Until 2026-10-14 the sentence began "ModuleNotFoundError: " (P43: it
+    # did not say what had been named).
+    assert typesetter.reason().startswith(
+        "IMTYPESET_LIBRARY names /somewhere/libimtypeset_bundle.so, and no imtypeset package "
+        "could be imported to load it (IMTYPESET_PYTHON names the directory of one): "
+        "ModuleNotFoundError: "
+    )
     assert typesetter.pairing()["kind"] == "refused"
     assert typesetter.pairing()["route"] == typesetter.ROUTE_NONE
+
+
+def test_the_sentence_says_what_is_missing_in_each_case(gate: Gate) -> None:
+    """
+    pptmstr's P43. Until 2026-10-14 all three were "IMTYPESET_LIBRARY is not
+    set", which sent a reader whose wheel was absent, or who had switched the
+    library off, to a variable they never needed.
+    """
+    # Nothing installed, nothing named: the wheel, and where pip has one.
+    assert typesetter.kind() is Kind.NOT_INSTALLED
+    assert typesetter.reason() == typesetter.ABSENT_REASON
+    assert typesetter.reason().startswith("imtypeset is not installed: pip installs it ")
+    assert "CPython 3.11 to 3.14" in typesetter.reason()
+    # Switched off: the switch is named, and an installed one is not looked for.
+    gate.installed = "0.4.3.192900"
+    gate.monkeypatch.setenv(typesetter.DISABLE_VARIABLE, "1")
+    typesetter.reset()
+    assert typesetter.kind() is Kind.NOT_INSTALLED and gate.imports == 0
+    assert typesetter.reason() == typesetter.SWITCHED_OFF_REASON
+    assert typesetter.reason().startswith("IMSCRIBE_NO_TYPESET is set")
+    # A library named with no package to load it: the variable and its value.
+    gate.name_a_library("/nowhere/lib.so")
+    typesetter.reset()
+    assert typesetter.kind() is Kind.REFUSED
+    assert typesetter.reason().startswith("IMTYPESET_LIBRARY names /nowhere/lib.so, ")
+    # The host's own sentence still wins where nothing is found.
+    gate.monkeypatch.delenv(typesetter.LIBRARY_VARIABLE)
+    typesetter.unsupported("no library for this platform")
+    typesetter.reset()
+    assert typesetter.reason() == "no library for this platform"
+    typesetter.unsupported("")
 
 
 def test_an_installed_distribution_that_does_not_load_is_refused_and_named(gate: Gate) -> None:
@@ -233,7 +270,7 @@ def test_unsupported_is_the_hosts_to_say_and_only_when_nothing_is_found(gate: Ga
     # Taken back.
     typesetter.unsupported("")
     assert typesetter.kind() is Kind.NOT_INSTALLED
-    assert typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+    assert typesetter.reason() == typesetter.ABSENT_REASON
 
 
 def test_what_is_found_is_the_evidence_and_the_hosts_sentence_is_not_used(gate: Gate) -> None:
@@ -337,7 +374,7 @@ def test_reset_after_a_disable_asks_again_and_fonts_are_to_be_loaded_again(
     assert typesetter.module() is None and gate.imports == 1, "a disable is remembered"
 
     typesetter.reset()
-    assert typesetter.reason() == "IMTYPESET_LIBRARY is not set", "as before the first question"
+    assert typesetter.reason() == typesetter.ABSENT_REASON, "as before the first question"
     assert typesetter.module() is package and gate.imports == 2, "the next module() asked again"
     assert typesetter.kind() is Kind.READY and typesetter.reason() == ""
     assert not typesetter.ready(), "ready() is false until load_fonts() is called again"
@@ -395,7 +432,7 @@ def test_forget_is_still_the_state_at_import(gate: Gate) -> None:
     typesetter.note("something got over")
     typesetter._forget()
     assert typesetter._package is None and typesetter.trouble() == ""
-    assert typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+    assert typesetter.reason() == typesetter.ABSENT_REASON
     assert typesetter._why is Kind.NOT_INSTALLED
 
 
@@ -677,7 +714,7 @@ def test_the_command_line_prints_the_pairing_and_exits_by_its_kind(tmp_path: Pat
     assert nothing.stdout.count("\n") == 1, "one line, for whoever reads it with a program"
     said = json.loads(nothing.stdout)
     assert set(said) == pairing._KEYS
-    assert said["kind"] == "not-installed" and said["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert said["kind"] == "not-installed" and said["reason"] == typesetter.ABSENT_REASON
     assert nothing.stderr == "", "running the module by -m warned, or logged"
 
     site = pairing._a_distribution(tmp_path / "whole")
@@ -749,7 +786,9 @@ def test_a_verdict_names_the_library_for_the_child_and_an_empty_one_takes_it_out
     _asking(monkeypatch)
     refused = typesetter.verdict(tmp_path / "absent.so", tmp_path / "nowhere")
     assert refused["kind"] == "refused"
-    assert refused["reason"].startswith("ModuleNotFoundError: ")
+    # Until 2026-10-14 this began "ModuleNotFoundError: " (P43).
+    assert refused["reason"].startswith(f"IMTYPESET_LIBRARY names {tmp_path / 'absent.so'}, ")
+    assert "ModuleNotFoundError: " in refused["reason"]
     assert typesetter.verdict("", "")["kind"] == "not-installed"
 
 

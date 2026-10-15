@@ -69,6 +69,8 @@ from typing import Any
 import pytest
 from conftest import HIDE_INSTALLED
 
+from imscribe import typesetter
+
 _ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts" / "mouse_probe.py"
 _SAMPLE = _ROOT / "demo" / "sample.md"
@@ -378,7 +380,7 @@ def test_without_the_library_the_probe_plays_nothing_says_why_and_exits_2() -> N
     assert done.returncode == 2, done.stdout + done.stderr
     assert "renderer none" in done.stdout and "0 of 0 checks passed" in done.stdout
     assert "the probe stopped early: NotDrawing" in done.stdout
-    assert "imtypeset is not drawing: IMTYPESET_LIBRARY is not set" in done.stdout
+    assert f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}" in done.stdout
     assert "make typeset-lib" in done.stderr
     assert "FAIL" not in done.stdout
 
@@ -409,7 +411,7 @@ def test_a_library_that_was_asked_for_and_does_not_draw_is_a_failure_and_not_an_
     )
     assert done.returncode == 1, done.stdout + done.stderr
     assert "the probe stopped early: NotDrawing" in done.stdout
-    assert "IMTYPESET_LIBRARY is not set" not in done.stdout
+    assert typesetter.SWITCHED_OFF_REASON not in done.stdout
 
 
 def test_every_gesture_passes_against_the_demo_document_with_no_window() -> None:
@@ -691,7 +693,7 @@ def test_the_probe_passes_in_a_real_window_on_an_xvfb() -> None:
         assert done.returncode == 2, done.stdout + done.stderr
         assert "renderer none\n" in done.stdout, done.stdout
         assert "0 of 0 checks passed" in done.stdout
-        assert "imtypeset is not drawing: IMTYPESET_LIBRARY is not set" in done.stdout
+        assert f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}" in done.stdout
 
 
 def test_a_view_that_hit_tests_from_the_wrong_origin_fails_the_probe_in_a_real_window(

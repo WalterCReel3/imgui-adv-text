@@ -15,15 +15,17 @@
 # wheel for, 3.11 to 3.14 (fail-fast off: one red version does not hide the
 # others); a step after `make bootstrap` holds that ./.venv is the version
 # asked for. `sidecar` stays on 3.11: its cache key names the venv's path.
-# imtypeset 0.4.1 installs only on 3.11 (H52), so with that pin the 3.12 to
-# 3.14 legs stop at `make bootstrap`; that is the pin's, not the matrix's.
+# imtypeset 0.4.1 installed only on 3.11 (H52), so while that was the pin
+# (until 2026-10-14) the 3.12 to 3.14 legs stopped at `make bootstrap`; the
+# pin is 0.4.3 since, whose wheels say `Requires-Python: >=3.11,<3.15`.
 #
-# EVERY JOB NEEDS imtypeset 0.4.1.192900 FROM PyPI. Since 2026-10-13 `make
+# EVERY JOB NEEDS imtypeset 0.4.3.192900 FROM PyPI. Since 2026-10-13 `make
 # bootstrap` installs it as a dependency, in every job; an index that does not
 # have the pinned file stops all three at "make bootstrap", and nothing here
 # works around that. It was published that day (PyPI answered 404 for the
 # project in the morning, and by 13:50 `pip install imtypeset==0.4.1.192900`
-# worked from a developer's machine). A pin moved to a version that is not
+# worked from a developer's machine; 0.4.3.192900 was on PyPI by 2026-10-14,
+# eight files, CPython 3.11 to 3.14). A pin moved to a version that is not
 # published yet makes this workflow red until it is.
 #
 # WRITTEN WITHOUT BEING RUN. No session that wrote this file has started it

@@ -102,7 +102,7 @@ def test_without_the_variable_the_callback_is_load_fonts_and_nothing_else(
 
     assert calls == ["own"]
     assert typesetter.module() is None and not typesetter.ready()
-    assert typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+    assert typesetter.reason() == typesetter.SWITCHED_OFF_REASON
 
 
 def test_load_fonts_itself_never_asks_for_the_library_and_loads_one_face(

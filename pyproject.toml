@@ -2,17 +2,27 @@
 name = "imscribe"
 # The same string as `imscribe.__version__` (`tests/test_dist.py` holds them
 # equal), which is where a host reads it at run time and where what the number
-# promises is written. `b1`: the first upload to PyPI is a beta, which pip
-# installs only when asked (`pip install --pre imscribe`, or `imscribe==0.2.0b1`).
-# `make dist` builds the files; `.github/workflows/release.yml` publishes them
-# for a pushed tag `v0.2.0b1` and refuses a tag that is not this string.
-version = "0.2.0b1"
+# promises is written. `0.2.0` (2026-10-14) is the first full release; before
+# it `0.2.0b1`, a beta on PyPI. `make dist` builds the files;
+# `.github/workflows/release.yml` publishes them for a pushed tag `v0.2.0` and
+# refuses a tag that is not this string.
+version = "0.2.0"
 description = "Markdown, streaming and diff views for Dear ImGui, typeset by imtypeset"
 # The project's page on PyPI: short, and true of an installed wheel. README.md
 # is the repository's (how the tree is built, tested and measured) and is in
 # neither the wheel nor the sdist.
 readme = "README-pypi.md"
 requires-python = ">=3.11"
+# The CPythons CI runs the suite on (.github/workflows/ci.yml) and imtypeset
+# has wheels for (the marker on its line below).
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 # MIT, the licence of Dear ImGui and of Dear ImGui Bundle; the owner's choice
 # (2026-10-12: "permissive but compatible with the imgui ecosystem"). The six
 # fonts the views set text in are not in this package: they ship in the
@@ -64,7 +74,10 @@ dependencies = [
     #
     # Not an extra (the lead's decision, 2026-10-13): there is no other
     # renderer, so imscribe without it draws nothing.
-    "imtypeset==0.4.1.192900; python_version >= '3.11' and python_version < '3.15' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'darwin' and platform_machine == 'arm64'))",
+    #
+    # 0.4.3 since 2026-10-14 (0.4.1 until then, which installs on CPython 3.11
+    # only: imtypeset's H52, fixed in 0.4.2). The marker is unchanged.
+    "imtypeset==0.4.3.192900; python_version >= '3.11' and python_version < '3.15' and ((sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'darwin' and platform_machine == 'arm64'))",
     # Block and inline parsing for the markdown litmus test. Only the parser is
     # used -- token stream in, our own box tree out. Nothing here renders HTML.
     "markdown-it-py>=3.0",

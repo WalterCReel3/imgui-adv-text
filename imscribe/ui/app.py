@@ -989,10 +989,11 @@ def not_drawing_at_exit() -> str:
     The sentence every page was showing in place of its content
     (`imscribe.ui.pages.typeset.why_not`), read in `before_exit` before the
     library is unloaded. Empty while a run is going and before any has
-    ended. With no `IMTYPESET_LIBRARY` it says that the variable is not set,
-    which is no failure: whether the library was ASKED FOR is the caller's to
-    read from the environment, as `scripts/shot.py` and `scripts/run_demo.py`
-    do. A page that never drew is covered as one that did: the state is the
+    ended. With nothing installed or named it is `typesetter.ABSENT_REASON`
+    (`SWITCHED_OFF_REASON` under `IMSCRIBE_NO_TYPESET`), which is no
+    failure: whether the library was ASKED FOR is the caller's to read from
+    the environment, as `scripts/shot.py` and `scripts/run_demo.py` do. A
+    page that never drew is covered as one that did: the state is the
     process's (`typesetter.disable` is for the whole run), not a page's.
     """
     return _NOT_DRAWING_AT_EXIT

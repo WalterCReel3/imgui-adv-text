@@ -28,11 +28,11 @@
 # Linux (the tests hold numbers measured on Linux x86-64).
 #
 # PYTHON: once for each of CPython 3.11 to 3.14, as ci.yml's two gates (its
-# header says why the 3.12 to 3.14 legs stop at `make bootstrap` while the
-# pin is 0.4.1).
+# header says why the 3.12 to 3.14 legs stopped at `make bootstrap` while the
+# pin was 0.4.1, until 2026-10-14).
 #
-# EVERY JOB NEEDS imtypeset 0.4.1.192900 FROM PyPI, as in ci.yml (published
-# 2026-10-13, with wheels for macosx_14_0_arm64, CPython 3.11 to 3.14).
+# EVERY JOB NEEDS imtypeset 0.4.3.192900 FROM PyPI, as in ci.yml (published
+# by 2026-10-14, with wheels for macosx_14_0_arm64, CPython 3.11 to 3.14).
 #
 # Known of imtypeset itself on macOS 14 arm64, by its own notes
 # (docs/advtext-swap-status.md there, "Known at v0.4.1"): its wheels' installed

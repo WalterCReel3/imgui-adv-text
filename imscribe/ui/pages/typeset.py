@@ -114,14 +114,16 @@ def why_not() -> str:
     Why imtypeset is not drawing, as one sentence; empty when `typesetter.ready()`.
 
     `typesetter.reason()`, except where that would be untrue: before anybody
-    has asked `module()` it says the variable is not set, whether or not it
-    is. This function does not ask `module()` (the module docstring has why).
+    has asked `module()` it says nothing is installed or named
+    (`typesetter.ABSENT_REASON`, or `SWITCHED_OFF_REASON`), whether or not
+    `IMTYPESET_LIBRARY` names a library. This function does not ask `module()`
+    (the module docstring has why).
     """
     if typesetter.ready():
         return ""
     said = typesetter.reason()
-    unset = f"{typesetter.LIBRARY_VARIABLE} is not set"
-    if said and not (said == unset and os.environ.get(typesetter.LIBRARY_VARIABLE)):
+    unset = (typesetter.ABSENT_REASON, typesetter.SWITCHED_OFF_REASON)
+    if said and not (said in unset and os.environ.get(typesetter.LIBRARY_VARIABLE)):
         return said
     return typesetter.trouble() or FONTS_NOT_LOADED
 

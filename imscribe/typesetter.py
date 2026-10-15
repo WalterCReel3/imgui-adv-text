@@ -53,23 +53,33 @@ this order, and `pairing()` says which was taken:
     because a source directory of imtypeset on the path -- which is what
     route 1 leaves behind in a process -- is importable too and carries no
     library. **The normal route since 2026-10-13**: imscribe declares
-    `imtypeset==0.4.1.192900` beside its exact imgui-bundle pin
+    `imtypeset==0.4.3.192900` beside its exact imgui-bundle pin
     (`pyproject.toml`), so where imtypeset has a wheel `pip install imscribe`
     brings the library and nothing has to be set. Tested with the real wheel
     where one is installed and with stand-ins everywhere
     (`tests/test_typesetter_pairing.py`).
-3.  **Neither**: not loaded, and `reason()` says `IMTYPESET_LIBRARY is not set`.
+3.  **Neither**: not loaded, and `reason()` says what is missing:
+    `ABSENT_REASON` (no imtypeset is installed, and pip installs one with
+    imscribe only where imtypeset has a wheel) or, under
+    `IMSCRIBE_NO_TYPESET`, `SWITCHED_OFF_REASON`. Until 2026-10-14 both were
+    `IMTYPESET_LIBRARY is not set`, which sent a reader whose wheel was simply
+    absent, or who had switched the library off, to a variable they never
+    needed (pptmstr's P43). A library the variable names that does not load
+    is `Kind.REFUSED` and its sentence is the import's own; where no
+    imtypeset package could be imported to load it, it begins
+    `IMTYPESET_LIBRARY names ...`.
 
 **`IMSCRIBE_NO_TYPESET`** (`DISABLE_VARIABLE`; set to anything but an empty
 string or `0`, blanks around the value not counted): an installed
 distribution is NOT looked for. Route 2 is then never taken, and with no
 `IMTYPESET_LIBRARY` either the answer is route 3 with
-its sentence unchanged. It is how a host runs without the library where one is
-installed, and how this project's suite gets its no-library run in a
-virtualenv that has the wheel (`tests/conftest.py`). It switches off the
-LOOKING and nothing else: where `IMTYPESET_LIBRARY` names a library that is
-an explicit request and the import is made, and what that import finds first
-on the path, an installed imtypeset included, is what loads.
+`SWITCHED_OFF_REASON`, which names this variable. It is how a host runs
+without the library where one is installed, and how this project's suite
+gets its no-library run in a virtualenv that has the wheel
+(`tests/conftest.py`). It switches off the LOOKING and nothing else: where
+`IMTYPESET_LIBRARY` names a library that is an explicit request and the
+import is made, and what that import finds first on the path, an installed
+imtypeset included, is what loads.
 
 **The library's version has a floor** (`MINIMUM`, 0.4): this imscribe is
 written to imtypeset 0.4's layout (code set on the device's grid by default)
@@ -221,6 +231,8 @@ __all__ = [
     "ROUTE_NONE",
     "LinkRow",
     "MINIMUM",
+    "ABSENT_REASON",
+    "SWITCHED_OFF_REASON",
     "RUN_DISPLAY_FORMULA",
     "RUN_FORMULA",
     "RUN_NO_BREAK",
@@ -262,7 +274,7 @@ PACKAGE_VARIABLE = "IMTYPESET_PYTHON"
 DISABLE_VARIABLE = "IMSCRIBE_NO_TYPESET"
 
 # The oldest imtypeset this imscribe is written to, as (major, minor): the
-# library's own version (`imtypeset.version()`, "0.4.1"), not the wheel's
+# library's own version (`imtypeset.version()`, "0.4.3"), not the wheel's
 # four-part one. `module()` refuses an older library (`_too_old`). No ceiling
 # is held here: `pyproject.toml` pins the wheel exactly, and a library named
 # by IMTYPESET_LIBRARY is a developer's own, newer one included.
@@ -497,7 +509,37 @@ def __getattr__(name: str) -> Any:
 # Loading
 # ---------------------------------------------------------------------------
 
-_NOT_SET = f"{LIBRARY_VARIABLE} is not set"
+ABSENT_REASON = (
+    "imtypeset is not installed: pip installs it with imscribe where imtypeset has a wheel "
+    "(CPython 3.11 to 3.14 on Linux x86-64 and on macOS 14 or later on arm64), and "
+    f"{LIBRARY_VARIABLE} names no library"
+)
+"""
+`reason()` when nothing is installed and nothing is named: `kind()` is `Kind.NOT_INSTALLED`.
+
+Until 2026-10-14 this was `IMTYPESET_LIBRARY is not set` (pptmstr's P43).
+"""
+SWITCHED_OFF_REASON = (
+    f"{DISABLE_VARIABLE} is set, so an installed imtypeset is not looked for, and "
+    f"{LIBRARY_VARIABLE} names no library"
+)
+"""
+`reason()` under `IMSCRIBE_NO_TYPESET` with no library named: `kind()` is `Kind.NOT_INSTALLED`.
+
+Until 2026-10-14 this was `IMTYPESET_LIBRARY is not set` (pptmstr's P43).
+"""
+
+
+def _absent() -> str:
+    """
+    The sentence for "nothing was loaded and nothing refused": the host's own
+    (`unsupported`), else what the environment says is missing. It reads
+    `IMSCRIBE_NO_TYPESET` and does not look for a distribution.
+    """
+    if _unsupported:
+        return _unsupported
+    return SWITCHED_OFF_REASON if _not_looking() else ABSENT_REASON
+
 
 _ts: Any = None
 # The package once imported, kept through `disable`: `_ts` is what answers
@@ -518,7 +560,14 @@ _named_by: str | None = None
 # `None` until it has been looked for. Looked for once: a view asks `module()`
 # every frame, and the answer is a walk over `sys.path`.
 _installed: str | None = None
-_reason = _NOT_SET
+# Until `module()` has been asked this is not yet a finding (`reason` says so):
+# the sentence for nothing found, as `IMSCRIBE_NO_TYPESET` stood at import
+# (`_not_looking`'s rule, written out: that function is defined below).
+_reason = (
+    SWITCHED_OFF_REASON
+    if (os.environ.get(DISABLE_VARIABLE) or "").strip() not in ("", "0")
+    else ABSENT_REASON
+)
 # Which kind `_reason` is a sentence of, while `_ts` is `None`.
 _why = Kind.NOT_INSTALLED
 # imtypeset's own word for a refused import (`ImportError.kind`, from its
@@ -606,7 +655,7 @@ def module() -> Any:
         by = NAMED_BY_MEMORY
     named = bool(library)
     if not named and (_not_looking() or not _distribution()):
-        _reason = _unsupported or _NOT_SET
+        _reason = _absent()
         _why = Kind.UNSUPPORTED if _unsupported else Kind.NOT_INSTALLED
         return None
     _tried = True
@@ -646,6 +695,14 @@ def module() -> Any:
         _reason = whole.splitlines()[0] if _their_kind and whole.strip() else whole
         if not named:
             _reason = f"the installed {_distribution()} did not load: {_reason}"
+        elif isinstance(exc, ModuleNotFoundError) and exc.name == "imtypeset":
+            # A library is named and there is no package to load it with:
+            # say what was named, and where a package is looked for.
+            _reason = (
+                f"{LIBRARY_VARIABLE} names {library}, and no imtypeset package could be "
+                f"imported to load it ({PACKAGE_VARIABLE} names the directory of one): "
+                f"{_reason}"
+            )
         _why = _THEIR_KINDS.get(_their_kind or "", Kind.REFUSED)
         _say(f"imtypeset is not in use: {_reason}")
         detail = " ".join(whole.splitlines()[1:]) if _their_kind else ""
@@ -722,10 +779,10 @@ def forget_pair() -> None:
     replaced; an operator switched it off for good). Nothing that is loaded
     changes, `module()` and `pairing()` answer as they did, and nothing is
     unloaded: it is the next `module()` after a `reset()` that finds
-    `IMTYPESET_LIBRARY is not set`, where the environment has no variable
-    and no distribution is installed. `verdict()` with no arguments then
-    asks about the environment as it is. With nothing remembered it does
-    nothing.
+    `ABSENT_REASON` (`SWITCHED_OFF_REASON` under `IMSCRIBE_NO_TYPESET`), where
+    the environment has no variable and no distribution is installed.
+    `verdict()` with no arguments then asks about the environment as it is.
+    With nothing remembered it does nothing.
     """
     global _pair
     _pair = None
@@ -1248,8 +1305,10 @@ def reason() -> str:
     """
     Why `module()` is `None`, as one sentence; empty when it is not.
 
-    Meaningful after `module()` has been asked. Before that it says the
-    variable is not set, which may no longer be true. It does not say which
+    Meaningful after `module()` has been asked. Before that it is
+    `ABSENT_REASON` (or the host's `unsupported` sentence, or
+    `SWITCHED_OFF_REASON` after a `reset()` under `IMSCRIBE_NO_TYPESET`),
+    which may not be true: nothing has been looked for yet. It does not say which
     route a loaded package came by -- it is empty then, and views test it for
     that; `pairing()["route"]` does.
     """
@@ -1274,11 +1333,11 @@ def unsupported(why: str) -> None:
 
     From then on, **when nothing is found** -- no variable, no distribution
     -- `kind()` is `Kind.UNSUPPORTED` and `reason()` is `why`, where they
-    would have been `Kind.NOT_INSTALLED` and `IMTYPESET_LIBRARY is not set`,
-    which reads as a broken install on a platform that was never going to
-    have one. When something IS found the host's sentence is not used: what
-    is in the process is the evidence. An empty `why` takes it back.
-    `reset()` keeps it; it is the host's statement and not a refusal.
+    would have been `Kind.NOT_INSTALLED` and `ABSENT_REASON`, which reads as
+    a broken install on a platform that was never going to have one. When
+    something IS found the host's sentence is not used: what is in the
+    process is the evidence. An empty `why` takes it back. `reset()` keeps
+    it; it is the host's statement and not a refusal.
 
     imscribe does not work this out for itself; `Kind` says why.
     """
@@ -1289,7 +1348,7 @@ def unsupported(why: str) -> None:
     if _ts is None and not _disabled and not _tried:
         # Nothing has been found so far; say it the new way without waiting
         # for the next `module()`.
-        _reason = _unsupported or _NOT_SET
+        _reason = _absent()
         _why = Kind.UNSUPPORTED if _unsupported else Kind.NOT_INSTALLED
 
 
@@ -1776,7 +1835,7 @@ def reset() -> None:
     _tried = False
     _installed = None
     _their_kind = None
-    _reason = _unsupported or _NOT_SET
+    _reason = _absent()
     _why = Kind.UNSUPPORTED if _unsupported else Kind.NOT_INSTALLED
     _disabled = False
     _ready = False

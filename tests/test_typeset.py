@@ -143,13 +143,13 @@ print(json.dumps({
 def test_without_the_variable_nothing_of_imtypeset_is_imported() -> None:
     report = _child(_GATE_CLOSED, _without())
     assert report["module"] is True, "module() answered something with no library named"
-    assert report["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert report["reason"] == typesetter.SWITCHED_OFF_REASON
     assert report["load_fonts"] is False and report["ready"] is False
     assert report["imtypeset"] == [], "something of imtypeset was imported"
     assert report["path"] == [], "sys.path was touched with no library named"
     # The module is the description too, and a description needs no ImGui.
     assert report["imgui"] is False, "importing imscribe.typesetter imported imgui_bundle"
-    assert "IMTYPESET_LIBRARY is not set" in report["raised"]
+    assert typesetter.SWITCHED_OFF_REASON in report["raised"]
 
 
 def test_a_library_that_cannot_be_loaded_is_a_reason_and_not_an_exception(tmp_path: Path) -> None:
@@ -165,7 +165,7 @@ def test_a_library_that_cannot_be_loaded_is_a_reason_and_not_an_exception(tmp_pa
         env[typesetter.PACKAGE_VARIABLE] = package
     report = _child(_GATE_CLOSED, env)
     assert report["module"] is True
-    assert report["reason"] and report["reason"] != "IMTYPESET_LIBRARY is not set"
+    assert report["reason"] and report["reason"] != typesetter.SWITCHED_OFF_REASON
     assert "Error" in report["reason"], report["reason"]
     assert report["load_fonts"] is False and report["ready"] is False
     assert report["reason"] in report["raised"]
@@ -197,7 +197,7 @@ def test_in_this_process_the_refusal_is_remembered_and_forgotten(
         assert typesetter.module() is None and not typesetter.ready()
     finally:
         typesetter._forget()
-    assert typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+    assert typesetter.reason() == typesetter.SWITCHED_OFF_REASON
 
 
 # ---------------------------------------------------------------------------

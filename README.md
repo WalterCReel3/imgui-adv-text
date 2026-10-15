@@ -166,9 +166,9 @@ prints one line of JSON saying which imtypeset was found and exits 0 when it
 is accepted. Where no imtypeset is installed (Windows, Linux on arm64, macOS
 on Intel: it has no wheel there) or `IMSCRIBE_NO_TYPESET=1` is set, the demo
 opens and every page is one line: `imtypeset is not drawing: ` and the
-reason. (That reason still reads `IMTYPESET_LIBRARY is not set`, which names
-the developer's variable and not the missing wheel; open, `docs/status.md`
-0i.)
+reason, which says which of the two it is (`typesetter.ABSENT_REASON`, or
+`typesetter.SWITCHED_OFF_REASON` naming `IMSCRIBE_NO_TYPESET`). Until
+2026-10-14 both read `IMTYPESET_LIBRARY is not set` (pptmstr's P43).
 
 **The developer's route: an imtypeset that is not released.** `TYPESET=1`
 and `make typeset-lib` are what this tree ran on until 2026-10-13 and are
@@ -291,9 +291,15 @@ since 2026-10-11, which of them is normal since 2026-10-13):
    this route a host may remove both variables: `reset()` and the next
    `module()` use the pair that was loaded (`pairing()["named_by"]` is then
    `"remembered"`; `imscribe.typesetter.forget_pair()` ends that).
-3. Otherwise not loaded, `kind()` is `Kind.NOT_INSTALLED`, and `reason()` is
-   `IMTYPESET_LIBRARY is not set` (the sentence is the old one and does not
-   mention the wheel; open).
+3. Otherwise not loaded, `kind()` is `Kind.NOT_INSTALLED`, and `reason()`
+   says what is missing: `typesetter.ABSENT_REASON` ("imtypeset is not
+   installed: pip installs it with imscribe where imtypeset has a wheel
+   ..."), or under `IMSCRIBE_NO_TYPESET` `typesetter.SWITCHED_OFF_REASON`
+   ("IMSCRIBE_NO_TYPESET is set, so an installed imtypeset is not looked
+   for, ..."). A library `IMTYPESET_LIBRARY` names with no imtypeset package
+   to load it is `Kind.REFUSED`, and its sentence begins `IMTYPESET_LIBRARY
+   names <path>`. (Until 2026-10-14 the first two read `IMTYPESET_LIBRARY is
+   not set`.)
 
 **A library older than 0.4 is refused** (`imscribe.typesetter.MINIMUM`),
 before anything is drawn: `Kind.REFUSED`, "the imtypeset at <dir> is 0.3.0

@@ -239,10 +239,10 @@ def _a_distribution(
 def test_with_nothing_to_find_the_pairing_is_all_none_and_nothing_is_imported() -> None:
     report = _child(_REPORT, _without())
     assert report["module"] is False
-    assert report["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert report["reason"] == typesetter.ABSENT_REASON
     assert set(report["pairing"]) == _KEYS
     assert report["pairing"].pop("route") == typesetter.ROUTE_NONE
-    assert report["pairing"].pop("reason") == "IMTYPESET_LIBRARY is not set"
+    assert report["pairing"].pop("reason") == typesetter.ABSENT_REASON
     assert report["pairing"].pop("kind") == typesetter.Kind.NOT_INSTALLED.value
     # The one key that is about imscribe and not about what was found.
     assert report["pairing"].pop("imscribe_version") == imscribe.__version__
@@ -266,7 +266,7 @@ def test_a_package_on_the_path_that_is_not_installed_is_not_a_distribution(tmp_p
     )
     report = _child(_REPORT, _without(), source)
     assert report["module"] is False
-    assert report["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert report["reason"] == typesetter.ABSENT_REASON
     assert report["imtypeset"] == [], "a package that is not a distribution was imported"
     assert report["pairing"]["route"] == typesetter.ROUTE_NONE
     assert report["pairing"]["distribution"] is None
@@ -718,7 +718,7 @@ def test_the_remembered_pair_is_handed_to_an_import_that_has_to_happen_again(
     assert report["kept"]["pairing"] == again["pairing"]
     forgotten = report["forgotten"]
     assert forgotten["module"] is False
-    assert forgotten["pairing"]["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert forgotten["pairing"]["reason"] == typesetter.ABSENT_REASON
     assert forgotten["pairing"]["kind"] == typesetter.Kind.NOT_INSTALLED.value
     # As `route` does, it goes on describing the package that is in the process.
     assert forgotten["pairing"]["route"] == typesetter.ROUTE_ENVIRONMENT
@@ -829,7 +829,7 @@ def test_forget_pair_is_refused_nothing_and_a_pair_is_not_remembered_from_a_refu
     assert report["first"]["kind"] == typesetter.Kind.REFUSED.value and report["pair"] is None
     assert report["first"]["named_by"] is None
     assert report["after"]["kind"] == typesetter.Kind.NOT_INSTALLED.value
-    assert report["after"]["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert report["after"]["reason"] == typesetter.ABSENT_REASON
 
 
 # ---------------------------------------------------------------------------
@@ -860,12 +860,12 @@ def test_the_distribution_is_looked_for_once_and_the_variable_still_works_later(
     try:
         for _ in range(3):
             assert typesetter.module() is None
-            assert typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+            assert typesetter.reason() == typesetter.ABSENT_REASON
         assert typesetter.pairing()["route"] == typesetter.ROUTE_NONE
         assert asked == ["imtypeset"]
         monkeypatch.setenv(typesetter.LIBRARY_VARIABLE, str(tmp_path / "absent.so"))
         assert typesetter.module() is None
-        assert typesetter.reason() != "IMTYPESET_LIBRARY is not set"
+        assert typesetter.reason() != typesetter.ABSENT_REASON
         assert "the installed" not in typesetter.reason()
         assert asked == ["imtypeset"]
         # `_forget` is back to the state at import: it looks again.
@@ -875,7 +875,7 @@ def test_the_distribution_is_looked_for_once_and_the_variable_still_works_later(
         assert asked == ["imtypeset", "imtypeset"]
     finally:
         typesetter._forget()
-    assert typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+    assert typesetter.reason() == typesetter.ABSENT_REASON
 
 
 # ---------------------------------------------------------------------------
@@ -1360,8 +1360,9 @@ def test_the_switch_stops_the_looking_and_nothing_else(
 ) -> None:
     """
     With `IMSCRIBE_NO_TYPESET` set to anything but nothing or 0, an installed
-    distribution is not looked for: nothing is imported, the sentence is the
-    one for nothing found, and `distribution` is not said.
+    distribution is not looked for: nothing is imported, the sentence names
+    the switch (`SWITCHED_OFF_REASON`; until 2026-10-14 it was the one for
+    nothing found), and `distribution` is not said.
 
     Blanks around the value are not part of it, so a value of blanks alone is
     nothing (2026-10-13: it counted as set until then, while a blank-padded 0
@@ -1379,7 +1380,7 @@ def test_the_switch_stops_the_looking_and_nothing_else(
     else:
         assert report["imtypeset"] == [], "it was imported although it was not to be looked for"
         assert found["kind"] == typesetter.Kind.NOT_INSTALLED.value
-        assert found["reason"] == "IMTYPESET_LIBRARY is not set"
+        assert found["reason"] == typesetter.SWITCHED_OFF_REASON
         assert found["route"] == typesetter.ROUTE_NONE and found["distribution"] is None
 
 

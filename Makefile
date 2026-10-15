@@ -61,7 +61,7 @@ SRC := imscribe tests $(wildcard scripts) $(wildcard examples)
 # not": the old views were the fallback.)
 #
 # SINCE 2026-10-13 THE NORMAL ROUTE IS AN INSTALLED WHEEL. imtypeset is a
-# dependency (pyproject.toml: imtypeset==0.4.1.192900, beside the exact
+# dependency (pyproject.toml: imtypeset==0.4.3.192900, beside the exact
 # imgui-bundle pin), `make bootstrap` installs it, imscribe finds it with
 # nothing set, and the suite's with-library tests run under plain
 # `make check` (tests/conftest.py says how, and pytest's first lines say

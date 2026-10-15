@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from imscribe import typesetter
 from imscribe.ui import app as app_module
 from imscribe.ui import pages
 from imscribe.ui.app import App, TabRequest, parse_tab_request, sidebar_rows
@@ -1353,7 +1354,7 @@ def test_every_discovered_page_runs_in_a_real_window(tour: dict[str, Any]) -> No
     else:
         assert set(tour["said"]) == set(names)
         assert len(set(tour["said"].values())) == 1, tour["said"]
-        assert "IMTYPESET_LIBRARY is not set" in tour["said"][names[0]]
+        assert typesetter.SWITCHED_OFF_REASON in tour["said"][names[0]]
         assert tour["ready"] == dict.fromkeys(names, False)
         assert tour["own_faces"] == [app_module.UI_FACE]
         assert len(tour["fonts"]) == 1
@@ -1386,7 +1387,7 @@ def test_every_page_in_a_real_window_draws_ink_that_contrasts(
     _judge(name, found)
     if _library_asked_for():
         glyphs = sum(count for _, _, count in found)
-        line_only = len("imtypeset is not drawing: IMTYPESET_LIBRARY is not set")
+        line_only = len(f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}")
         chrome = sum(len(row[2]) for row in SIDEBAR) + 64
         assert glyphs > chrome + line_only, f"{name} drew {glyphs} glyphs: no more than the chrome"
         # B4 (T5-R #4). The bound above is met by a page's captions and

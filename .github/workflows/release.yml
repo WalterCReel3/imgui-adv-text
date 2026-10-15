@@ -41,8 +41,8 @@
 # BEFORE ANYTHING IS SENT the built wheel is installed on the runner from the
 # index, with its dependencies, and asked which imtypeset it found
 # (`python -m imscribe.typesetter`, exit 0 only when the library loads). That
-# needs the imtypeset pyproject.toml pins to be ON PyPI (0.4.1.192900 is,
-# since 2026-10-13): a tag pushed before a pinned version is published fails
+# needs the imtypeset pyproject.toml pins to be ON PyPI (0.4.3.192900 is,
+# since 2026-10-14): a tag pushed before a pinned version is published fails
 # here and publishes nothing.
 #
 # THE TWO FILES AND NOTHING ELSE are uploaded. `dist/` also holds

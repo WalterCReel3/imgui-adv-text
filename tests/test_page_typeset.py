@@ -109,7 +109,7 @@ def test_why_not_is_the_typesetters_reason_when_that_is_true(
 ) -> None:
     for name in _VARIABLES:
         monkeypatch.delenv(name, raising=False)
-    assert page.why_not() == typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+    assert page.why_not() == typesetter.reason() == typesetter.SWITCHED_OFF_REASON
 
 
 def test_why_not_does_not_say_the_variable_is_unset_when_it_is_set(
@@ -119,7 +119,7 @@ def test_why_not_does_not_say_the_variable_is_unset_when_it_is_set(
     Nobody asked `module()`, so `reason()` still holds its first sentence; the page does not.
     """
     monkeypatch.setenv(typesetter.LIBRARY_VARIABLE, "/somewhere/lib.so")
-    assert typesetter.reason() == "IMTYPESET_LIBRARY is not set"
+    assert typesetter.reason() == typesetter.SWITCHED_OFF_REASON
     assert page.why_not() == page.FONTS_NOT_LOADED
     typesetter.note("load_fonts was called with no Dear ImGui context")
     assert page.why_not() == "load_fonts was called with no Dear ImGui context"
@@ -186,7 +186,7 @@ def test_the_page_loads_and_says_why_not_without_the_library(
     assert isinstance(made, TypesetPage)
     assert made.typeset is None and made.renderer == "none"
     assert made.frames == 3 and made.vertices == 0, (made.vertices, counts)
-    expected = "IMTYPESET_LIBRARY is not set" if variable == "unset" else page.FONTS_NOT_LOADED
+    expected = typesetter.SWITCHED_OFF_REASON if variable == "unset" else page.FONTS_NOT_LOADED
     assert made.reason == expected
     assert made.lines() == (f"{page.NOT_DRAWING}: {expected}",)
     # The state that needs no drawing is there all the same.
@@ -310,7 +310,7 @@ def test_building_and_drawing_the_page_imports_no_old_view(tmp_path: Path) -> No
     assert done.returncode == 0, done.stderr
     report = json.loads(done.stdout.strip().splitlines()[-1])
     assert report["frames"] == 3 and report["imtypeset"] is False
-    assert report["line"] == [f"{page.NOT_DRAWING}: IMTYPESET_LIBRARY is not set"]
+    assert report["line"] == [f"{page.NOT_DRAWING}: {typesetter.SWITCHED_OFF_REASON}"]
     assert report["added"] == [] and report["old"] == [], report
 
 
@@ -516,11 +516,13 @@ def test_in_a_real_window_without_the_library_the_page_says_why_not_and_draws_no
     report = _run(window, "without", monkeypatch)
     assert report["current"] == "Typeset" and report["imported"] is False
     assert report["survived"] is True
-    assert report["ready"] is False and report["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert report["ready"] is False and report["reason"] == typesetter.SWITCHED_OFF_REASON
     for moment in ("needle", "empty", "stepped"):
         assert report[moment]["renderer"] == "none", report[moment]
         assert report[moment]["vertices"] == 0 and report[moment]["marks"] == 0
-        assert report[moment]["lines"] == ["imtypeset is not drawing: IMTYPESET_LIBRARY is not set"]
+        assert report[moment]["lines"] == [
+            f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}"
+        ]
         assert report[moment]["scrolls"] == 0
     # The find state needs no drawing.
     assert report["needle"]["found"] > 0 and report["empty"]["found"] == 0

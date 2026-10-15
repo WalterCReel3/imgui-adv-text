@@ -330,7 +330,7 @@ def test_without_the_library_the_page_is_one_line_that_says_why(
     first = _frame(made.draw)
     second = _frame(made.draw)
     assert made.view is None and made.frames == 2
-    assert made.reason == f"{typesetter.LIBRARY_VARIABLE} is not set"
+    assert made.reason == typesetter.SWITCHED_OFF_REASON
     assert made.lines() == (page.NOT_DRAWING + made.reason,)
     assert first["own"] > 0 and first["own"] == second["own"]
     assert first["lists"] == 1
@@ -868,7 +868,7 @@ def test_in_a_real_window_without_the_library_the_page_is_the_one_line(
     """
     report = _windowed(window, monkeypatch, "without")
     assert report["view"] is False
-    assert report["reason"] == f"{typesetter.LIBRARY_VARIABLE} is not set"
+    assert report["reason"] == typesetter.SWITCHED_OFF_REASON
     assert report["lines"] == [page.NOT_DRAWING + report["reason"]]
     assert all(_fields(line)["renderer"] == "none" for line in report["seen"])
     assert report["old"] == [], "the page, or the app on its way to it, loaded an old module"

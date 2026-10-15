@@ -534,7 +534,7 @@ def test_without_the_library_the_constructor_refuses_and_the_rows_still_work() -
     assert report["other"] == [] and report["after"] == []
     message, is_runtime_error = report["refused"]
     assert is_runtime_error
-    assert report["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert report["reason"] == typesetter.SWITCHED_OFF_REASON
     assert report["reason"] in message
     assert report["rows"] == 5  # the file's header, the hunk's, and three lines
     assert report["copied"] == "a\nB"

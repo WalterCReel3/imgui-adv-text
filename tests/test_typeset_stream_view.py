@@ -214,7 +214,7 @@ def test_without_the_library_the_constructor_refuses_and_names_the_reason() -> N
     report = _report_of(done.stdout)
     # Importing the view brought in neither the library's package nor Dear ImGui.
     assert report["loaded"] == []
-    assert report["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert report["reason"] == typesetter.SWITCHED_OFF_REASON
     assert report["reason"] in report["refused"]
 
 

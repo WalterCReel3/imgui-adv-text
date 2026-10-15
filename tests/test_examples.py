@@ -332,7 +332,7 @@ def test_without_the_library_the_diff_example_says_why_and_opens_no_window(
     assert result.returncode == 1, result.stdout + result.stderr
     assert result.stdout == "" and "Traceback" not in result.stderr
     said, told = result.stderr.strip().splitlines()[-2:]
-    assert said == f"imtypeset is not drawing: {typesetter.LIBRARY_VARIABLE} is not set"
+    assert said == f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}"
     assert told == "code=1 runners=[]"
 
 

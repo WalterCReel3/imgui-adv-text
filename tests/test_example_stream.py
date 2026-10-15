@@ -473,7 +473,7 @@ def test_without_the_library_main_says_why_and_opens_no_window(path: Path) -> No
     assert result.returncode == 1, result.stdout + result.stderr
     assert result.stdout == ""
     said, told = result.stderr.strip().splitlines()[-2:]
-    assert said == f"imtypeset is not drawing: {typesetter.LIBRARY_VARIABLE} is not set"
+    assert said == f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}"
     assert told == "code=1 no_library=1 runners=[]"
     assert "Traceback" not in result.stderr
 

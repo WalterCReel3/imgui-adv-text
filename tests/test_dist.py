@@ -84,7 +84,8 @@ def test_the_script_reads_the_two_versions_the_way_this_file_does() -> None:
     # Until 2026-10-13 this was the imgui-bundle pin alone: imtypeset had no
     # distribution to name. Its line carries an environment marker, which the
     # expression has to read past.
-    assert _script().pins(_ROOT) == ["imgui-bundle==1.92.900", "imtypeset==0.4.1.192900"]
+    # 0.4.1.192900 until 2026-10-14.
+    assert _script().pins(_ROOT) == ["imgui-bundle==1.92.900", "imtypeset==0.4.3.192900"]
 
 
 def test_a_child_asked_for_the_pairing_says_which_imscribe_answered() -> None:
@@ -610,8 +611,9 @@ def test_the_page_is_the_readme_pyproject_names_and_states_the_pins_pyproject_ho
     assert f"`{project['version']}`" in page
     assert project["urls"]["Repository"] in page
     # What the example's assert shows a user with no imtypeset is explained
-    # in the words the package uses (if `_NOT_SET` changes, so does the page).
-    assert typesetter._NOT_SET in " ".join(page.split())
+    # in the words the package uses (if `ABSENT_REASON` changes, so does the
+    # page). Until 2026-10-14 it was "IMTYPESET_LIBRARY is not set" (P43).
+    assert typesetter.ABSENT_REASON in " ".join(page.split())
     # Where the install fails, beside musl (imtypeset's docs/releasing.md,
     # section 5), and what the system must have for the import (read from the
     # binaries of the imgui-bundle wheel pyproject.toml pins, 2026-10-13).

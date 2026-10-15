@@ -959,8 +959,8 @@ def test_importing_and_drawing_the_page_load_neither_diff_view_nor_the_old_core(
     assert not at_import_old, sorted(at_import_old)
     assert report["added"] == [] and report["imtypeset"] is False
     assert not set(report["loaded"]) & _OLD_CORE, sorted(set(report["loaded"]) & _OLD_CORE)
-    line = "imtypeset is not drawing: IMTYPESET_LIBRARY is not set"
-    assert report["page"] == ["none", "IMTYPESET_LIBRARY is not set", 3, [line], 50]
+    line = f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}"
+    assert report["page"] == ["none", typesetter.SWITCHED_OFF_REASON, 3, [line], 50]
 
 
 def test_headless_the_page_has_no_views_and_draws_one_line_saying_why(bare: DiffPage) -> None:
@@ -973,7 +973,7 @@ def test_headless_the_page_has_no_views_and_draws_one_line_saying_why(bare: Diff
     imgui = pytest.importorskip("imgui_bundle").imgui
 
     assert bare.renderer == "none" and bare.views == {}
-    assert bare.reason == "IMTYPESET_LIBRARY is not set"
+    assert bare.reason == typesetter.SWITCHED_OFF_REASON
     sentence = f"{typeset_page.NOT_DRAWING}: {bare.reason}"
     assert bare.readouts() == (sentence,)
 
@@ -1404,8 +1404,8 @@ def test_in_a_real_window_without_the_library_the_page_says_why_not_and_stays_al
     for moment in ("long", "expanded", "replaying", "replayed"):
         entry = report[moment]
         assert entry["renderer"] == "none" and entry["classes"] == [], moment
-        assert entry["reason"] == "IMTYPESET_LIBRARY is not set"
-        assert entry["readouts"] == ["imtypeset is not drawing: IMTYPESET_LIBRARY is not set"]
+        assert entry["reason"] == typesetter.SWITCHED_OFF_REASON
+        assert entry["readouts"] == [f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}"]
         assert entry["drawn"] == [] and entry["rows"] == {} and entry["answered"] == []
         assert entry["old_view_loaded"] is False, moment
     assert report["long"]["case"] == "long" and report["replaying"]["case"] == "git"

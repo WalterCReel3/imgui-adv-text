@@ -126,7 +126,7 @@ def test_without_the_library_the_constructor_refuses_and_names_the_reason() -> N
     assert report["loaded"] == []
     message, is_runtime_error = report["refused"]
     assert is_runtime_error
-    assert report["reason"] == "IMTYPESET_LIBRARY is not set"
+    assert report["reason"] == typesetter.SWITCHED_OFF_REASON
     assert report["reason"] in message
 
 
@@ -155,7 +155,7 @@ def test_without_the_library_the_example_says_why_and_draws_nothing() -> None:
         cwd=str(_ROOT),
     )
     assert done.returncode == 1, done.stdout + done.stderr
-    assert "imtypeset is not drawing: IMTYPESET_LIBRARY is not set" in done.stderr
+    assert f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}" in done.stderr
     assert "BareView" not in done.stdout + done.stderr
     assert not [line for line in done.stdout.splitlines() if line.startswith("frames=")]
 

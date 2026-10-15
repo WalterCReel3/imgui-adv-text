@@ -236,13 +236,13 @@ def test_without_the_library_the_page_is_one_line_saying_why(
     assert app.page_errors == {}
     page = app.page(name)
     assert type(page) is cls and page.renderer == "none" and page.frames == 3
-    assert page.reason == "IMTYPESET_LIBRARY is not set" and page.title == ""
+    assert page.reason == typesetter.SWITCHED_OFF_REASON and page.title == ""
     assert page.counts == ZERO
-    sentence = f"{typeset_page.NOT_DRAWING}: IMTYPESET_LIBRARY is not set"
+    sentence = f"{typeset_page.NOT_DRAWING}: {typesetter.SWITCHED_OFF_REASON}"
     assert page.line() == sentence
     assert page.report() == [
         f"frames=3 renderer=none section={section} size={page.size_px:.2f} "
-        "paragraphs=0 vertices=0 layouts=0 reason='IMTYPESET_LIBRARY is not set'"
+        f"paragraphs=0 vertices=0 layouts=0 reason={typesetter.SWITCHED_OFF_REASON!r}"
     ]
     assert _added_by(page.draw) == _added_by(lambda: imgui.text_wrapped(sentence)) > 0
 
@@ -325,7 +325,7 @@ def test_without_the_library_building_and_drawing_the_pages_import_nothing(
     assert done.returncode == 0, done.stderr
     got = json.loads(done.stdout.strip().splitlines()[-1])
     assert got["added"] == [] and got["imtypeset"] is False and got["frames"] == [3, 3, 3]
-    assert got["lines"] == [f"{typeset_page.NOT_DRAWING}: IMTYPESET_LIBRARY is not set"] * 3
+    assert got["lines"] == [f"{typeset_page.NOT_DRAWING}: {typesetter.SWITCHED_OFF_REASON}"] * 3
     loaded = set(got["loaded"])
     for gone in (
         "imscribe.backends.imgui_draw",
@@ -870,12 +870,12 @@ def test_in_a_real_window_without_the_library_the_three_pages_say_why_not(
         entry = report["pages"][name]
         assert entry["current"] == name and entry["frames"] == STAY
         assert entry["renderer"] == "none" and entry["title"] == ""
-        assert entry["reason"] == "IMTYPESET_LIBRARY is not set"
-        assert entry["line"] == "imtypeset is not drawing: IMTYPESET_LIBRARY is not set"
+        assert entry["reason"] == typesetter.SWITCHED_OFF_REASON
+        assert entry["line"] == f"imtypeset is not drawing: {typesetter.SWITCHED_OFF_REASON}"
         assert entry["counts"] == ZERO and entry["seen"]["calls"] == 0
         assert entry["report"] == [
             f"frames={STAY} renderer=none section={section} size={entry['size']:.2f} "
-            "paragraphs=0 vertices=0 layouts=0 reason='IMTYPESET_LIBRARY is not set'"
+            f"paragraphs=0 vertices=0 layouts=0 reason={typesetter.SWITCHED_OFF_REASON!r}"
         ]
 
 

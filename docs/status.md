@@ -18,7 +18,10 @@ dependency from PyPI and nothing is set in the environment to draw. Older
 sections describe `TYPESET=1` and two variables as the only way; that is the
 developer's route now.**
 
-## 0j. Revision of 2026-10-15: version `0.2.0` on imtypeset 0.4.3 from PyPI, CPython 3.11 to 3.14; not yet tagged
+## 0j. Revision of 2026-10-15: version `0.2.0` on imtypeset 0.4.3 from PyPI, CPython 3.11 to 3.14; released
+
+**Released 2026-10-15** (read by the lead from the owner's run of `gh run list` and PyPI's JSON): tag `v0.2.0` on `af06f77`; `release` run 38734248219 succeeded in 3m27s; PyPI lists `imscribe 0.2.0` (`imscribe-0.2.0-py3-none-any.whl`, `imscribe-0.2.0.tar.gz`) requiring `imgui-bundle==1.92.900` and `imtypeset==0.4.3.192900` under the platform marker. CI on `af06f77` was green on CPython 3.11 to 3.14, both jobs (the owner's report); `7b4700c` had failed one test on 3.14 only (`test_asking_the_package_for_a_submodule_does_not_import_composition`: a private standard-library module counted as imported), fixed in the test. Not yet run by anyone: `pip install imscribe==0.2.0` into a new environment; anything of 0.2.0 on macOS.
+
 
 The newest revision; 0i below is not changed, and where it differs this
 section is the current position. Written by R3-FINAL's builder (an agent)

@@ -27,7 +27,7 @@ open a socket on the runner: `plain` 1 failed of 3645, `typeset` 2 failed
 of 4301; everything else passed). Section 1 is left as it was written, as
 the record of the steps.
 
-## 0. Release imscribe 0.2.0 (2026-10-15; the next thing to do)
+## 0. Release imscribe 0.2.0 (done 2026-10-15: tag `v0.2.0` on `af06f77`, release run 38734248219, on PyPI)
 
 Written by R3-FINAL's builder (an agent). The work is on
 `experimental/imtypeset-adoption`; both local gates are green (`make check`

@@ -1991,3 +1991,7 @@ Gates on imscribe at `92645be` plus one docstring edit, quiet tree, Linux,
 CPython 3.11, imtypeset 0.4.3.192900: `make check` 4351 passed, 19 skipped,
 4 xfailed; `IMSCRIBE_NO_TYPESET=1 make check` 3668 passed, 702 skipped,
 4 xfailed. Not run: 3.12 to 3.14, macOS, pptmstr against it.
+
+## imscribe 0.2.0 is on PyPI (2026-10-15)
+
+Tag `v0.2.0` on `af06f77`, published by `release` run 38734248219 (read by imscribe's lead from the owner's run of `gh run list` and PyPI's JSON). Requires `imgui-bundle==1.92.900` and, under the marker you already carry, `imtypeset==0.4.3.192900`; a final release, so no `--pre`. CI was green on CPython 3.11 to 3.14 (the owner's report). The section before this one names what changed for you (P38, P39, P41, P43, P47) and two behaviours to know. Ready for pptmstr to adopt; your own gates on 0.2.0 are the test that counts.

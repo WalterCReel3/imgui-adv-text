@@ -242,6 +242,55 @@ def test_with_no_source_the_fence_is_read_from_the_block_s_own_lines() -> None:
         assert _ask(other, view, parsed.blocks)[1].text == _BODY
 
 
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        # Closed, the same length, the same opener: only the body differs.
+        ("```diff\n-a\n+b\n```\n", "```diff\n-c\n+d\n```\n"),
+        # Not closed, and a line already read is changed while the fence grows.
+        ("```diff\n-a\n+b\n", "```diff\n-a\n+x\n+c\n"),
+        # A closing line with no newline added to: it is not a closing fence now.
+        ("```diff\n-a\n```", "```diff\n-a\n```x\n+b\n"),
+    ],
+)
+def test_a_fence_edited_inside_is_read_again_from_its_first_line(first: str, second: str) -> None:
+    """
+    R3-HOSTS, finding 1: a fence that starts where it did with the same opener
+    was read on from where it had got to, so an edit inside what was already
+    read (a whole document given again by `set_document`) never reached the
+    widget, and a closed fence was never read again.
+    """
+    theme = Theme.build()
+    fences = _Fences()
+    view = _View(first, parse_markdown(first, theme).sources, [])
+    (was,) = _ask(fences, view, parse_markdown(first, theme).blocks).values()
+    parsed = parse_markdown(second, theme)
+    view.source, view.sources = second, parsed.sources
+    (now,) = _ask(fences, view, parsed.blocks).values()
+    whole = _ask(_Fences(), _View(second, parsed.sources, []), parsed.blocks)
+    assert now.text == next(iter(whole.values())).text and now.text != was.text
+    assert fences.restarts == 1 and now is not was
+
+
+def test_a_fence_read_again_with_another_theme_is_another_widget() -> None:
+    """
+    R3-HOSTS, finding 2: `TypesetDiffView` fixes its sizes from the theme it is
+    made with, and `TypesetView.set_theme` asks `host_for` again about the same
+    blocks. The same theme keeps the widget; another makes a new one.
+    """
+    theme = Theme.build()
+    parsed = parse_markdown(_SOURCE, theme)
+    fences = _Fences()
+    view = _View(_SOURCE, parsed.sources, [])
+    view.theme = theme  # type: ignore[attr-defined]
+    hosted = _ask(fences, view, parsed.blocks)[1]
+    assert _ask(fences, view, parsed.blocks)[1] is hosted and fences.restarts == 0
+    view.theme = Theme.at_pixel_height(22)  # type: ignore[attr-defined]
+    again = _ask(fences, view, parsed.blocks)[1]
+    assert again is not hosted and again.text == _BODY and fences.restarts == 1
+    assert _ask(fences, view, parsed.blocks)[1] is again and fences.restarts == 1
+
+
 # ---------------------------------------------------------------------------
 # 2. With the library, real frames, no window
 # ---------------------------------------------------------------------------
@@ -593,6 +642,33 @@ ends["edited"] = {
 }
 view.close()
 
+# R3-HOSTS. A closed fence edited inside, the same length and the same opener:
+# the widget shows the new body. Then another theme: a widget of its size.
+redone = TypesetDiffFences()
+view = TypesetView("```diff\n-a\n+b\n```\n", theme=theme, host_for=redone)
+frame(view)
+(number,) = view.hosts
+view.set_document("```diff\n-c\n+d\n```\n")
+frame(view)
+view.select_all()
+diff["redone"] = {
+    "text": view.hosted(number).text, "texts": list(view.texts),
+    "copied": view.selected_text(), "restarts": redone.restarts,
+}
+before = view.hosted(number).view._code_size()[0]
+view.set_theme(Theme.at_pixel_height(22))
+frame(view)
+fresh = TypesetView("```diff\n-c\n+d\n```\n", theme=view.theme, host_for=TypesetDiffFences())
+frame(fresh)
+diff["rethemed"] = {
+    "theme": view.hosted(number).view.theme is view.theme,
+    "size": [before, view.hosted(number).view._code_size()[0],
+             fresh.hosted(number).view._code_size()[0]],
+    "text": view.hosted(number).text, "restarts": redone.restarts,
+}
+view.close()
+fresh.close()
+
 report["trouble"] = typesetter.trouble()
 report["module_at_end"] = typesetter.module() is not None
 print("REPORT " + json.dumps(report))
@@ -811,6 +887,24 @@ def test_an_edit_that_closes_a_fence_and_leaves_its_code_alone_reaches_the_widge
     assert got["same_widget"] is True and got["restarts"] == 0
     assert got["texts"][0] == "A reply." and got["texts"][2] == "After it."
     assert got["texts"][1].endswith("+new")
+
+
+def test_a_view_given_another_document_or_theme_shows_its_fence_as_it_now_is(
+    headless: dict[str, Any],
+) -> None:
+    """
+    R3-HOSTS, in a real `TypesetView`: `set_document` with a closed fence's body
+    changed (same length, same opener) shows, holds and copies the new body;
+    `set_theme` gives the hosted diff the new theme's code size, the size a view
+    made with that theme has.
+    """
+    redone = headless["diff"]["redone"]
+    assert redone["text"] == "-c\n+d\n" and redone["texts"] == ["-c\n+d"]
+    assert redone["copied"] == "-c\n+d" and redone["restarts"] == 1
+    rethemed = headless["diff"]["rethemed"]
+    before, after, fresh = rethemed["size"]
+    assert rethemed["theme"] is True and after == pytest.approx(fresh) and after != before
+    assert rethemed["text"] == "-c\n+d\n" and rethemed["restarts"] == 2
 
 
 def test_a_hosted_diff_answers_its_view_s_headers() -> None:

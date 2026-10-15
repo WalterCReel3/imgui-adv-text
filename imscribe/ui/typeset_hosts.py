@@ -120,18 +120,37 @@ class _Fence:
     How far into one fence's source `TypesetDiffFences` has read.
 
     `start` is where the fence's first line begins in the source and `opener`
-    is that line; together they are how the same fence is known again. `fed`
-    is the offset of the first character not yet read, or -1 while the
-    opening line has not ended. `plain` marks a fence read from its code
-    block because its source could not be.
+    is that line. `fed` is the offset of the first character not yet read, or
+    -1 while the opening line has not ended, and `read` is the source from
+    `start` to `fed` as it was read: a source that still holds it there is the
+    same fence, read on from `fed`; one that does not (an edit inside the
+    fence, a closed one included) is read again from its first line. `plain`
+    marks a fence read from its code block because its source could not be.
+    `theme` is the view's theme the widget was made with: the diff view fixes
+    its sizes from it, so another theme is another widget.
     """
 
-    __slots__ = ("closed", "fed", "hosted", "indent", "mark", "opener", "plain", "start")
+    __slots__ = (
+        "closed",
+        "fed",
+        "hosted",
+        "indent",
+        "mark",
+        "opener",
+        "plain",
+        "read",
+        "start",
+        "theme",
+    )
 
-    def __init__(self, hosted: HostedDiff, *, start: int = -1, plain: bool = False) -> None:
+    def __init__(
+        self, hosted: HostedDiff, *, theme: object, start: int = -1, plain: bool = False
+    ) -> None:
         self.hosted = hosted
+        self.theme = theme
         self.start = start
         self.opener = ""
+        self.read = ""
         self.fed = -1
         self.indent = 0
         self.mark = ""
@@ -242,6 +261,11 @@ class TypesetDiffFences:
         where = view.source_of(number) if source is not None else None
         known = view.hosted(number)
         fence = known.fence if isinstance(known, HostedDiff) and known in self._made else None
+        theme = getattr(view, "theme", None)
+        if fence is not None and fence.theme is not theme and fence.theme != theme:
+            # `set_theme`: the diff view took its sizes from the old one.
+            self.restarts += 1
+            fence = None
 
         if source is not None and where is not None:
             span = where.span
@@ -250,15 +274,23 @@ class TypesetDiffFences:
                 or fence.plain
                 or fence.start != span.start
                 or fence.fed > span.end
-                or not source.startswith(fence.opener, span.start)
+                # A closed fence read to its end: one that reaches further now
+                # is not the fence that closed (its last line was added to).
+                or (fence.closed and fence.fed != span.end)
+                # What was read, its opening line first, is still there: an
+                # edit inside the fence, closed or not, is read again. (A
+                # stream only grows, and keeps its widget.)
+                or not source.startswith(fence.read, span.start)
             ):
                 if fence is not None:
                     self.restarts += 1
-                fence = _Fence(self._hosted(view), start=span.start)
+                fence = _Fence(self._hosted(view), theme=theme, start=span.start)
             # Whether this is all the fence will ever be: then a last line
             # with no newline is a line, and not one still being typed.
             final = stream is None or stream.closed or number < len(stream.committed)
             self._read(fence, source, span.end, final)
+            if fence.fed >= 0:
+                fence.read = source[fence.start : fence.fed]
             if final or fence.closed:
                 # Nothing more will come: a last line the parser was holding
                 # for the line after it (`UnifiedDiffStream.close`) is settled.
@@ -269,7 +301,7 @@ class TypesetDiffFences:
             # in the source the other path cuts from, since 2026-10-12; until
             # then the reader had expanded it, counting the sign's column.)
             if fence is None or not fence.plain:
-                fence = _Fence(self._hosted(view), plain=True)
+                fence = _Fence(self._hosted(view), theme=theme, plain=True)
             text = view.block_text(number)
             text = text + "\n" if text else ""
             before = fence.hosted.stream.text
